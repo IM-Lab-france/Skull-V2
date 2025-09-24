@@ -1,0 +1,496 @@
+"""
+Web interface (Flask) to control servo+audio playback sessions + channel toggles.
+
+Features:
+- Upload JSON+MP3 into ./data/<scene_name>/ avec nommage personnalisé.
+- List available sessions.
+- Play / Pause / Resume / Stop endpoints.
+- Status endpoint.
+- /channels GET/POST to enable/disable eye_left, eye_right, neck, jaw.
+- Favicon 204 (no 404 noise).
+- Endpoints /logs pour consultation temps réel des logs servo.
+
+MODIFIÉ: Support du nom de scène personnalisé pour les uploads.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import tempfile
+import time
+import traceback
+from pathlib import Path
+from flask import (
+    Flask,
+    request,
+    render_template,
+    send_from_directory,
+    jsonify,
+    Response,
+)
+
+from sync_player import SyncPlayer
+from logger import servo_logger
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+CONFIG_DIR = Path('config')
+CONFIG_DIR.mkdir(exist_ok=True)
+PITCH_CONFIG_PATH = CONFIG_DIR / 'pitch_offsets.json'
+CHANNELS_CONFIG_PATH = CONFIG_DIR / 'channels_state.json'
+
+
+
+app = Flask(__name__, static_folder="static", template_folder="templates")
+player = SyncPlayer()
+
+# --- Channels (default: all enabled)
+CHANNELS_DEFAULT = {"eye_left": True, "eye_right": True, "neck": True, "jaw": True}
+player_channels = CHANNELS_DEFAULT.copy()
+# expose to player if it supports it
+setattr(player, "channels", player_channels)
+
+def _clamp_pitch_offset(value: float) -> float:
+    return max(-45.0, min(45.0, value))
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".pitch_tmp_", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        shutil.move(tmp_name, path)
+    finally:
+        try:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+        except Exception:
+            pass
+
+
+def save_pitch_offsets() -> None:
+    offsets = {name: spec.pitch_offset for name, spec in player.hw.SPECS.items()}
+    _write_json_atomic(PITCH_CONFIG_PATH, offsets)
+
+
+def load_pitch_offsets() -> None:
+    if not PITCH_CONFIG_PATH.exists():
+        return
+    try:
+        with open(PITCH_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except Exception as exc:
+        servo_logger.logger.warning(f"PITCH_LOAD_FAILED | {exc}")
+        return
+
+    if not isinstance(stored, dict):
+        servo_logger.logger.warning("PITCH_LOAD_FAILED | Invalid format")
+        return
+
+    for servo_name, raw_value in stored.items():
+        if servo_name not in player.hw.SPECS:
+            continue
+        try:
+            offset = _clamp_pitch_offset(float(raw_value))
+        except (TypeError, ValueError):
+            continue
+        player.hw.set_pitch_offset(servo_name, offset)
+
+
+def save_channel_flags() -> None:
+    _write_json_atomic(CHANNELS_CONFIG_PATH, player_channels)
+
+
+def load_channel_flags() -> None:
+    if not CHANNELS_CONFIG_PATH.exists():
+        return
+    try:
+        with open(CHANNELS_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except Exception as exc:
+        servo_logger.logger.warning(f"CHANNELS_LOAD_FAILED | {exc}")
+        return
+
+    if not isinstance(stored, dict):
+        servo_logger.logger.warning("CHANNELS_LOAD_FAILED | Invalid format")
+        return
+
+    updated = {}
+    for name in CHANNELS_DEFAULT:
+        value = stored.get(name)
+        if isinstance(value, bool):
+            updated[name] = value
+    if not updated:
+        return
+
+    player_channels.update(updated)
+    setattr(player, "channels", player_channels)
+    if hasattr(player, "set_channels") and callable(player.set_channels):
+        player.set_channels(player_channels)
+
+
+load_pitch_offsets()
+load_channel_flags()
+
+
+
+
+def sanitize_scene_name(name: str) -> str:
+    """Nettoie le nom de scène pour créer un nom de répertoire valide"""
+    if not name or not name.strip():
+        raise ValueError("Nom de scène requis")
+
+    # Supprimer espaces et caractères spéciaux, garder uniquement alphanum + _ -
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", name.strip().replace(" ", ""))
+
+    if not sanitized:
+        raise ValueError("Nom de scène invalide après nettoyage")
+
+    return sanitized[:50]  # Limiter la longueur
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    # Empty 204 to silence browser requests
+    return ("", 204)
+
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    try:
+        files = request.files
+        if "json" not in files or "mp3" not in files:
+            return jsonify({"error": "Fichiers json et mp3 requis"}), 400
+
+        # Récupérer le nom de scène du formulaire
+        scene_name = request.form.get("scene_name", "").strip()
+        if not scene_name:
+            return jsonify({"error": "Nom de scène requis"}), 400
+
+        # Nettoyer le nom de scène
+        try:
+            clean_name = sanitize_scene_name(scene_name)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+        # Créer le répertoire avec le nom nettoyé
+        session_dir = DATA_DIR / clean_name
+
+        # Vérifier si le répertoire existe déjà
+        if session_dir.exists():
+            return jsonify({"error": f"Une session '{clean_name}' existe déjà"}), 409
+
+        session_dir.mkdir(parents=True)
+
+        # Sauvegarder les fichiers avec leurs nouveaux noms
+        json_file = files["json"]
+        mp3_file = files["mp3"]
+
+        # Les fichiers arrivent déjà renommés côté client
+        json_filename = json_file.filename or "timeline.json"
+        mp3_filename = mp3_file.filename or "audio.mp3"
+
+        json_file.save(session_dir / json_filename)
+        mp3_file.save(session_dir / mp3_filename)
+
+        return jsonify(
+            {
+                "session": clean_name,
+                "message": f"Session '{scene_name}' créée avec succès",
+                "files": {"json": json_filename, "mp3": mp3_filename},
+            }
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur lors de l'upload: {str(e)}"}), 500
+
+
+@app.route("/sessions")
+def sessions():
+    try:
+        sessions_list = [d.name for d in sorted(DATA_DIR.iterdir()) if d.is_dir()]
+        return jsonify({"sessions": sessions_list})
+    except Exception as e:
+        return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
+
+
+@app.route("/play", methods=["POST"])
+def play():
+    try:
+        body = request.get_json(silent=True) or {}
+        sid = body.get("session")
+        if not sid:
+            return jsonify({"error": "Champ 'session' manquant"}), 400
+
+        session_dir = DATA_DIR / sid
+        if not session_dir.exists():
+            return jsonify({"error": f"Session introuvable: {sid}"}), 404
+
+        # Vérifier qu'on a bien un fichier JSON et un MP3
+        json_files = list(session_dir.glob("*.json"))
+        mp3_files = list(session_dir.glob("*.mp3"))
+
+        if not json_files:
+            return jsonify({"error": "Fichier JSON introuvable dans la session"}), 404
+        if not mp3_files:
+            return jsonify({"error": "Fichier MP3 introuvable dans la session"}), 404
+
+        player.load(session_dir)
+        player.play()
+        return jsonify({"status": "playing", "session": sid})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Impossible de démarrer la lecture: {e}"}), 400
+
+
+@app.route("/pause", methods=["POST"])
+def pause():
+    try:
+        player.pause()
+        return jsonify({"status": "paused"})
+    except Exception as e:
+        return jsonify({"error": f"Erreur pause: {e}"}), 500
+
+
+@app.route("/resume", methods=["POST"])
+def resume():
+    try:
+        player.resume()
+        return jsonify({"status": "resumed"})
+    except Exception as e:
+        return jsonify({"error": f"Erreur resume: {e}"}), 500
+
+
+@app.route("/stop", methods=["POST"])
+def stop():
+    try:
+        player.stop()
+        return jsonify({"status": "stopped"})
+    except Exception as e:
+        return jsonify({"error": f"Erreur stop: {e}"}), 500
+
+
+@app.route("/status")
+def status():
+    try:
+        # expose channels in status as well
+        st = player.status()
+        st["channels"] = dict(player_channels)
+        return jsonify(st)
+    except Exception as e:
+        return jsonify({"error": f"Erreur status: {e}"}), 500
+
+
+# -------------------- Channels API --------------------
+@app.route("/channels", methods=["GET", "POST"])
+def channels():
+    global player_channels
+    try:
+        if request.method == "GET":
+            return jsonify(player_channels)
+
+        # POST: update flags
+        body = request.get_json(silent=True) or {}
+
+        def as_bool(x, default=True):
+            if isinstance(x, bool):
+                return x
+            if isinstance(x, (int, float)):
+                return bool(x)
+            if isinstance(x, str):
+                return x.strip().lower() in ("1", "true", "on", "yes")
+            return default
+
+        new_flags = {
+            "eye_left": as_bool(
+                body.get("eye_left", player_channels["eye_left"]),
+                player_channels["eye_left"],
+            ),
+            "eye_right": as_bool(
+                body.get("eye_right", player_channels["eye_right"]),
+                player_channels["eye_right"],
+            ),
+            "neck": as_bool(
+                body.get("neck", player_channels["neck"]), player_channels["neck"]
+            ),
+            "jaw": as_bool(
+                body.get("jaw", player_channels["jaw"]), player_channels["jaw"]
+            ),
+        }
+        player_channels.update(new_flags)
+
+        # reflect on player
+        setattr(player, "channels", player_channels)
+
+        # if SyncPlayer has set_channels method, call it
+        if hasattr(player, "set_channels") and callable(player.set_channels):
+            player.set_channels(player_channels)
+
+        save_channel_flags()
+
+        return jsonify(player_channels)
+
+    except Exception as e:
+        return jsonify({"error": f"Erreur channels: {e}"}), 500
+
+
+@app.route("/pitch", methods=["GET", "POST"])
+def pitch():
+    """Gestion des offsets de pitch par servo"""
+    try:
+        if request.method == "GET":
+            # Retourner les offsets actuels
+            offsets = {}
+            for name, spec in player.hw.SPECS.items():
+                offsets[name] = spec.pitch_offset
+            return jsonify(offsets)
+
+        # POST: mettre à jour les offsets
+        body = request.get_json(silent=True) or {}
+
+        for servo_name in ["jaw", "eye_left", "eye_right", "neck_pan"]:
+            if servo_name in body:
+                try:
+                    offset = _clamp_pitch_offset(float(body[servo_name]))
+                except (ValueError, TypeError):
+                    continue
+                player.hw.set_pitch_offset(servo_name, offset)
+
+        save_pitch_offsets()
+
+        # Retourner les nouveaux offsets
+        # Retourner les nouveaux offsets
+        offsets = {}
+        for name, spec in player.hw.SPECS.items():
+            offsets[name] = spec.pitch_offset
+        return jsonify(offsets)
+
+    except Exception as e:
+        return jsonify({"error": f"Erreur pitch: {e}"}), 500
+
+
+# -------------------- Logs API --------------------
+@app.route("/logs")
+def logs():
+    """Retourne les logs servo en temps réel"""
+    try:
+        log_file = servo_logger.get_latest_log_file()
+        if not log_file.exists():
+            return jsonify({"error": "Aucun fichier de log trouvé"}), 404
+
+        # Lire les dernières lignes (tail)
+        lines = request.args.get("lines", "100", type=int)
+        lines = max(1, min(1000, lines))  # Limiter entre 1 et 1000 lignes
+
+        with open(log_file, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+
+        return jsonify(
+            {
+                "file": str(log_file),
+                "total_lines": len(all_lines),
+                "returned_lines": len(recent_lines),
+                "lines": [line.rstrip() for line in recent_lines],
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/logs/stream")
+def logs_stream():
+    """Stream des logs en temps réel via Server-Sent Events"""
+
+    def generate():
+        log_file = servo_logger.get_latest_log_file()
+        if not log_file.exists():
+            yield "data: No log file found\n\n"
+            return
+
+        # Commencer à la fin du fichier
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                # Aller à la fin
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if line:
+                        yield f"data: {line.rstrip()}\n\n"
+                    else:
+                        time.sleep(0.1)  # Attendre nouvelles données
+        except Exception as e:
+            yield f"data: Error reading log: {e}\n\n"
+
+    return Response(generate(), mimetype="text/plain")
+
+
+@app.route("/logs/stats")
+def logs_stats():
+    """Retourne les statistiques des dernières sessions"""
+    try:
+        stats_dir = Path("logs")
+        stats_files = list(stats_dir.glob("session_stats_*.json"))
+        stats_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+        # Retourner les 10 dernières sessions
+        recent_stats = []
+        for stats_file in stats_files[:10]:
+            try:
+                import json
+
+                with open(stats_file, "r", encoding="utf-8") as f:
+                    stats = json.load(f)
+                recent_stats.append(stats)
+            except Exception as e:
+                continue
+
+        return jsonify(
+            {"total_sessions": len(stats_files), "recent_sessions": recent_stats}
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Serve uploaded files for debug
+@app.route("/data/<path:filename>")
+def data_file(filename):
+    return send_from_directory(DATA_DIR, filename)
+
+
+# Serve log files for download
+@app.route("/logs/download")
+def logs_download():
+    """Télécharge le fichier de log actuel"""
+    try:
+        log_file = servo_logger.get_latest_log_file()
+        if not log_file.exists():
+            return "No log file found", 404
+        return send_from_directory(log_file.parent, log_file.name, as_attachment=True)
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+if __name__ == "__main__":
+    print("Servo Sync Player - Web Interface")
+    print(f"Logs directory: {servo_logger.log_dir}")
+    print(f"Current log file: {servo_logger.get_latest_log_file()}")
+    print("Available endpoints:")
+    print("  - Main interface: http://localhost:5000")
+    print("  - /logs        : Get recent log lines (JSON)")
+    print("  - /logs/stream : Real-time log stream")
+    print("  - /logs/stats  : Session statistics")
+    print("  - /logs/download : Download log file")
+    app.run(host="0.0.0.0", port=5000, debug=True)

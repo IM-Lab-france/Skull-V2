@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Servo Sync Player</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" href="data:,">
+</head>
+
+<body class="theme-halloween">
+    <div id="connectionStatus" class="connection-status offline" role="status" aria-live="polite">
+        <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
+        <span id="connectionStatusText" class="connection-label">Statut : inconnu</span>
+    </div>
+
+    <header class="site-header">
+        <h1>Servo Sync Player</h1>
+        <p class="subtitle">Synchronisez 4 servos avec un MP3 et un fichier <code>facial_motors.json</code></p>
+    </header>
+
+    <main class="container">
+        <div class="layout layout-5050">
+            <!-- Colonne gauche -->
+            <div class="main-column">
+                <!-- Lancement des sessions -->
+                <section class="card session-card" id="sessions">
+                    <h2>Lancement des sessions</h2>
+
+                    <div class="row">
+                        <label for="sessionSelect" class="label">Sessions disponibles</label>
+                        <div class="row-inline">
+                            <select id="sessionSelect" class="select"></select>
+                            <button class="btn secondary" id="refreshBtn" title="Rafraîchir">↻</button>
+                        </div>
+                    </div>
+
+                    <!-- Boutons alignés -->
+                    <div class="controls controls-grid">
+                        <button id="playBtn" class="btn success">Play</button>
+                        <button id="pauseBtn" class="btn warning">Pause</button>
+                        <button id="resumeBtn" class="btn info">Resume</button>
+                        <button id="stopBtn" class="btn danger">Stop</button>
+                    </div>
+
+                    <!-- Status en accordéon -->
+                    <details class="accordion-item slim status-accordion" open>
+                        <summary>
+                            <span>Statut lecture</span>
+                            <span id="badgeState" class="badge">—</span>
+                        </summary>
+                        <div class="accordion-content">
+                            <pre id="statusBox" class="status-box" aria-live="polite"></pre>
+                        </div>
+                    </details>
+                </section>
+
+                <!-- Préparation & réglages -->
+                <section class="card workbench-card">
+                    <h2>Préparation & réglages</h2>
+                    <div class="accordion">
+                        <details class="accordion-item" open>
+                            <summary><span>Uploader une session</span></summary>
+                            <div id="upload" class="accordion-content">
+                                <div class="row">
+                                    <label for="sceneName" class="label">Nom de la scène</label>
+                                    <input type="text" id="sceneName" class="input" placeholder="Ex : This is Halloween"
+                                        maxlength="50" />
+                                    <small class="hint">Le nom permet de créer le dossier et de renommer les
+                                        fichiers.</small>
+                                </div>
+
+                                <p class="hint">Glissez-déposez vos deux fichiers ci-dessous, ou cliquez pour
+                                    sélectionner.<br><small>(Un <strong>.json</strong> + un <strong>.mp3</strong>
+                                        requis)</small></p>
+
+                                <form id="uploadForm" class="upload-form" autocomplete="off">
+                                    <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de dépôt">
+                                        <div class="dropzone-inner">
+                                            <div class="dz-icon">⬆</div>
+                                            <div class="dz-text">
+                                                Déposez ici votre <strong>JSON</strong> et votre
+                                                <strong>MP3</strong><br />
+                                                <span class="dz-sub">ou cliquez pour parcourir...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <input id="fileJson" type="file" name="json" accept=".json" hidden />
+                                    <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
+
+                                    <div class="file-list" id="fileList">
+                                        <div class="file-pill" id="pillJson">JSON : <span class="file-name"
+                                                data-empty>aucun</span></div>
+                                        <div class="file-pill" id="pillMp3">MP3 : <span class="file-name"
+                                                data-empty>aucun</span></div>
+                                    </div>
+
+                                    <div class="actions">
+                                        <div class="picker-row">
+                                            <button type="button" id="btnPickJson" class="btn secondary">Choisir
+                                                JSON</button>
+                                            <button type="button" id="btnPickMp3" class="btn secondary">Choisir
+                                                MP3</button>
+                                        </div>
+
+                                        <button type="submit" class="btn primary" id="btnUpload" disabled>
+                                            Charger l'animation
+                                        </button>
+                                    </div>
+
+                                    <div class="progress" id="uploadProgress" hidden>
+                                        <div class="bar" id="uploadBar"></div>
+                                    </div>
+                                </form>
+                            </div>
+                        </details>
+
+                        <details class="accordion-item">
+                            <summary><span>Canaux actifs</span></summary>
+                            <div id="channels" class="accordion-content">
+                                <div class="toggle-group">
+                                    <label class="toggle"><input type="checkbox" id="cbEyeLeft" checked><span>Œil
+                                            gauche</span></label>
+                                    <label class="toggle"><input type="checkbox" id="cbEyeRight" checked><span>Œil
+                                            droit</span></label>
+                                    <label class="toggle"><input type="checkbox" id="cbNeck"
+                                            checked><span>Cou</span></label>
+                                    <label class="toggle"><input type="checkbox" id="cbJaw"
+                                            checked><span>Mâchoire</span></label>
+                                </div>
+                                <p class="hint">Décochez pour geler un servo. Il conserve alors sa dernière position.
+                                </p>
+                            </div>
+                        </details>
+
+                        <details class="accordion-item">
+                            <summary><span>Ajustements pitch</span></summary>
+                            <div id="pitch" class="accordion-content">
+                                <div class="pitch-controls">
+                                    <div class="pitch-item">
+                                        <label for="pitchJaw" class="label">Mâchoire (°)</label>
+                                        <input type="range" id="pitchJaw" min="-45" max="45" value="0"
+                                            class="pitch-slider">
+                                        <span class="pitch-value">0°</span>
+                                    </div>
+                                    <div class="pitch-item">
+                                        <label for="pitchEyeLeft" class="label">Œil gauche (°)</label>
+                                        <input type="range" id="pitchEyeLeft" min="-45" max="45" value="0"
+                                            class="pitch-slider">
+                                        <span class="pitch-value">0°</span>
+                                    </div>
+                                    <div class="pitch-item">
+                                        <label for="pitchEyeRight" class="label">Œil droit (°)</label>
+                                        <input type="range" id="pitchEyeRight" min="-45" max="45" value="0"
+                                            class="pitch-slider">
+                                        <span class="pitch-value">0°</span>
+                                    </div>
+                                    <div class="pitch-item">
+                                        <label for="pitchNeck" class="label">Cou (°)</label>
+                                        <input type="range" id="pitchNeck" min="-45" max="45" value="0"
+                                            class="pitch-slider">
+                                        <span class="pitch-value">0°</span>
+                                    </div>
+                                </div>
+                                <p class="hint">Ajustez les décalages permanents pour compenser l'assemblage mécanique.
+                                </p>
+                            </div>
+                        </details>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Colonne droite -->
+            <aside class="logs-column">
+                <section class="card logs-card">
+                    <h2>Logs en direct</h2>
+                    <iframe src="/static/logs.html" title="Logs servo" class="logs-frame"></iframe>
+                </section>
+            </aside>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <small>RPi4 · PCA9685 · Aucun mode simulation · UI par FozzY</small>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

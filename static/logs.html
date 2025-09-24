@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servo Logs - Real-time Monitor</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --card: #121a33;
+            --muted: #8aa0d0;
+            --text: #e6eeff;
+            --pri: #6aa1ff;
+            --ok: #23c55e;
+            --warn: #f59e0b;
+            --err: #ef4444;
+            --font-mono: 'Courier New', 'Monaco', 'Menlo', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto;
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 12px 16px;
+            background: var(--card);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border: 0;
+            border-radius: 6px;
+            background: #2a3a72;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn:hover {
+            filter: brightness(1.1);
+        }
+
+        .btn.active {
+            background: var(--ok);
+        }
+
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background: var(--ok);
+            color: #001c0a;
+        }
+
+        .status.disconnected {
+            background: var(--err);
+            color: #fff;
+        }
+
+        .main {
+            height: calc(100vh - 60px);
+            display: flex;
+        }
+
+        .logs-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logs-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            background: #0a0e1a;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .log-line {
+            margin: 1px 0;
+            padding: 2px 4px;
+            border-radius: 2px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-line.servo {
+            background: rgba(106, 161, 255, 0.1);
+        }
+
+        .log-line.audio {
+            background: rgba(35, 197, 94, 0.1);
+        }
+
+        .log-line.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warn);
+        }
+
+        .log-line.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--err);
+        }
+
+        .log-line.session {
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: bold;
+        }
+
+        .log-line .timestamp {
+            color: var(--muted);
+        }
+
+        .log-line .servo-name {
+            color: var(--pri);
+            font-weight: bold;
+        }
+
+        .log-line .angle {
+            color: var(--ok);
+        }
+
+        .sidebar {
+            width: 300px;
+            background: var(--card);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stats-section {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stats-section h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            font-size: 11px;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: var(--ok);
+        }
+
+        .filters {
+            padding: 12px;
+        }
+
+        .filter-group {
+            margin: 8px 0;
+        }
+
+        .filter-group label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .auto-scroll-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 6px 12px;
+            background: var(--pri);
+            color: #fff;
+            border-radius: 16px;
+            font-size: 10px;
+            opacity: 0.8;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🔧 Servo Logs Monitor</h1>
+        <div class="controls">
+            <button id="pauseBtn" class="btn">⏸️ Pause</button>
+            <button id="clearBtn" class="btn">🗑️ Clear</button>
+            <button id="downloadBtn" class="btn">💾 Download</button>
+            <span id="connectionStatus" class="status disconnected">DISCONNECTED</span>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="logs-panel">
+            <div id="logsContainer" class="logs-container"></div>
+        </div>
+
+        <div class="sidebar">
+            <div class="stats-section">
+                <h3>📊 Live Stats</h3>
+                <div class="stat-item">
+                    <span>Lines:</span>
+                    <span id="statLines" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Servo Commands:</span>
+                    <span id="statServo" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Warnings:</span>
+                    <span id="statWarnings" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Errors:</span>
+                    <span id="statErrors" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <div class="filters">
+                <h3>🔍 Filters</h3>
+                <div class="filter-group">
+                    <label><input type="checkbox" id="filterServo" checked> Servo commands</label>
+                    <label><input type="checkbox" id="filterAudio" checked> Audio events</label>
+                    <label><input type="checkbox" id="filterSession" checked> Session events</label>
+                    <label><input type="checkbox" id="filterWarning" checked> Warnings</label>
+                    <label><input type="checkbox" id="filterError" checked> Errors</label>
+                </div>
+
+                <div class="filter-group">
+                    <label><input type="checkbox" id="filterJaw" checked> Jaw</label>
+                    <label><input type="checkbox" id="filterEyeLeft" checked> Eye Left</label>
+                    <label><input type="checkbox" id="filterEyeRight" checked> Eye Right</label>
+                    <label><input type="checkbox" id="filterNeck" checked> Neck</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="autoScrollIndicator" class="auto-scroll-indicator" style="display: none;">
+        AUTO-SCROLL ON
+    </div>
+
+    <script>
+        class LogsMonitor {
+            constructor() {
+                this.container = document.getElementById('logsContainer');
+                this.status = document.getElementById('connectionStatus');
+                this.pauseBtn = document.getElementById('pauseBtn');
+                this.clearBtn = document.getElementById('clearBtn');
+                this.downloadBtn = document.getElementById('downloadBtn');
+
+                this.isPaused = false;
+                this.autoScroll = true;
+                this.eventSource = null;
+                this.lineCount = 0;
+                this.stats = { servo: 0, warnings: 0, errors: 0 };
+
+                this.bindEvents();
+                this.loadInitialLogs();
+                this.startStreaming();
+            }
+
+            bindEvents() {
+                this.pauseBtn.addEventListener('click', () => this.togglePause());
+                this.clearBtn.addEventListener('click', () => this.clearLogs());
+                this.downloadBtn.addEventListener('click', () => this.downloadLogs());
+
+                // Auto-scroll detection
+                this.container.addEventListener('scroll', () => {
+                    const { scrollTop, scrollHeight, clientHeight } = this.container;
+                    this.autoScroll = scrollTop >= scrollHeight - clientHeight - 50;
+                    this.updateAutoScrollIndicator();
+                });
+
+                // Filters
+                const filters = ['filterServo', 'filterAudio', 'filterSession', 'filterWarning', 'filterError',
+                    'filterJaw', 'filterEyeLeft', 'filterEyeRight', 'filterNeck'];
+                filters.forEach(id => {
+                    document.getElementById(id).addEventListener('change', () => this.applyFilters());
+                });
+            }
+
+            async loadInitialLogs() {
+                try {
+                    const response = await fetch('/logs?lines=200');
+                    const data = await response.json();
+                    if (data.lines) {
+                        data.lines.forEach(line => this.addLogLine(line));
+                        this.scrollToBottom();
+                    }
+                } catch (e) {
+                    console.error('Failed to load initial logs:', e);
+                }
+            }
+
+            startStreaming() {
+                if (this.eventSource) {
+                    this.eventSource.close();
+                }
+
+                this.eventSource = new EventSource('/logs/stream');
+
+                this.eventSource.onopen = () => {
+                    this.updateConnectionStatus(true);
+                };
+
+                this.eventSource.onmessage = (event) => {
+                    if (!this.isPaused) {
+                        this.addLogLine(event.data);
+                        if (this.autoScroll) {
+                            this.scrollToBottom();
+                        }
+                    }
+                };
+
+                this.eventSource.onerror = () => {
+                    this.updateConnectionStatus(false);
+                    setTimeout(() => this.startStreaming(), 5000); // Reconnect after 5s
+                };
+            }
+
+            addLogLine(lineText) {
+                if (!lineText.trim()) return;
+
+                const line = document.createElement('div');
+                line.className = 'log-line';
+
+                // Parse and format the line
+                const formatted = this.formatLogLine(lineText);
+                line.innerHTML = formatted.html;
+                line.className += ' ' + formatted.classes.join(' ');
+
+                this.container.appendChild(line);
+                this.lineCount++;
+
+                // Update stats
+                this.updateStats(formatted.type);
+
+                // Limit lines to prevent memory issues
+                if (this.lineCount > 1000) {
+                    this.container.removeChild(this.container.firstChild);
+                    this.lineCount--;
+                }
+
+                this.applyFilters();
+            }
+
+            formatLogLine(text) {
+                const classes = [];
+                let type = 'other';
+                let html = text;
+
+                // Parse timestamp and content
+                const match = text.match(/^(\d{2}:\d{2}:\d{2}\.\d{3}) \| (.+)$/);
+                if (match) {
+                    const [, timestamp, content] = match;
+
+                    // Classify line type
+                    if (content.includes('SERVO |')) {
+                        classes.push('servo');
+                        type = 'servo';
+                        html = this.formatServoLine(timestamp, content);
+                    } else if (content.includes('AUDIO_')) {
+                        classes.push('audio');
+                        type = 'audio';
+                    } else if (content.includes('SESSION')) {
+                        classes.push('session');
+                        type = 'session';
+                    } else if (content.includes('WARNING')) {
+                        classes.push('warning');
+                        type = 'warning';
+                    } else if (content.includes('ERROR')) {
+                        classes.push('error');
+                        type = 'error';
+                    }
+
+                    html = `<span class="timestamp">${timestamp}</span> ${content}`;
+                }
+
+                return { html, classes, type };
+            }
+
+            formatServoLine(timestamp, content) {
+                // Parse: SERVO | 1.234s | jaw | 145.0° | ACTIVE
+                const servoMatch = content.match(/SERVO \| ([\d.]+)s \| (\w+) \| ([\d.]+)° \| (\w+)/);
+                if (servoMatch) {
+                    const [, time, servo, angle, status] = servoMatch;
+                    return `<span class="timestamp">${timestamp}</span> SERVO | ${time}s | <span class="servo-name">${servo}</span> | <span class="angle">${angle}°</span> | ${status}`;
+                }
+                return `<span class="timestamp">${timestamp}</span> ${content}`;
+            }
+
+            updateStats(type) {
+                if (type === 'servo') this.stats.servo++;
+                if (type === 'warning') this.stats.warnings++;
+                if (type === 'error') this.stats.errors++;
+
+                document.getElementById('statLines').textContent = this.lineCount;
+                document.getElementById('statServo').textContent = this.stats.servo;
+                document.getElementById('statWarnings').textContent = this.stats.warnings;
+                document.getElementById('statErrors').textContent = this.stats.errors;
+            }
+
+            applyFilters() {
+                const filters = {
+                    servo: document.getElementById('filterServo').checked,
+                    audio: document.getElementById('filterAudio').checked,
+                    session: document.getElementById('filterSession').checked,
+                    warning: document.getElementById('filterWarning').checked,
+                    error: document.getElementById('filterError').checked,
+                    jaw: document.getElementById('filterJaw').checked,
+                    eyeLeft: document.getElementById('filterEyeLeft').checked,
+                    eyeRight: document.getElementById('filterEyeRight').checked,
+                    neck: document.getElementById('filterNeck').checked
+                };
+
+                Array.from(this.container.children).forEach(line => {
+                    let show = true;
+
+                    // Type filters
+                    if (line.classList.contains('servo') && !filters.servo) show = false;
+                    if (line.classList.contains('audio') && !filters.audio) show = false;
+                    if (line.classList.contains('session') && !filters.session) show = false;
+                    if (line.classList.contains('warning') && !filters.warning) show = false;
+                    if (line.classList.contains('error') && !filters.error) show = false;
+
+                    // Servo-specific filters
+                    if (line.classList.contains('servo')) {
+                        const text = line.textContent;
+                        if (text.includes('jaw') && !filters.jaw) show = false;
+                        if (text.includes('eye_left') && !filters.eyeLeft) show = false;
+                        if (text.includes('eye_right') && !filters.eyeRight) show = false;
+                        if (text.includes('neck_pan') && !filters.neck) show = false;
+                    }
+
+                    line.style.display = show ? 'block' : 'none';
+                });
+            }
+
+            togglePause() {
+                this.isPaused = !this.isPaused;
+                this.pauseBtn.textContent = this.isPaused ? '▶️ Resume' : '⏸️ Pause';
+                this.pauseBtn.classList.toggle('active', this.isPaused);
+            }
+
+            clearLogs() {
+                this.container.innerHTML = '';
+                this.lineCount = 0;
+                this.stats = { servo: 0, warnings: 0, errors: 0 };
+                this.updateStats('clear');
+            }
+
+            downloadLogs() {
+                window.open('/logs/download', '_blank');
+            }
+
+            scrollToBottom() {
+                this.container.scrollTop = this.container.scrollHeight;
+            }
+
+            updateConnectionStatus(connected) {
+                this.status.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+                this.status.className = 'status ' + (connected ? 'connected' : 'disconnected');
+            }
+
+            updateAutoScrollIndicator() {
+                const indicator = document.getElementById('autoScrollIndicator');
+                indicator.style.display = this.autoScroll ? 'block' : 'none';
+            }
+        }
+
+        // Start monitoring when page loads
+        window.addEventListener('load', () => {
+            new LogsMonitor();
+        });
+    </script>
+</body>
+
+</html>
