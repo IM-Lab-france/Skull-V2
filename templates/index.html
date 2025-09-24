@@ -174,6 +174,18 @@
 
             <!-- Colonne droite -->
             <aside class="logs-column">
+                <section class="card playlist-card">
+                    <h2>Playlist</h2>
+                    <div id="playlistCurrent" class="playlist-current" aria-live="polite">
+                        Playlist vide
+                    </div>
+                    <ul id="playlistList" class="playlist-list" aria-label="Morceaux dans la playlist"></ul>
+                    <div class="playlist-actions">
+                        <button class="btn secondary" id="playlistRefreshBtn">Actualiser</button>
+                        <button class="btn danger" id="playlistSkipBtn" disabled>Passer</button>
+                    </div>
+                </section>
+
                 <section class="card logs-card">
                     <h2>Logs en direct</h2>
                     <iframe src="/static/logs.html" title="Logs servo" class="logs-frame"></iframe>

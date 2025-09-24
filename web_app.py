@@ -22,6 +22,8 @@ import shutil
 import tempfile
 import time
 import traceback
+import threading
+from itertools import count
 from pathlib import Path
 from flask import (
     Flask,
@@ -32,9 +34,10 @@ from flask import (
     Response,
 )
 
+from typing import Any, Optional
+
 from sync_player import SyncPlayer
 from logger import servo_logger
-from flask import send_from_directory
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -52,6 +55,185 @@ CHANNELS_DEFAULT = {"eye_left": True, "eye_right": True, "neck": True, "jaw": Tr
 player_channels = CHANNELS_DEFAULT.copy()
 # expose to player if it supports it
 setattr(player, "channels", player_channels)
+
+
+
+# --- Playlist (in-memory) ---
+class PlaylistManager:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._queue: list[dict[str, Any]] = []
+        self._id_seq = count(1)
+
+    def add(self, session: str) -> tuple[dict[str, Any], int]:
+        with self._lock:
+            item = {
+                "id": next(self._id_seq),
+                "session": session,
+                "added_at": time.time(),
+                "retries": 0,
+            }
+            self._queue.append(item)
+            return item.copy(), len(self._queue)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [item.copy() for item in self._queue]
+
+    def pop_next(self) -> Optional[dict[str, Any]]:
+        with self._lock:
+            if not self._queue:
+                return None
+            item = self._queue.pop(0)
+            return item.copy()
+
+    def remove(self, item_id: int) -> Optional[dict[str, Any]]:
+        with self._lock:
+            for idx, item in enumerate(self._queue):
+                if item["id"] == item_id:
+                    removed = self._queue.pop(idx)
+                    return removed.copy()
+        return None
+
+    def move(self, item_id: int, offset: int) -> str:
+        with self._lock:
+            for idx, item in enumerate(self._queue):
+                if item["id"] == item_id:
+                    new_idx = max(0, min(len(self._queue) - 1, idx + offset))
+                    if new_idx == idx:
+                        return "noop"
+                    self._queue.pop(idx)
+                    self._queue.insert(new_idx, item)
+                    return "moved"
+        return "not_found"
+
+    def push_front(self, item: dict[str, Any]) -> None:
+        with self._lock:
+            self._queue.insert(0, item.copy())
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._queue)
+
+    def has_items(self) -> bool:
+        with self._lock:
+            return bool(self._queue)
+
+
+playlist = PlaylistManager()
+_current_entry_lock = threading.Lock()
+_current_entry: Optional[dict[str, Any]] = None
+
+
+def _set_current_entry(entry: Optional[dict[str, Any]]) -> None:
+    global _current_entry
+    with _current_entry_lock:
+        _current_entry = entry.copy() if entry else None
+
+
+def _get_current_entry() -> Optional[dict[str, Any]]:
+    with _current_entry_lock:
+        if _current_entry is None:
+            return None
+        return _current_entry.copy()
+
+
+def _ensure_session_exists(session_name: str) -> Path:
+    session_dir = DATA_DIR / session_name
+    if not session_dir.exists() or not session_dir.is_dir():
+        raise ValueError(f"Session introuvable: {session_name}")
+
+    json_files = list(session_dir.glob("*.json"))
+    mp3_files = list(session_dir.glob("*.mp3"))
+    if not json_files:
+        raise ValueError("Fichier JSON introuvable dans la session")
+    if not mp3_files:
+        raise ValueError("Fichier MP3 introuvable dans la session")
+    return session_dir
+
+
+def _start_session(session_name: str, source: str, item_id: Optional[int] = None) -> bool:
+    try:
+        session_dir = _ensure_session_exists(session_name)
+    except ValueError as exc:
+        servo_logger.logger.error(
+            f"PLAYLIST_INVALID | session={session_name} | reason={exc}"
+        )
+        return False
+
+    try:
+        player.load(session_dir)
+        player.play()
+    except Exception as exc:
+        servo_logger.logger.error(
+            f"PLAYLIST_START_FAILED | session={session_name} | error={exc}"
+        )
+        return False
+
+    _set_current_entry(
+        {
+            "session": session_name,
+            "id": item_id,
+            "source": source,
+            "started_at": time.time(),
+        }
+    )
+    servo_logger.logger.info(
+        f"PLAYLIST_START | session={session_name} | source={source} | id={item_id}"
+    )
+    return True
+
+
+def _start_next_from_playlist() -> None:
+    while True:
+        next_item = playlist.pop_next()
+        if not next_item:
+            return
+        if _start_session(next_item["session"], "playlist", next_item["id"]):
+            return
+        retries = int(next_item.get("retries", 0)) + 1
+        next_item["retries"] = retries
+        servo_logger.logger.warning(
+            f"PLAYLIST_SKIP_FAILED | session={next_item['session']} | retry={retries}"
+        )
+        if retries >= 5:
+            servo_logger.logger.error(
+                f"PLAYLIST_DROP | session={next_item['session']} | retries={retries}"
+            )
+            continue
+        playlist.push_front(next_item)
+        delay = min(0.5 * retries, 3.0)
+        threading.Timer(delay, _ensure_playback_running).start()
+        return
+
+
+def _ensure_playback_running() -> None:
+    try:
+        active = player.status().get("running", False)
+    except Exception:
+        active = False
+    if active or _get_current_entry() is not None:
+        return
+    _start_next_from_playlist()
+
+
+def _handle_track_finished(reason: str, error: Optional[str], session_name: Optional[str]) -> None:
+    current = _get_current_entry()
+    log_bits = [f"reason={reason}"]
+    if session_name:
+        log_bits.append(f"session={session_name}")
+    if error:
+        log_bits.append(f"error={error}")
+    servo_logger.logger.info("PLAYLIST_FINISHED | " + " | ".join(log_bits))
+
+    if reason != "replace":
+        _set_current_entry(None)
+
+    if reason in {"completed", "skip", "error"}:
+        threading.Thread(target=_start_next_from_playlist, daemon=True).start()
+
+
+player.set_on_track_finished(_handle_track_finished)
 
 
 def _clamp_pitch_offset(value: float) -> float:
@@ -232,26 +414,41 @@ def play():
         if not sid:
             return jsonify({"error": "Champ 'session' manquant"}), 400
 
-        session_dir = DATA_DIR / sid
-        if not session_dir.exists():
-            return jsonify({"error": f"Session introuvable: {sid}"}), 404
+        try:
+            _ensure_session_exists(sid)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
 
-        # Vérifier qu'on a bien un fichier JSON et un MP3
-        json_files = list(session_dir.glob("*.json"))
-        mp3_files = list(session_dir.glob("*.mp3"))
+        status_info = player.status()
+        is_running = bool(status_info.get("running"))
+        if is_running:
+            item, position = playlist.add(sid)
+            servo_logger.logger.info(
+                f"PLAYLIST_ENQUEUE | session={sid} | trigger=play_button | position={position}"
+            )
+            return (
+                jsonify(
+                    {
+                        "status": "queued",
+                        "session": sid,
+                        "position": position,
+                        "item": item,
+                    }
+                ),
+                202,
+            )
 
-        if not json_files:
-            return jsonify({"error": "Fichier JSON introuvable dans la session"}), 404
-        if not mp3_files:
-            return jsonify({"error": "Fichier MP3 introuvable dans la session"}), 404
+        if not _start_session(sid, "manual"):
+            servo_logger.logger.error(f"PLAY_START_FAILED | session={sid}")
+            _ensure_playback_running()
+            return jsonify({"error": "Impossible de demarrer la lecture"}), 500
 
-        player.load(session_dir)
-        player.play()
         return jsonify({"status": "playing", "session": sid})
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": f"Impossible de démarrer la lecture: {e}"}), 400
+        return jsonify({"error": f"Impossible de demarrer la lecture: {e}"}), 400
+
 
 
 @app.route("/pause", methods=["POST"])
@@ -276,6 +473,7 @@ def resume():
 def stop():
     try:
         player.stop()
+        _set_current_entry(None)
         return jsonify({"status": "stopped"})
     except Exception as e:
         return jsonify({"error": f"Erreur stop: {e}"}), 500
@@ -287,9 +485,115 @@ def status():
         # expose channels in status as well
         st = player.status()
         st["channels"] = dict(player_channels)
+        st["playlist_size"] = playlist.size()
+        st["current_playlist"] = _get_current_entry()
         return jsonify(st)
     except Exception as e:
         return jsonify({"error": f"Erreur status: {e}"}), 500
+
+
+
+
+@app.route("/playlist", methods=["GET", "POST"])
+def playlist_api():
+    try:
+        if request.method == "GET":
+            return jsonify(
+                {
+                    "current": _get_current_entry(),
+                    "queue": playlist.snapshot(),
+                }
+            )
+
+        body = request.get_json(silent=True) or {}
+        session = body.get("session")
+        if not session:
+            return jsonify({"error": "Champ 'session' manquant"}), 400
+
+        try:
+            _ensure_session_exists(session)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+        item, position = playlist.add(session)
+        servo_logger.logger.info(
+            f"PLAYLIST_ENQUEUE | session={session} | trigger=api | position={position}"
+        )
+
+        _ensure_playback_running()
+
+        current = _get_current_entry()
+        status = "queued"
+        http_code = 201
+        if current and current.get("id") == item["id"]:
+            status = "playing"
+            http_code = 200
+
+        return (
+            jsonify(
+                {
+                    "status": status,
+                    "item": item,
+                    "position": position,
+                    "current": current,
+                }
+            ),
+            http_code,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur playlist: {e}"}), 500
+
+
+@app.route("/playlist/<int:item_id>", methods=["DELETE"])
+def playlist_delete(item_id: int):
+    removed = playlist.remove(item_id)
+    if not removed:
+        return jsonify({"error": "Element introuvable"}), 404
+    servo_logger.logger.info(
+        f"PLAYLIST_REMOVE | id={item_id} | session={removed['session']}"
+    )
+    return jsonify({"status": "removed", "item": removed})
+
+
+@app.route("/playlist/<int:item_id>/move", methods=["POST"])
+def playlist_move(item_id: int):
+    body = request.get_json(silent=True) or {}
+    direction = (body.get("direction") or "").lower()
+    if direction not in {"up", "down"}:
+        return jsonify({"error": "Direction invalide"}), 400
+
+    offset = -1 if direction == "up" else 1
+    outcome = playlist.move(item_id, offset)
+    if outcome == "not_found":
+        return jsonify({"error": "Element introuvable"}), 404
+    if outcome == "noop":
+        return jsonify({"status": "noop"})
+
+    servo_logger.logger.info(
+        f"PLAYLIST_MOVE | id={item_id} | direction={direction}"
+    )
+    return jsonify({"status": "moved", "direction": direction})
+
+
+@app.route("/playlist/skip", methods=["POST"])
+def playlist_skip():
+    try:
+        status_info = player.status()
+        if status_info.get("running"):
+            servo_logger.logger.info("PLAYLIST_SKIP_REQUEST | state=running")
+            player.stop(reason="skip")
+            return jsonify({"status": "skipping"})
+
+        servo_logger.logger.info("PLAYLIST_SKIP_REQUEST | state=idle")
+        _ensure_playback_running()
+        current = _get_current_entry()
+        if current:
+            return jsonify({"status": "playing", "current": current})
+        return jsonify({"status": "idle"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur skip: {e}"}), 500
 
 
 # -------------------- Channels API --------------------

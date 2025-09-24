@@ -21,7 +21,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Callable
 
 from pydub import AudioSegment
 import simpleaudio as sa
@@ -81,6 +81,9 @@ class SyncPlayer:
         self._gaze_thread_running = threading.Event()
         self._gaze_thread_running.set()
         self._gaze_thread.start()
+
+        self._on_track_finished: Optional[Callable[[str, Optional[str], Optional[str]], None]] = None
+        self._stop_reason: Optional[str] = None
 
     # ---------------- File loading ----------------
     def load(self, session_dir: str | Path):
@@ -142,6 +145,11 @@ class SyncPlayer:
                 if old_channels[k] != self.channels[k]:
                     status = "ENABLED" if self.channels[k] else "DISABLED"
                     servo_logger.logger.info(f"CHANNEL_{status} | {k}")
+
+    def set_on_track_finished(self, callback: Optional[Callable[[str, Optional[str], Optional[str]], None]]):
+        """Register a callback invoked when playback ends."""
+        with self._lock:
+            self._on_track_finished = callback
 
     # ---------------- Gaze follower loop (background) ----------------
     def _gaze_follower_loop(self):
@@ -316,209 +324,188 @@ class SyncPlayer:
     def _runner(self):
         assert self.timeline and self.audio
 
-        # start audio from beginning or from resume position
-        start_pos_ms = getattr(self, "_resume_from_ms", 0)
-        if start_pos_ms:
-            segment = self.audio[start_pos_ms:]
-            self._play_obj = sa.play_buffer(
-                segment.raw_data,
-                num_channels=segment.channels,
-                bytes_per_sample=segment.sample_width,
-                sample_rate=segment.frame_rate,
-            )
-            servo_logger.logger.info(f"AUDIO_RESUME | From: {start_pos_ms/1000.0:.3f}s")
-        else:
-            self._play_obj = sa.play_buffer(
-                self.audio.raw_data,
-                num_channels=self.audio.channels,
-                bytes_per_sample=self.audio.sample_width,
-                sample_rate=self.audio.frame_rate,
-            )
-            servo_logger.logger.info("AUDIO_START | From beginning")
-
-        # Marquer le début audio pour les logs
-        servo_logger.start_audio()
-
-        # initialize timing
-        now = time.time()
-        if start_pos_ms:
-            # resume: align start_time so that (time.time() - start_time) == start_pos_sec
-            self._start_time = now - (start_pos_ms / 1000.0)
-        else:
-            self._start_time = now
-        self._running.set()
-        self._paused.clear()
-        # clear resume marker
-        if hasattr(self, "_resume_from_ms"):
-            delattr(self, "_resume_from_ms")
-
-        # Compteurs pour statistiques
+        finish_reason = "completed"
+        error_message: Optional[str] = None
         frame_count = 0
         skipped_frames = 0
 
-        # main loop
-        for frame in self.timeline:
-            frame_count += 1
-
-            # pause loop: freeze time base (we shift _start_time to account for paused duration)
-            while self._paused.is_set() and self._running.is_set():
-                time.sleep(0.01)
-                self._start_time += 0.01  # don't let timeline advance during pause
-            if not self._running.is_set():
-                break
-
-            target_time = self._start_time + frame["timestamp_ms"] / 1000.0
-            delay = target_time - time.time()
-
-            # Détection de retard critique
-            if delay < -0.05:  # Si on est en retard de plus de 50ms
-                skipped_frames += 1
-                if (
-                    skipped_frames % 10 == 1
-                ):  # Log tous les 10 frames skippées pour éviter le spam
-                    servo_logger.logger.warning(
-                        f"TIMING_LAG | Frame delayed by {-delay:.3f}s | Skipped: {skipped_frames}"
-                    )
-
-            if delay > 0:
-                time.sleep(delay)
-
-            # compute targets for this frame (timeline baseline)
-            tgt = {
-                "jaw": float(frame["jaw_deg"]),
-                "neck": float(frame["neck_pan_deg"]),
-                "eye_left": float(frame["eye_left_deg"]),
-                "eye_right": float(frame["eye_right_deg"]),
-            }
-            # update last target baseline
-            self._last_target.update(tgt)
-
-            # send to hardware only if channel enabled
-            with self._lock:
-                ch = self.channels.copy()
-
-            # --- override neck/eyes with gaze if available & enabled ---
-            gaze_cmd = None
-            if self.track_enable:
-                gaze_cmd = self.gaze.get_command()
-
-            # apply jaw from timeline (never overridden)
-            if ch.get("jaw", True):
-                self.hw.set_named_angle("jaw", tgt["jaw"], log_enabled=True)
-            else:
-                servo_logger.log_servo_command(
-                    "jaw", self._last_target["jaw"], enabled=False
-                )
-
-            # neck
-            if gaze_cmd and gaze_cmd.get("mode") == "track" and ch.get("neck", True):
-                try:
-                    neck_angle = float(gaze_cmd["neck"]["yaw_deg"])
-                    self.hw.set_named_angle("neck_pan", neck_angle, log_enabled=True)
-                    self._last_target["neck"] = neck_angle
-                except Exception as e:
-                    servo_logger.logger.warning(f"GAZE_OVERRIDE_NECK_ERROR | {e}")
-                    # fallback timeline
-                    if ch.get("neck", True):
-                        self.hw.set_named_angle(
-                            "neck_pan", tgt["neck"], log_enabled=True
-                        )
-                    else:
-                        servo_logger.log_servo_command(
-                            "neck_pan", self._last_target["neck"], enabled=False
-                        )
-            else:
-                if ch.get("neck", True):
-                    self.hw.set_named_angle("neck_pan", tgt["neck"], log_enabled=True)
-                else:
-                    servo_logger.log_servo_command(
-                        "neck_pan", self._last_target["neck"], enabled=False
-                    )
-
-            # eye_left
-            if (
-                gaze_cmd
-                and gaze_cmd.get("mode") == "track"
-                and ch.get("eye_left", True)
-            ):
-                try:
-                    eyeL_angle = float(gaze_cmd["eyeL"]["yaw_deg"])
-                    self.hw.set_named_angle("eye_left", eyeL_angle, log_enabled=True)
-                    self._last_target["eye_left"] = eyeL_angle
-                except Exception as e:
-                    servo_logger.logger.warning(f"GAZE_OVERRIDE_EYEL_ERROR | {e}")
-                    if ch.get("eye_left", True):
-                        self.hw.set_named_angle(
-                            "eye_left", tgt["eye_left"], log_enabled=True
-                        )
-                    else:
-                        servo_logger.log_servo_command(
-                            "eye_left", self._last_target["eye_left"], enabled=False
-                        )
-            else:
-                if ch.get("eye_left", True):
-                    self.hw.set_named_angle(
-                        "eye_left", tgt["eye_left"], log_enabled=True
-                    )
-                else:
-                    servo_logger.log_servo_command(
-                        "eye_left", self._last_target["eye_left"], enabled=False
-                    )
-
-            # eye_right
-            if (
-                gaze_cmd
-                and gaze_cmd.get("mode") == "track"
-                and ch.get("eye_right", True)
-            ):
-                try:
-                    eyeR_angle = float(gaze_cmd["eyeR"]["yaw_deg"])
-                    self.hw.set_named_angle("eye_right", eyeR_angle, log_enabled=True)
-                    self._last_target["eye_right"] = eyeR_angle
-                except Exception as e:
-                    servo_logger.logger.warning(f"GAZE_OVERRIDE_EYER_ERROR | {e}")
-                    if ch.get("eye_right", True):
-                        self.hw.set_named_angle(
-                            "eye_right", tgt["eye_right"], log_enabled=True
-                        )
-                    else:
-                        servo_logger.log_servo_command(
-                            "eye_right", self._last_target["eye_right"], enabled=False
-                        )
-            else:
-                if ch.get("eye_right", True):
-                    self.hw.set_named_angle(
-                        "eye_right", tgt["eye_right"], log_enabled=True
-                    )
-                else:
-                    servo_logger.log_servo_command(
-                        "eye_right", self._last_target["eye_right"], enabled=False
-                    )
-
-        # finish
         try:
-            if self._play_obj:
-                # Attendre la fin de l'audio et logger
-                self._play_obj.wait_done()
-                servo_logger.log_audio_end()
+            start_pos_ms = getattr(self, "_resume_from_ms", 0)
+            self._stop_reason = None
+
+            if start_pos_ms:
+                segment = self.audio[start_pos_ms:]
+                self._play_obj = sa.play_buffer(
+                    segment.raw_data,
+                    num_channels=segment.channels,
+                    bytes_per_sample=segment.sample_width,
+                    sample_rate=segment.frame_rate,
+                )
+                servo_logger.logger.info(f"AUDIO_RESUME | From: {start_pos_ms/1000.0:.3f}s")
+            else:
+                self._play_obj = sa.play_buffer(
+                    self.audio.raw_data,
+                    num_channels=self.audio.channels,
+                    bytes_per_sample=self.audio.sample_width,
+                    sample_rate=self.audio.frame_rate,
+                )
+                servo_logger.logger.info("AUDIO_START | From beginning")
+
+            servo_logger.start_audio()
+
+            now = time.time()
+            if start_pos_ms:
+                self._start_time = now - (start_pos_ms / 1000.0)
+            else:
+                self._start_time = now
+            self._running.set()
+            self._paused.clear()
+            if hasattr(self, "_resume_from_ms"):
+                delattr(self, "_resume_from_ms")
+
+            for frame in self.timeline:
+                frame_count += 1
+
+                while self._paused.is_set() and self._running.is_set():
+                    time.sleep(0.01)
+                    self._start_time += 0.01
+                if not self._running.is_set():
+                    finish_reason = self._stop_reason or "stopped"
+                    break
+
+                target_time = self._start_time + frame["timestamp_ms"] / 1000.0
+                delay = target_time - time.time()
+
+                if delay < -0.05:
+                    skipped_frames += 1
+                    if skipped_frames % 10 == 1:
+                        servo_logger.logger.warning(
+                            f"TIMING_LAG | Frame delayed by {-delay:.3f}s | Skipped: {skipped_frames}"
+                        )
+
+                if delay > 0:
+                    time.sleep(delay)
+
+                tgt = {
+                    "jaw": float(frame["jaw_deg"]),
+                    "neck": float(frame["neck_pan_deg"]),
+                    "eye_left": float(frame["eye_left_deg"]),
+                    "eye_right": float(frame["eye_right_deg"]),
+                }
+                self._last_target.update(tgt)
+
+                with self._lock:
+                    ch = self.channels.copy()
+
+                gaze_cmd = None
+                if self.track_enable:
+                    gaze_cmd = self.gaze.get_command()
+
+                if ch.get("jaw", True):
+                    self.hw.set_named_angle("jaw", tgt["jaw"], log_enabled=True)
+                else:
+                    servo_logger.log_servo_command("jaw", self._last_target["jaw"], enabled=False)
+
+                if gaze_cmd and gaze_cmd.get("mode") == "track" and ch.get("neck", True):
+                    try:
+                        neck_angle = float(gaze_cmd["neck"]["yaw_deg"])
+                        self.hw.set_named_angle("neck_pan", neck_angle, log_enabled=True)
+                        self._last_target["neck"] = neck_angle
+                    except Exception as e:
+                        servo_logger.logger.warning(f"GAZE_OVERRIDE_NECK_ERROR | {e}")
+                        if ch.get("neck", True):
+                            self.hw.set_named_angle("neck_pan", tgt["neck"], log_enabled=True)
+                        else:
+                            servo_logger.log_servo_command("neck_pan", self._last_target["neck"], enabled=False)
+                else:
+                    if ch.get("neck", True):
+                        self.hw.set_named_angle("neck_pan", tgt["neck"], log_enabled=True)
+                    else:
+                        servo_logger.log_servo_command("neck_pan", self._last_target["neck"], enabled=False)
+
+                if gaze_cmd and gaze_cmd.get("mode") == "track" and ch.get("eye_left", True):
+                    try:
+                        eyeL_angle = float(gaze_cmd["eyeL"]["yaw_deg"])
+                        self.hw.set_named_angle("eye_left", eyeL_angle, log_enabled=True)
+                        self._last_target["eye_left"] = eyeL_angle
+                    except Exception as e:
+                        servo_logger.logger.warning(f"GAZE_OVERRIDE_EYEL_ERROR | {e}")
+                        if ch.get("eye_left", True):
+                            self.hw.set_named_angle("eye_left", tgt["eye_left"], log_enabled=True)
+                        else:
+                            servo_logger.log_servo_command("eye_left", self._last_target["eye_left"], enabled=False)
+                else:
+                    if ch.get("eye_left", True):
+                        self.hw.set_named_angle("eye_left", tgt["eye_left"], log_enabled=True)
+                    else:
+                        servo_logger.log_servo_command("eye_left", self._last_target["eye_left"], enabled=False)
+
+                if gaze_cmd and gaze_cmd.get("mode") == "track" and ch.get("eye_right", True):
+                    try:
+                        eyeR_angle = float(gaze_cmd["eyeR"]["yaw_deg"])
+                        self.hw.set_named_angle("eye_right", eyeR_angle, log_enabled=True)
+                        self._last_target["eye_right"] = eyeR_angle
+                    except Exception as e:
+                        servo_logger.logger.warning(f"GAZE_OVERRIDE_EYER_ERROR | {e}")
+                        if ch.get("eye_right", True):
+                            self.hw.set_named_angle("eye_right", tgt["eye_right"], log_enabled=True)
+                        else:
+                            servo_logger.log_servo_command("eye_right", self._last_target["eye_right"], enabled=False)
+                else:
+                    if ch.get("eye_right", True):
+                        self.hw.set_named_angle("eye_right", tgt["eye_right"], log_enabled=True)
+                    else:
+                        servo_logger.log_servo_command("eye_right", self._last_target["eye_right"], enabled=False)
+
+        except Exception as exc:
+            finish_reason = "error"
+            error_message = str(exc)
+            servo_logger.logger.exception(f"PLAYBACK_ERROR | {exc}")
         finally:
-            self._running.clear()
+            try:
+                if self._play_obj:
+                    self._play_obj.wait_done()
+                    servo_logger.log_audio_end()
+            except Exception as wait_exc:
+                servo_logger.logger.warning(f"AUDIO_WAIT_ERROR | {wait_exc}")
+            finally:
+                self._running.clear()
 
-            # Statistiques finales
-            servo_logger.logger.info(
-                f"PLAYBACK_STATS | Total frames: {frame_count} | Skipped: {skipped_frames}"
-            )
-            if frame_count > 0:
-                skip_percentage = (skipped_frames / frame_count) * 100
-                if skip_percentage > 5:
-                    servo_logger.logger.warning(
-                        f"HIGH_SKIP_RATE | {skip_percentage:.1f}% frames skipped"
-                    )
+                servo_logger.logger.info(
+                    f"PLAYBACK_STATS | Total frames: {frame_count} | Skipped: {skipped_frames}"
+                )
+                if frame_count > 0:
+                    skip_percentage = (skipped_frames / frame_count) * 100
+                    if skip_percentage > 5:
+                        servo_logger.logger.warning(
+                            f"HIGH_SKIP_RATE | {skip_percentage:.1f}% frames skipped"
+                        )
 
-            # Après la lecture, on laisse la boucle gaze_follower prendre le relais pour neck/eyes.
-            # on remet la tête en neutre partielle? Ici on laisse neutral() gérer jaw et autres sécurités.
-            self.hw.neutral()
-            servo_logger.end_session()
+                self.hw.neutral()
+                servo_logger.end_session()
+
+                with self._lock:
+                    stop_reason = self._stop_reason
+                    callback = self._on_track_finished
+                    self._stop_reason = None
+
+                if finish_reason == "stopped" and stop_reason:
+                    finish_reason = stop_reason
+
+                session_name = None
+                if self.session_dir:
+                    try:
+                        session_name = self.session_dir.name
+                    except Exception:
+                        session_name = str(self.session_dir)
+
+                if callback:
+                    try:
+                        callback(finish_reason, error_message, session_name)
+                    except Exception:
+                        servo_logger.logger.exception("PLAYBACK_CALLBACK_ERROR")
+
+                self._play_obj = None
 
     # ---------------- Public API ----------------
     def play(self):
@@ -560,29 +547,29 @@ class SyncPlayer:
             self._thread = threading.Thread(target=self._runner, daemon=True)
             self._thread.start()
 
-    def stop(self):
-        servo_logger.logger.info("PLAYBACK_STOP")
+    def stop(self, reason: str = "stop"):
+        servo_logger.logger.info(f"PLAYBACK_STOP | reason={reason}")
+        with self._lock:
+            self._stop_reason = reason
+
         self._running.clear()
         self._paused.clear()
 
-        # Arrêter l'audio immédiatement
         if self._play_obj:
             try:
                 self._play_obj.stop()
             except Exception as e:
                 servo_logger.logger.warning(f"AUDIO_STOP_ERROR | {e}")
 
-        # Attendre que le thread se termine
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)  # Timeout pour éviter le blocage
+            self._thread.join(timeout=2.0)
             if self._thread.is_alive():
                 servo_logger.logger.warning(
                     "THREAD_STOP_TIMEOUT | Thread did not stop cleanly"
                 )
-
-        # Remettre les servos en position neutre (jaw + fallback)
         self.hw.neutral()
         servo_logger.end_session()
+
 
     def status(self):
         st = {

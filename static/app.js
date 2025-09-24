@@ -32,6 +32,10 @@ const elBadge = $("#badgeState");
 const elConnection = document.getElementById('connectionStatus');
 const elConnectionDot = document.getElementById('connectionStatusDot');
 const elConnectionText = document.getElementById('connectionStatusText');
+const elPlaylistList = $("#playlistList");
+const elPlaylistCurrent = $("#playlistCurrent");
+const elPlaylistSkip = $("#playlistSkipBtn");
+const elPlaylistRefresh = $("#playlistRefreshBtn");
 
 // Channel checkboxes
 const elCbEyeLeft = $("#cbEyeLeft");
@@ -43,6 +47,10 @@ let fileJson = null;
 let fileMp3 = null;
 let serverReachable = true;
 let nextStatusAttempt = 0;
+let playlistCurrentData = null;
+let playlistQueueData = [];
+let playlistFetchInFlight = false;
+let lastPlaylistFetch = 0;
 
 function isJson(f) {
   return f && f.name.toLowerCase().endsWith(".json");
@@ -216,11 +224,196 @@ async function fetchSessions() {
 }
 elRefresh?.addEventListener("click", fetchSessions);
 
+// ===================== Playlist =====================
+function prettifySessionName(name) {
+  if (!name) return "";
+  return name.replace(/[_-]+/g, " ").trim();
+}
+
+function renderPlaylist(payload) {
+  playlistCurrentData = payload && payload.current ? payload.current : null;
+  playlistQueueData = Array.isArray(payload && payload.queue) ? payload.queue : [];
+
+  if (elPlaylistCurrent) {
+    elPlaylistCurrent.innerHTML = "";
+    if (playlistCurrentData && playlistCurrentData.session) {
+      const strong = document.createElement("strong");
+      strong.textContent = "En cours :";
+      const span = document.createElement("span");
+      span.textContent = " " + prettifySessionName(playlistCurrentData.session);
+      elPlaylistCurrent.appendChild(strong);
+      elPlaylistCurrent.appendChild(span);
+    } else if (playlistQueueData.length) {
+      elPlaylistCurrent.textContent = "Lecture en attente...";
+    } else {
+      elPlaylistCurrent.textContent = "Playlist vide";
+    }
+  }
+
+  if (elPlaylistList) {
+    elPlaylistList.innerHTML = "";
+    if (!playlistQueueData.length) {
+      const empty = document.createElement("li");
+      empty.className = "playlist-empty";
+      empty.textContent = "Aucun morceau en attente";
+      elPlaylistList.appendChild(empty);
+    } else {
+      playlistQueueData.forEach((item, index) => {
+        const li = document.createElement("li");
+        li.className = "playlist-item";
+        if (index === 0) li.classList.add("is-next");
+        li.dataset.id = String(item.id);
+
+        const name = document.createElement("span");
+        name.className = "playlist-name";
+        name.textContent = `${index + 1}. ${prettifySessionName(item.session)}`;
+
+        const controls = document.createElement("div");
+        controls.className = "playlist-controls";
+
+        const btnUp = document.createElement("button");
+        btnUp.className = "playlist-btn";
+        btnUp.dataset.action = "up";
+        btnUp.textContent = "Monter";
+
+        const btnDown = document.createElement("button");
+        btnDown.className = "playlist-btn";
+        btnDown.dataset.action = "down";
+        btnDown.textContent = "Descendre";
+
+        const btnDelete = document.createElement("button");
+        btnDelete.className = "playlist-btn danger";
+        btnDelete.dataset.action = "delete";
+        btnDelete.textContent = "Supprimer";
+
+        controls.appendChild(btnUp);
+        controls.appendChild(btnDown);
+        controls.appendChild(btnDelete);
+
+        li.appendChild(name);
+        li.appendChild(controls);
+        elPlaylistList.appendChild(li);
+      });
+    }
+  }
+
+  if (elPlaylistSkip) {
+    const hasSomething =
+      !!(playlistCurrentData && playlistCurrentData.session) ||
+      playlistQueueData.length > 0;
+    elPlaylistSkip.disabled = !hasSomething;
+  }
+}
+
+async function refreshPlaylist(force = false) {
+  if (playlistFetchInFlight) {
+    return;
+  }
+  if (!force && !serverReachable) {
+    return;
+  }
+  const now = Date.now();
+  if (!force && now - lastPlaylistFetch < 1200) {
+    return;
+  }
+
+  playlistFetchInFlight = true;
+  lastPlaylistFetch = now;
+  try {
+    const res = await fetch("/playlist");
+    if (!res.ok) {
+      throw new Error(`playlist_http_${res.status}`);
+    }
+    const payload = await res.json();
+    lastPlaylistFetch = Date.now();
+    renderPlaylist(payload);
+  } catch (e) {
+    if (force) {
+      toast("Playlist indisponible", true);
+    }
+    playlistQueueData = [];
+    playlistCurrentData = null;
+    if (elPlaylistCurrent) {
+      elPlaylistCurrent.textContent = "Playlist indisponible";
+    }
+    if (elPlaylistList) {
+      elPlaylistList.innerHTML = "";
+      const empty = document.createElement("li");
+      empty.className = "playlist-empty";
+      empty.textContent = "Playlist indisponible";
+      elPlaylistList.appendChild(empty);
+    }
+    if (elPlaylistSkip) {
+      elPlaylistSkip.disabled = true;
+    }
+  } finally {
+    playlistFetchInFlight = false;
+  }
+}
+
+elPlaylistList?.addEventListener("click", async (event) => {
+  const btn = event.target.closest("button[data-action]");
+  if (!btn) return;
+  const itemEl = btn.closest("li[data-id]");
+  if (!itemEl) return;
+  const id = parseInt(itemEl.dataset.id, 10);
+  if (Number.isNaN(id)) return;
+  const action = btn.dataset.action;
+
+  try {
+    if (action === "delete") {
+      const res = await fetch(`/playlist/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt);
+      }
+    } else if (action === "up" || action === "down") {
+      const res = await fetch(`/playlist/${id}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: action }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt);
+      }
+    }
+    await refreshPlaylist(true);
+  } catch (e) {
+    toast("Erreur playlist: " + e, true);
+  }
+});
+
+elPlaylistSkip?.addEventListener("click", async () => {
+  elPlaylistSkip.disabled = true;
+  try {
+    const res = await fetch("/playlist/skip", { method: "POST" });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt);
+    }
+    const payload = await res.json().catch(() => ({}));
+    if (payload && payload.status === "idle") {
+      toast("Playlist vide", true);
+    }
+    await refreshPlaylist(true);
+    updateStatus();
+  } catch (e) {
+    toast("Erreur skip playlist: " + e, true);
+  } finally {
+    elPlaylistSkip.disabled = false;
+  }
+});
+
+elPlaylistRefresh?.addEventListener("click", () => {
+  refreshPlaylist(true);
+});
+
 // Controls
 elPlay?.addEventListener("click", async () => {
   const sid = elSelect.value;
   if (!sid) {
-    toast("Aucune session sélectionnée", true);
+    toast("Aucune session selectionnee", true);
     return;
   }
 
@@ -234,13 +427,24 @@ elPlay?.addEventListener("click", async () => {
     if (!res.ok) {
       const errorText = await res.text();
       toast("Erreur lecture: " + errorText, true);
-    } else {
-      updateStatus();
+      return;
     }
+
+    const payload = await res.json().catch(() => ({}));
+    if (payload.status === "queued") {
+      const pos = payload.position ? ` (position ${payload.position})` : "";
+      toast("Session ajoutee a la playlist" + pos);
+    } else if (payload.status === "playing") {
+      toast("Lecture demarree");
+    }
+
+    await refreshPlaylist(true);
+    updateStatus();
   } catch (e) {
-    toast("Erreur réseau lors de la lecture", true);
+    toast("Erreur reseau lors de la lecture", true);
   }
 });
+
 
 elPause?.addEventListener("click", async () => {
   try {
@@ -263,11 +467,13 @@ elResume?.addEventListener("click", async () => {
 elStop?.addEventListener("click", async () => {
   try {
     await fetch("/stop", { method: "POST" });
+    await refreshPlaylist(true);
     updateStatus();
   } catch (e) {
     toast("Erreur stop", true);
   }
 });
+
 
 // Status
 async function updateStatus() {
@@ -310,6 +516,7 @@ async function updateStatus() {
     }
     serverReachable = true;
     nextStatusAttempt = Date.now() + 1500;
+    refreshPlaylist();
   } catch (e) {
     if (serverReachable) {
       toast("Skull non disponible", true);
@@ -321,6 +528,19 @@ async function updateStatus() {
     elStatus.textContent = "Skull non disponible (serveur injoignable)";
     elBadge.textContent = "OFFLINE";
     elBadge.className = "badge is-offline";
+    if (elPlaylistCurrent) {
+      elPlaylistCurrent.textContent = "Playlist indisponible";
+    }
+    if (elPlaylistList) {
+      elPlaylistList.innerHTML = "";
+      const empty = document.createElement("li");
+      empty.className = "playlist-empty";
+      empty.textContent = "Playlist indisponible";
+      elPlaylistList.appendChild(empty);
+    }
+    if (elPlaylistSkip) {
+      elPlaylistSkip.disabled = true;
+    }
 
     if (elConnection) {
       elConnection.classList.remove("online");
@@ -467,6 +687,7 @@ window.addEventListener("load", () => {
   fetchPitch(); // AJOUTER CETTE LIGNE
   setInterval(updateStatus, 1500);
   updatePitchDisplay(); // AJOUTER CETTE LIGNE
+  refreshPlaylist(true);
   updatePills();
 });
 
