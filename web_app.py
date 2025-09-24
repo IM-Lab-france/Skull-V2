@@ -34,14 +34,14 @@ from flask import (
 
 from sync_player import SyncPlayer
 from logger import servo_logger
+from flask import send_from_directory
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
-CONFIG_DIR = Path('config')
+CONFIG_DIR = Path("config")
 CONFIG_DIR.mkdir(exist_ok=True)
-PITCH_CONFIG_PATH = CONFIG_DIR / 'pitch_offsets.json'
-CHANNELS_CONFIG_PATH = CONFIG_DIR / 'channels_state.json'
-
+PITCH_CONFIG_PATH = CONFIG_DIR / "pitch_offsets.json"
+CHANNELS_CONFIG_PATH = CONFIG_DIR / "channels_state.json"
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -52,6 +52,7 @@ CHANNELS_DEFAULT = {"eye_left": True, "eye_right": True, "neck": True, "jaw": Tr
 player_channels = CHANNELS_DEFAULT.copy()
 # expose to player if it supports it
 setattr(player, "channels", player_channels)
+
 
 def _clamp_pitch_offset(value: float) -> float:
     return max(-45.0, min(45.0, value))
@@ -137,8 +138,6 @@ load_pitch_offsets()
 load_channel_flags()
 
 
-
-
 def sanitize_scene_name(name: str) -> str:
     """Nettoie le nom de scène pour créer un nom de répertoire valide"""
     if not name or not name.strip():
@@ -160,8 +159,9 @@ def index():
 
 @app.route("/favicon.ico")
 def favicon():
-    # Empty 204 to silence browser requests
-    return ("", 204)
+    return send_from_directory(
+        app.static_folder, "SkullPlayer.png", mimetype="image/png"
+    )
 
 
 @app.route("/upload", methods=["POST"])
