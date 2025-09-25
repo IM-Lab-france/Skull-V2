@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 import uuid
@@ -22,6 +23,16 @@ LIBRARY_ROOT = (
 COOLDOWN_SECONDS = int(os.environ.get("PLAYLIST_COOLDOWN", DEFAULT_COOLDOWN_SECONDS))
 FORWARD_TIMEOUT = float(os.environ.get("PLAYLIST_FORWARD_TIMEOUT", "10"))
 STATUS_TIMEOUT = float(os.environ.get("PLAYLIST_STATUS_TIMEOUT", "6"))
+
+HEADER_IMAGE_SRC = "/static/web.png"
+HEADER_IMAGE_CLASS = "fixed-header-image"
+HEADER_IMAGE_STYLE = (
+    "<style>"
+    ".fixed-header-image{position:fixed;top:0;left:50%;transform:translateX(-50%);"
+    "z-index:1000;pointer-events:none;max-width:100%;height:auto;}"
+    "</style>"
+)
+_BODY_TAG_RE = re.compile(r"<body([^>]*)>", re.IGNORECASE)
 
 
 def _backend_base_url() -> str:
@@ -127,6 +138,24 @@ def _json(
     return resp
 
 
+def _inject_header_image(html: str) -> str:
+    if HEADER_IMAGE_CLASS in html:
+        return html
+    updated = html
+    if "</head>" in updated:
+        updated = updated.replace("</head>", HEADER_IMAGE_STYLE + "</head>", 1)
+    match = _BODY_TAG_RE.search(updated)
+    if match:
+        start, end = match.span()
+        body_tag = match.group(0)
+        injection = (
+            f"{body_tag}<img src=\"{HEADER_IMAGE_SRC}\" alt=\"Page overlay\" "
+            f"class=\"{HEADER_IMAGE_CLASS}\">"
+        )
+        updated = updated[:start] + injection + updated[end:]
+    return updated
+
+
 @app.route("/favicon.ico")
 def favicon() -> Response:
     return app.send_static_file("SkullPlayer.png")
@@ -137,15 +166,15 @@ def index() -> Response:
     client_id, created = _resolve_client()
     state = _client_state(client_id)
     cooldown = int(_cooldown_remaining(state))
-    resp = app.make_response(
-        render_template(
-            "playlist_only.html",
-            cooldown=COOLDOWN_SECONDS,
-            cooldown_remaining=cooldown,
-            available_sessions=_scan_available_sessions(),
-            playlist_state=_fetch_playlist_state(),
-        )
+    html = render_template(
+        "playlist_only.html",
+        cooldown=COOLDOWN_SECONDS,
+        cooldown_remaining=cooldown,
+        available_sessions=_scan_available_sessions(),
+        playlist_state=_fetch_playlist_state(),
     )
+    html = _inject_header_image(html)
+    resp = app.make_response(html)
     if created:
         resp.set_cookie(
             CLIENT_COOKIE_NAME,
