@@ -1,0 +1,51 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Playlist Publique</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="icon" type="image/png" href="/static/SkullPlayer.png">
+    <link rel="stylesheet" href="/static/playlist.css">
+    <meta name="theme-color" content="#ff7518">
+</head>
+
+<body>
+    <main class="container">
+        <header>
+            <h1>&#x1F383; Morceaux ensorcel&eacute;s</h1>
+            <p class="subtitle">S&eacute;lectionne un sort musical pour l&rsquo;invoquer &#x2728;</p>
+        </header>
+
+        <section class="card">
+            <h2>&#x1F3B6; Grimoire</h2>
+            <p class="hint" id="cooldownHint">
+                &#x23F3; Prochain sort disponible dans <span id="cooldownRemaining">-</span>s
+            </p>
+            <ul id="sessionList" class="available-list"></ul>
+        </section>
+
+        <section class="card">
+            <h2>&#x1F47B; Playlist en cours</h2>
+            <div id="playlistCurrent" class="playlist-current">&#x1F3B5; Silence terrifiant&hellip;</div>
+            <ul id="playlistQueue" class="playlist-list"></ul>
+        </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <!-- Popin effrayante -->
+    <div id="scaryOverlay" class="scary-overlay hidden">
+        <div class="scary-content">
+            👻 Invocation en cours…
+        </div>
+    </div>
+    <script>
+        window.PLAYLIST_COOLDOWN = {{ cooldown }};
+        window.PLAYLIST_COOLDOWN_REMAINING = {{ cooldown_remaining }};
+        window.PLAYLIST_SESSIONS = {{ available_sessions | tojson }};
+        window.PLAYLIST_STATE = {{ playlist_state | tojson }};
+    </script>
+    <script src="/static/playlist.js"></script>
+</body>
+
+</html>
