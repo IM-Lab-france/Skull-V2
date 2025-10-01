@@ -24,6 +24,8 @@ COOLDOWN_SECONDS = int(os.environ.get("PLAYLIST_COOLDOWN", DEFAULT_COOLDOWN_SECO
 FORWARD_TIMEOUT = float(os.environ.get("PLAYLIST_FORWARD_TIMEOUT", "10"))
 STATUS_TIMEOUT = float(os.environ.get("PLAYLIST_STATUS_TIMEOUT", "6"))
 
+VOLUME_ACTIONS = {"up", "down", "mute"}
+
 HEADER_IMAGE_SRC = "/static/web.png"
 HEADER_IMAGE_CLASS = "fixed-header-image"
 HEADER_IMAGE_STYLE = (
@@ -199,6 +201,42 @@ def api_sessions() -> Response:
     }
     return _json(payload, client_id=client_id, set_cookie=created)
 
+
+@app.route("/api/volume", methods=["POST"])
+def api_volume() -> Response:
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "").lower()
+    if action not in VOLUME_ACTIONS:
+        return _json({"error": "Action volume inconnue"}, status=400)
+
+    try:
+        upstream = requests.post(
+            f"{_backend_base_url()}/volume",
+            json={"action": action},
+            timeout=FORWARD_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        return _json(
+            {"error": f"Serveur principal indisponible: {exc}"},
+            status=502,
+        )
+
+    try:
+        payload = upstream.json()
+    except ValueError:
+        payload = {"status": upstream.text.strip()}
+
+    if not upstream.ok:
+        message = (
+            payload.get("error")
+            or payload.get("message")
+            or payload.get("status")
+            or "Echec serveur"
+        )
+        payload["error"] = message
+        return _json(payload, status=upstream.status_code)
+
+    return _json(payload, status=upstream.status_code)
 
 @app.route("/api/enqueue", methods=["POST"])
 def api_enqueue() -> Response:

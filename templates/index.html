@@ -44,6 +44,16 @@
                         <button id="stopBtn" class="btn danger">Stop</button>
                     </div>
 
+                    <div class="volume-box">
+                        <h3 class="volume-title">Volume (bluetoothctl)</h3>
+                        <div class="volume-controls" role="group" aria-label="Contrôle du volume">
+                            <button type="button" class="volume-btn" data-volume-action="down" aria-label="Baisser le volume">-</button>
+                            <button type="button" class="volume-btn volume-btn-mute" data-volume-action="mute" aria-label="Couper le son">Mute</button>
+                            <button type="button" class="volume-btn" data-volume-action="up" aria-label="Augmenter le volume">+</button>
+                        </div>
+                        <p class="hint volume-hint">Les commandes partent via bluetoothctl (menu transport).</p>
+                    </div>
+
                     <!-- Status en accordéon -->
                     <details class="accordion-item slim status-accordion" open>
                         <summary>

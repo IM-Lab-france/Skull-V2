@@ -587,6 +587,68 @@ body.theme-halloween::after {
     margin-top: 8px
 }
 
+.volume-box {
+    margin-top: 18px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, .04);
+}
+
+.volume-title {
+    margin: 0 0 10px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.volume-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.volume-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    background: linear-gradient(135deg, var(--orange), var(--orange-light));
+    color: #0b0f16;
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .2s ease, filter .15s ease;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+
+.volume-btn:hover {
+    transform: translateY(-2px) scale(1.03);
+    filter: brightness(1.05);
+}
+
+.volume-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.volume-btn-mute {
+    background: linear-gradient(135deg, var(--danger), #ff6b6b);
+    color: #fff;
+}
+
+.volume-btn-mute:hover {
+    box-shadow: 0 6px 18px rgba(220, 53, 69, .4);
+}
+
+.volume-hint {
+    margin: 10px 0 0;
+    font-size: .85rem;
+    color: var(--muted);
+}
+
 /* ========= Zone upload ========= */
 .dropzone {
     border: 2px dashed rgba(255, 122, 24, .4);

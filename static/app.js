@@ -36,6 +36,7 @@ const elPlaylistList = $("#playlistList");
 const elPlaylistCurrent = $("#playlistCurrent");
 const elPlaylistSkip = $("#playlistSkipBtn");
 const elPlaylistRefresh = $("#playlistRefreshBtn");
+const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
 
 // Channel checkboxes
 const elCbEyeLeft = $("#cbEyeLeft");
@@ -51,6 +52,7 @@ let playlistCurrentData = null;
 let playlistQueueData = [];
 let playlistFetchInFlight = false;
 let lastPlaylistFetch = 0;
+let volumeBusy = false;
 
 function isJson(f) {
   return f && f.name.toLowerCase().endsWith(".json");
@@ -555,6 +557,44 @@ async function updateStatus() {
   }
 }
 
+function setVolumeButtonsDisabled(disabled) {
+  if (!elVolumeButtons || !elVolumeButtons.length) return;
+  elVolumeButtons.forEach((btn) => {
+    if (btn) btn.disabled = disabled;
+  });
+}
+
+async function sendVolumeAction(action) {
+  if (!action || volumeBusy) return;
+  volumeBusy = true;
+  setVolumeButtonsDisabled(true);
+  try {
+    const response = await fetch("/volume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    const ok = response.ok && payload && payload.ok !== false;
+    if (!ok) {
+      const message =
+        (payload && (payload.error || payload.message)) ||
+        `Commande volume échouée (${response.status})`;
+      toast(message, true);
+    } else {
+      const message =
+        (payload && payload.message) ||
+        (action === "mute" ? "Volume coupé" : "Volume ajusté");
+      toast(message);
+    }
+  } catch (error) {
+    toast("Erreur réseau /volume", true);
+  } finally {
+    setVolumeButtonsDisabled(false);
+    volumeBusy = false;
+  }
+}
+
 function toast(msg, isErr = false) {
   const t = document.createElement("div");
   t.className = "toast" + (isErr ? " err" : "");
@@ -688,6 +728,16 @@ window.addEventListener("load", () => {
   setInterval(updateStatus, 1500);
   updatePitchDisplay(); // AJOUTER CETTE LIGNE
   refreshPlaylist(true);
+
+  if (elVolumeButtons && elVolumeButtons.length) {
+    elVolumeButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.volumeAction;
+        sendVolumeAction(action);
+      });
+    });
+  }
+
   updatePills();
 });
 

@@ -19,6 +19,8 @@ import json
 import os
 import re
 import shutil
+import shlex
+import subprocess
 import tempfile
 import time
 import traceback
@@ -50,12 +52,225 @@ CHANNELS_CONFIG_PATH = CONFIG_DIR / "channels_state.json"
 app = Flask(__name__, static_folder="static", template_folder="templates")
 player = SyncPlayer()
 
+VOLUME_TIMEOUT = float(os.environ.get("PLAYLIST_VOLUME_TIMEOUT", "5"))
+VOLUME_STEP = int(os.environ.get("PLAYLIST_VOLUME_STEP", "8"))
+VOLUME_MAX = int(os.environ.get("PLAYLIST_VOLUME_MAX", "127"))
+VOLUME_TOOL = os.environ.get("PLAYLIST_VOLUME_CLI", "bluetoothctl")
+_VOLUME_CMD_BASE = shlex.split(VOLUME_TOOL) if VOLUME_TOOL else ["bluetoothctl"]
+if not _VOLUME_CMD_BASE:
+    _VOLUME_CMD_BASE = ["bluetoothctl"]
+
+VOLUME_ACTIONS = {"up", "down", "mute"}
+
+_ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+_TRANSPORT_RE = re.compile(r"^Transport\s+(/[^\s]+)", re.MULTILINE)
+_VOLUME_RE = re.compile(r"\s*Volume:\s*(?:0x[0-9A-Fa-f]+\s*)?(?:\((\d+)\)|(\d+))")
+
+
+def _clean_bt_output(text: str) -> str:
+    if not text:
+        return ""
+    text = text.replace("\n", "\n")
+    text = _ANSI_RE.sub("", text)
+    return text
+
+
+def _bluetoothctl_script(*lines: str) -> subprocess.CompletedProcess:
+    script_lines = [line for line in lines if line]
+    needs_back = script_lines and script_lines[0].startswith("menu ")
+    effective_lines = list(script_lines)
+    if needs_back:
+        effective_lines.append("back")
+    effective_lines.append("quit")
+    script = "\n".join(effective_lines) + "\n"
+    joined = "; ".join(effective_lines)
+    proc = subprocess.run(
+        _VOLUME_CMD_BASE,
+        input=script,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=VOLUME_TIMEOUT,
+    )
+    proc.stdout = _clean_bt_output(proc.stdout)
+    proc.stderr = _clean_bt_output(proc.stderr)
+    stdout = proc.stdout.strip()
+    stderr = proc.stderr.strip()
+    logger = servo_logger.logger
+    if proc.returncode != 0:
+        logger.warning("BTCTL_SCRIPT | cmd=%s | code=%s", joined, proc.returncode)
+        if stdout:
+            logger.warning("BTCTL_STDOUT | %s", stdout)
+        if stderr:
+            logger.warning("BTCTL_STDERR | %s", stderr)
+    else:
+        logger.debug("BTCTL_SCRIPT | cmd=%s | code=%s", joined, proc.returncode)
+        if stdout:
+            logger.debug("BTCTL_STDOUT | %s", stdout)
+        if stderr:
+            logger.debug("BTCTL_STDERR | %s", stderr)
+    return proc
+
+
+def _parse_volume_text(text: str) -> int | None:
+    if not text:
+        return None
+    match = _VOLUME_RE.search(text)
+    if not match:
+        return None
+    for group in match.groups():
+        if group:
+            try:
+                return int(group)
+            except ValueError:
+                continue
+    return None
+
+
+def _pick_transport_path() -> tuple[str | None, subprocess.CompletedProcess]:
+    proc = _bluetoothctl_script("menu transport", "list")
+    text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    match = _TRANSPORT_RE.search(text)
+    return (match.group(1) if match else None, proc)
+
+
+def _get_transport_volume(
+    path: str,
+) -> tuple[int | None, list[subprocess.CompletedProcess]]:
+    history: list[subprocess.CompletedProcess] = []
+    proc = _bluetoothctl_script(f"menu transport", f"show {path}")
+    history.append(proc)
+    volume = _parse_volume_text(proc.stdout)
+    if volume is None:
+        volume = _parse_volume_text(proc.stderr)
+    if volume is None:
+        proc = _bluetoothctl_script(f"menu transport", f"volume {path}")
+        history.append(proc)
+        volume = _parse_volume_text(proc.stdout)
+        if volume is None:
+            volume = _parse_volume_text(proc.stderr)
+    return volume, history
+
+
+def _set_transport_volume(
+    path: str, value: int
+) -> tuple[bool, int | None, subprocess.CompletedProcess]:
+    proc = _bluetoothctl_script(f"menu transport", f"volume {path} {value}")
+    if proc.returncode != 0:
+        return False, None, proc
+    volume = _parse_volume_text(proc.stdout)
+    if volume is None:
+        volume = _parse_volume_text(proc.stderr)
+    return True, volume, proc
+
+
+def _run_volume_action(action: str) -> tuple[bool, str]:
+    try:
+        transport, list_proc = _pick_transport_path()
+    except FileNotFoundError as exc:
+        return False, f"bluetoothctl introuvable: {exc}"
+    except subprocess.TimeoutExpired:
+        return False, "Commande bluetoothctl expirée"
+    except Exception:
+        servo_logger.logger.exception("VOLUME_TRANSPORT_LIST_FAILURE")
+        return False, "Erreur bluetoothctl (voir logs)"
+
+    if not transport:
+        detail = ((list_proc.stdout or "") + (list_proc.stderr or "")).strip()
+        if detail:
+            servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
+        return False, "Aucun transport bluetooth actif (périphérique connecté ?)"
+
+    try:
+        current, history = _get_transport_volume(transport)
+    except subprocess.TimeoutExpired:
+        return False, "Lecture du volume bluetooth expirée"
+    except Exception:
+        servo_logger.logger.exception("VOLUME_READ_ERROR")
+        return False, "Lecture du volume bluetooth impossible"
+
+    if current is None:
+        for idx, proc in enumerate(history):
+            servo_logger.logger.warning(
+                "VOLUME_READ_OUTPUT[%s] | code=%s | stdout=%s | stderr=%s",
+                idx,
+                proc.returncode,
+                (proc.stdout or "").strip(),
+                (proc.stderr or "").strip(),
+            )
+        return False, "Impossible de lire le volume bluetooth"
+
+    if current == 0 and action in ("up", "down"):
+        resume_proc = _bluetoothctl_script("menu player", "play")
+        resume_stdout = (resume_proc.stdout or "").strip()
+        resume_stderr = (resume_proc.stderr or "").strip()
+        servo_logger.logger.debug(
+            "VOLUME_RESUME_ATTEMPT | code=%s | stdout=%s | stderr=%s",
+            resume_proc.returncode,
+            resume_stdout,
+            resume_stderr,
+        )
+        if resume_proc.returncode != 0:
+            return False, "Impossible de réactiver le transport bluetooth"
+        try:
+            current, history = _get_transport_volume(transport)
+        except subprocess.TimeoutExpired:
+            return False, "Lecture du volume bluetooth expirée"
+        except Exception:
+            servo_logger.logger.exception("VOLUME_READ_ERROR_POST_RESUME")
+            return False, "Lecture du volume bluetooth impossible"
+        if current is None:
+            return False, "Impossible de lire le volume bluetooth"
+    target = current
+    if action == "up":
+        target = min(VOLUME_MAX, current + VOLUME_STEP)
+        if target == current:
+            return True, f"Volume déjà au maximum ({current})"
+    elif action == "down":
+        target = max(0, current - VOLUME_STEP)
+        if target == current:
+            return True, f"Volume déjà au minimum ({current})"
+    elif action == "mute":
+        if current == 0:
+            return True, "Volume déjà à 0"
+        target = 0
+    else:
+        return False, "Unknown volume action"
+
+    try:
+        success, applied, proc = _set_transport_volume(transport, target)
+    except subprocess.TimeoutExpired:
+        return False, "Réglage du volume bluetooth expiré"
+    except Exception:
+        servo_logger.logger.exception("VOLUME_WRITE_ERROR")
+        return False, "Réglage du volume bluetooth impossible"
+
+    if not success:
+        detail = ((proc.stderr or "") or (proc.stdout or "")).strip()
+        servo_logger.logger.warning(
+            "VOLUME_SET_FAILED | code=%s | output=%s", proc.returncode, detail
+        )
+        return False, detail or "Commande volume bluetoothctl refusée"
+
+    applied_value = applied if applied is not None else target
+    servo_logger.logger.debug(
+        "VOLUME_SET | action=%s | transport=%s | from=%s | to=%s",
+        action,
+        transport,
+        current,
+        applied_value,
+    )
+    if action == "mute":
+        return True, "Volume coupé"
+    return True, f"Volume réglé à {applied_value}"
+
+
 # --- Channels (default: all enabled)
 CHANNELS_DEFAULT = {"eye_left": True, "eye_right": True, "neck": True, "jaw": True}
 player_channels = CHANNELS_DEFAULT.copy()
 # expose to player if it supports it
 setattr(player, "channels", player_channels)
-
 
 
 # --- Playlist (in-memory) ---
@@ -152,7 +367,9 @@ def _ensure_session_exists(session_name: str) -> Path:
     return session_dir
 
 
-def _start_session(session_name: str, source: str, item_id: Optional[int] = None) -> bool:
+def _start_session(
+    session_name: str, source: str, item_id: Optional[int] = None
+) -> bool:
     try:
         session_dir = _ensure_session_exists(session_name)
     except ValueError as exc:
@@ -217,7 +434,9 @@ def _ensure_playback_running() -> None:
     _start_next_from_playlist()
 
 
-def _handle_track_finished(reason: str, error: Optional[str], session_name: Optional[str]) -> None:
+def _handle_track_finished(
+    reason: str, error: Optional[str], session_name: Optional[str]
+) -> None:
     current = _get_current_entry()
     log_bits = [f"reason={reason}"]
     if session_name:
@@ -450,7 +669,6 @@ def play():
         return jsonify({"error": f"Impossible de demarrer la lecture: {e}"}), 400
 
 
-
 @app.route("/pause", methods=["POST"])
 def pause():
     try:
@@ -492,6 +710,19 @@ def status():
         return jsonify({"error": f"Erreur status: {e}"}), 500
 
 
+@app.route("/volume", methods=["POST"])
+def volume():
+    payload = request.get_json(silent=True) or {}
+    action = (payload.get("action") or "").lower()
+    if action not in VOLUME_ACTIONS:
+        return jsonify({"error": "Unknown volume action"}), 400
+
+    ok, message = _run_volume_action(action)
+    response = {"action": action, "ok": ok}
+    if message:
+        response["message"] = message
+    status = 200 if ok else 500
+    return jsonify(response), status
 
 
 @app.route("/playlist", methods=["GET", "POST"])
@@ -570,9 +801,7 @@ def playlist_move(item_id: int):
     if outcome == "noop":
         return jsonify({"status": "noop"})
 
-    servo_logger.logger.info(
-        f"PLAYLIST_MOVE | id={item_id} | direction={direction}"
-    )
+    servo_logger.logger.info(f"PLAYLIST_MOVE | id={item_id} | direction={direction}")
     return jsonify({"status": "moved", "direction": direction})
 
 
