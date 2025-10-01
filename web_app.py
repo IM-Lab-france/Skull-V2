@@ -38,6 +38,7 @@ from flask import (
 
 from typing import Any, Optional
 
+from pydub import AudioSegment
 from sync_player import SyncPlayer
 from logger import servo_logger
 
@@ -600,8 +601,35 @@ def upload():
         json_filename = json_file.filename or "timeline.json"
         mp3_filename = mp3_file.filename or "audio.mp3"
 
-        json_file.save(session_dir / json_filename)
-        mp3_file.save(session_dir / mp3_filename)
+        json_path = session_dir / json_filename
+        mp3_path = session_dir / mp3_filename
+
+        json_file.save(json_path)
+        mp3_file.save(mp3_path)
+
+        cache_file = mp3_path.with_name(f"{mp3_path.stem}.cached.wav")
+        tmp_cache = cache_file.with_name(cache_file.name + ".tmp")
+        try:
+            audio = AudioSegment.from_mp3(mp3_path)
+            audio.export(str(tmp_cache), format="wav")
+            tmp_cache.replace(cache_file)
+            servo_logger.logger.info(
+                "UPLOAD_CACHE_CREATED | session=%s | cache=%s",
+                clean_name,
+                cache_file.name,
+            )
+        except Exception as cache_exc:
+            servo_logger.logger.warning(
+                "UPLOAD_CACHE_FAILED | session=%s | cache=%s | error=%s",
+                clean_name,
+                cache_file.name,
+                cache_exc,
+            )
+            try:
+                if tmp_cache.exists():
+                    tmp_cache.unlink()
+            except Exception:
+                pass
 
         return jsonify(
             {
