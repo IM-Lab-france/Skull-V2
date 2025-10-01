@@ -33,7 +33,7 @@ echo "==> Environment ready"
 echo "    - Playlist interface: http://localhost:5050"
 echo "    - Backend cible: http://192.168.1.116:5000"
 
-# Fixe l’URL du backend
+# Fixe l'URL du backend
 export PLAYLIST_BACKEND_BASE="http://192.168.1.116:5000"
 
 echo "==> Starting playlist_web.py"
