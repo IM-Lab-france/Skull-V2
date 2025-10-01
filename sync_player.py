@@ -110,15 +110,61 @@ class SyncPlayer:
         json_file = json_files[0]
         mp3_file = mp3_files[0]
 
+        cache_file = mp3_file.with_name(f"{mp3_file.stem}.cached.wav")
+        cache_exists = cache_file.exists()
+
         servo_logger.logger.info(f"LOADING_SESSION | Dir: {d.name}")
         servo_logger.logger.info(
             f"LOADING_FILES | JSON: {json_file.name} | MP3: {mp3_file.name}"
+        )
+        servo_logger.logger.info(
+            f"AUDIO_CACHE_STATUS | file={cache_file.name} | exists={cache_exists}"
         )
 
         # Charger les fichiers
         try:
             self.timeline = Timeline.from_json(json_file)
-            self.audio = AudioSegment.from_mp3(mp3_file)
+
+            used_cache = False
+            if cache_exists:
+                try:
+                    self.audio = AudioSegment.from_file(str(cache_file), format="wav")
+                    used_cache = True
+                    servo_logger.logger.info(
+                        f"AUDIO_CACHE_HIT | file={cache_file.name}"
+                    )
+                except Exception as cache_exc:
+                    servo_logger.logger.warning(
+                        f"AUDIO_CACHE_HIT_FAILED | file={cache_file.name} | error={cache_exc}"
+                    )
+                    try:
+                        cache_file.unlink()
+                        servo_logger.logger.info(
+                            f"AUDIO_CACHE_REMOVED | file={cache_file.name}"
+                        )
+                    except Exception as unlink_exc:
+                        servo_logger.logger.warning(
+                            f"AUDIO_CACHE_REMOVE_FAILED | file={cache_file.name} | error={unlink_exc}"
+                        )
+
+            if not used_cache:
+                self.audio = AudioSegment.from_mp3(mp3_file)
+                tmp_cache = cache_file.with_name(cache_file.name + ".tmp")
+                try:
+                    self.audio.export(str(tmp_cache), format="wav")
+                    tmp_cache.replace(cache_file)
+                    servo_logger.logger.info(
+                        f"AUDIO_CACHE_CREATED | file={cache_file.name}"
+                    )
+                except Exception as cache_exc:
+                    servo_logger.logger.warning(
+                        f"AUDIO_CACHE_WRITE_FAILED | file={cache_file.name} | error={cache_exc}"
+                    )
+                    try:
+                        if tmp_cache.exists():
+                            tmp_cache.unlink()
+                    except Exception:
+                        pass
         except Exception as e:
             servo_logger.logger.error(f"LOADING_ERROR | {e}")
             raise
