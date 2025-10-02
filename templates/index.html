@@ -44,6 +44,11 @@
                         <button id="stopBtn" class="btn danger">Stop</button>
                     </div>
 
+                    <div class="session-danger-zone" role="group" aria-label="Suppression de la session">
+                        <button id="deleteSessionBtn" class="btn danger" type="button">Supprimer la session</button>
+                        <p class="hint">Supprime définitivement le dossier de la session sur le RPi.</p>
+                    </div>
+
                     <div class="volume-box">
                         <h3 class="volume-title">Volume (bluetoothctl)</h3>
                         <div class="volume-controls" role="group" aria-label="Contrôle du volume">
@@ -202,6 +207,21 @@
                 </section>
             </aside>
         </div>
+    <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteSessionTitle">
+        <div class="modal-box">
+            <button type="button" class="modal-close" id="deleteSessionClose" aria-label="Fermer"><span aria-hidden="true">&times;</span></button>
+            <div class="modal-graphic" aria-hidden="true">🎃</div>
+            <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
+            <p class="modal-lead">Veux-tu vraiment bannir <strong id="deleteSessionName"></strong> ?</p>
+            <p class="modal-subtext">Le dossier de la session sera définitivement supprimé du RPi.</p>
+            <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn secondary" id="deleteSessionCancel">Annuler</button>
+                <button type="button" class="btn danger" id="deleteSessionConfirm">Oui, supprimer</button>
+            </div>
+        </div>
+    </div>
+
     </main>
 
     <footer class="site-footer">

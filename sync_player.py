@@ -409,8 +409,13 @@ class SyncPlayer:
             if hasattr(self, "_resume_from_ms"):
                 delattr(self, "_resume_from_ms")
 
-            for frame in self.timeline:
-                frame_count += 1
+            frames = self.timeline.frames
+            total_frames = len(frames)
+            frame_idx = 0
+            RESYNC_THRESHOLD = 0.05  # seconds of tolerable drift before fast-forward
+
+            while frame_idx < total_frames:
+                frame = frames[frame_idx]
 
                 while self._paused.is_set() and self._running.is_set():
                     time.sleep(0.01)
@@ -420,13 +425,25 @@ class SyncPlayer:
                     break
 
                 target_time = self._start_time + frame["timestamp_ms"] / 1000.0
-                delay = target_time - time.time()
+                now = time.time()
+                delay = target_time - now
 
-                if delay < -0.05:
-                    skipped_frames += 1
-                    if skipped_frames % 10 == 1:
+                if delay < -RESYNC_THRESHOLD:
+                    behind = -delay
+                    current_ms = max(0, int((time.time() - self._start_time) * 1000))
+                    new_idx = frame_idx
+                    while (new_idx + 1) < total_frames and frames[new_idx + 1]["timestamp_ms"] <= current_ms:
+                        new_idx += 1
+                    if new_idx != frame_idx:
+                        skipped = new_idx - frame_idx
+                        skipped_frames += skipped
+                        frame_idx = new_idx
+                        frame = frames[frame_idx]
+                        target_time = self._start_time + frame["timestamp_ms"] / 1000.0
+                        now = time.time()
+                        delay = target_time - now
                         servo_logger.logger.warning(
-                            f"TIMING_LAG | Frame delayed by {-delay:.3f}s | Skipped: {skipped_frames}"
+                            f"TIMING_RESYNC | drift={behind:.3f}s | skipped={skipped} | total_skipped={skipped_frames}"
                         )
 
                 if delay > 0:
@@ -503,6 +520,9 @@ class SyncPlayer:
                     else:
                         servo_logger.log_servo_command("eye_right", self._last_target["eye_right"], enabled=False)
 
+                frame_count += 1
+                frame_idx += 1
+
         except Exception as exc:
             finish_reason = "error"
             error_message = str(exc)
@@ -517,11 +537,12 @@ class SyncPlayer:
             finally:
                 self._running.clear()
 
+                total_frames = frame_count + skipped_frames
                 servo_logger.logger.info(
-                    f"PLAYBACK_STATS | Total frames: {frame_count} | Skipped: {skipped_frames}"
+                    f"PLAYBACK_STATS | Delivered: {frame_count} | Skipped: {skipped_frames} | Total: {total_frames}"
                 )
-                if frame_count > 0:
-                    skip_percentage = (skipped_frames / frame_count) * 100
+                if total_frames > 0:
+                    skip_percentage = (skipped_frames / total_frames) * 100
                     if skip_percentage > 5:
                         servo_logger.logger.warning(
                             f"HIGH_SKIP_RATE | {skip_percentage:.1f}% frames skipped"

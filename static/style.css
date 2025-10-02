@@ -587,6 +587,132 @@ body.theme-halloween::after {
     margin-top: 8px
 }
 
+.session-danger-zone {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(220, 53, 69, 0.35);
+    background: rgba(220, 53, 69, 0.09);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.session-danger-zone .btn {
+    width: 100%;
+}
+
+.session-danger-zone .hint {
+    margin: 0;
+    color: rgba(255, 210, 210, 0.85);
+}
+
+.hidden {
+    display: none !important;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(8, 4, 16, 0.88);
+    backdrop-filter: blur(6px);
+    z-index: 10000;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-box {
+    position: relative;
+    width: min(420px, 100%);
+    border-radius: 18px;
+    padding: 28px 24px 24px;
+    background: linear-gradient(160deg, rgba(26, 9, 35, 0.96), rgba(11, 3, 20, 0.95));
+    border: 1px solid rgba(255, 122, 24, 0.25);
+    box-shadow: 0 25px 80px rgba(0, 0, 0, .55);
+    text-align: center;
+    color: var(--fg);
+}
+
+.modal-graphic {
+    font-size: 3rem;
+    margin-bottom: 12px;
+    filter: drop-shadow(0 0 12px rgba(255, 122, 24, .65));
+}
+
+.modal-lead {
+    font-size: 1.2rem;
+    margin-bottom: 6px;
+}
+
+.modal-lead strong {
+    color: var(--orange-light);
+}
+
+.modal-subtext {
+    color: rgba(255, 255, 255, .75);
+    font-size: .95rem;
+    margin-bottom: 16px;
+}
+
+.modal-status {
+    min-height: 1.2em;
+    font-size: .95rem;
+    color: rgba(255, 180, 120, .85);
+    margin-bottom: 18px;
+}
+
+.modal-status:empty {
+    display: none;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.modal-actions .btn {
+    flex: 1 1 45%;
+}
+
+.modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, .6);
+    font-size: 1.4rem;
+    cursor: pointer;
+    transition: transform .15s ease, color .15s ease;
+}
+
+.modal-close:hover {
+    color: #fff;
+    transform: scale(1.1);
+}
+
+.modal-close:focus-visible {
+    outline: 2px solid var(--orange-light);
+    outline-offset: 2px;
+}
+
+.modal-close:disabled {
+    opacity: .35;
+    cursor: default;
+}
+
 .volume-box {
     margin-top: 18px;
     padding: 16px;

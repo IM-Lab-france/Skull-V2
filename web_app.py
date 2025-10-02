@@ -311,6 +311,19 @@ class PlaylistManager:
                     return removed.copy()
         return None
 
+    def purge_session(self, session: str) -> list[dict[str, Any]]:
+        """Remove every queued entry matching the given session name."""
+        removed: list[dict[str, Any]] = []
+        with self._lock:
+            kept: list[dict[str, Any]] = []
+            for item in self._queue:
+                if item.get("session") == session:
+                    removed.append(item.copy())
+                else:
+                    kept.append(item)
+            self._queue = kept
+        return removed
+
     def move(self, item_id: int, offset: int) -> str:
         with self._lock:
             for idx, item in enumerate(self._queue):
@@ -354,9 +367,25 @@ def _get_current_entry() -> Optional[dict[str, Any]]:
         return _current_entry.copy()
 
 
+def _resolve_existing_session_dir(session_name: str) -> Path:
+    """Return the session directory ensuring it is inside DATA_DIR."""
+    if not session_name:
+        raise ValueError("Nom de session invalide")
+    data_root = DATA_DIR.resolve()
+    try:
+        candidate = (DATA_DIR / session_name).resolve(strict=False)
+    except Exception as exc:
+        raise ValueError("Nom de session invalide") from exc
+    if candidate.parent != data_root:
+        raise ValueError("Nom de session invalide")
+    if not candidate.exists() or not candidate.is_dir():
+        raise FileNotFoundError(session_name)
+    return candidate
+
 def _ensure_session_exists(session_name: str) -> Path:
-    session_dir = DATA_DIR / session_name
-    if not session_dir.exists() or not session_dir.is_dir():
+    try:
+        session_dir = _resolve_existing_session_dir(session_name)
+    except FileNotFoundError:
         raise ValueError(f"Session introuvable: {session_name}")
 
     json_files = list(session_dir.glob("*.json"))
@@ -366,7 +395,6 @@ def _ensure_session_exists(session_name: str) -> Path:
     if not mp3_files:
         raise ValueError("Fichier MP3 introuvable dans la session")
     return session_dir
-
 
 def _start_session(
     session_name: str, source: str, item_id: Optional[int] = None
@@ -652,6 +680,77 @@ def sessions():
     except Exception as e:
         return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
 
+
+
+
+@app.route("/sessions/<session_name>", methods=["DELETE"])
+def delete_session(session_name: str):
+    """Supprime complètement une session et son répertoire."""
+    try:
+        session_dir = _resolve_existing_session_dir(session_name)
+    except FileNotFoundError:
+        return jsonify({"error": "Session introuvable"}), 404
+    except ValueError:
+        return jsonify({"error": "Nom de session invalide"}), 400
+
+    removed_items = playlist.purge_session(session_dir.name)
+    removed_count = len(removed_items)
+
+    current = _get_current_entry()
+    stop_triggered = False
+    if current and current.get("session") == session_dir.name:
+        servo_logger.logger.info(
+            "SESSION_DELETE_STOP | session=%s", session_dir.name
+        )
+        try:
+            status_info = player.status()
+        except Exception:
+            status_info = {}
+        try:
+            player.stop(reason="skip")
+            stop_triggered = bool(status_info.get("running"))
+        except Exception:
+            servo_logger.logger.exception(
+                "SESSION_DELETE_STOP_FAILED | session=%s", session_dir.name
+            )
+        finally:
+            _set_current_entry(None)
+
+    try:
+        shutil.rmtree(session_dir)
+    except FileNotFoundError:
+        return jsonify({"error": "Session introuvable"}), 404
+    except Exception as exc:
+        servo_logger.logger.exception(
+            "SESSION_DELETE_FAILED | session=%s | error=%s", session_dir.name, exc
+        )
+        return (
+            jsonify({"error": f"Impossible de supprimer la session: {exc}"}),
+            500,
+        )
+
+    servo_logger.logger.info(
+        "SESSION_DELETED | session=%s | removed_from_queue=%s | stopped=%s",
+        session_dir.name,
+        removed_count,
+        stop_triggered,
+    )
+
+    try:
+        _ensure_playback_running()
+    except Exception:
+        servo_logger.logger.exception(
+            "SESSION_DELETE_AUTOSTART_FAILED | session=%s", session_dir.name
+        )
+
+    return jsonify(
+        {
+            "status": "deleted",
+            "session": session_dir.name,
+            "removed_from_queue": removed_count,
+            "stopped": stop_triggered,
+        }
+    )
 
 @app.route("/play", methods=["POST"])
 def play():
