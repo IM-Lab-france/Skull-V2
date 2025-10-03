@@ -574,7 +574,9 @@ def sanitize_scene_name(name: str) -> str:
         raise ValueError("Nom de scène requis")
 
     # Supprimer espaces et caractères spéciaux, garder uniquement alphanum + _ -
-    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", name.strip().replace(" ", ""))
+    name = name.strip()
+    sanitized = re.sub(r"[^a-zA-Z0-9 _-]", "", name)
+    sanitized = sanitized.strip()
 
     if not sanitized:
         raise ValueError("Nom de scène invalide après nettoyage")
