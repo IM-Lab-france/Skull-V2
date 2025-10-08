@@ -182,6 +182,14 @@ const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
 
 
 
+const elRandomToggle = $("#randomModeToggle");
+
+
+
+const elRandomHint = $("#randomModeHint");
+
+
+
 
 
 
@@ -246,9 +254,156 @@ let volumeBusy = false;
 
 
 
+let randomModeState = {
+
+  enabled: false,
+
+  eligibleCount: null,
+
+  available: true,
+
+  busy: false,
+
+};
+function renderRandomModeState() {
+
+  if (elRandomToggle) {
+
+    elRandomToggle.classList.toggle("toggle-active", randomModeState.enabled);
+
+    elRandomToggle.setAttribute(
+
+      "aria-pressed",
+
+      randomModeState.enabled ? "true" : "false"
+
+    );
+
+    const label = randomModeState.enabled
+
+      ? "Mode aleatoire : ON"
+
+      : "Mode aleatoire : OFF";
+
+    elRandomToggle.textContent = label;
+
+    elRandomToggle.disabled = randomModeState.busy;
+
+  }
 
 
 
+  if (elRandomHint) {
+
+    if (!randomModeState.available) {
+
+      elRandomHint.textContent =
+
+        "Aucun morceau eligible pour l'aleatoire (hors Accueil).";
+
+    } else {
+
+      if (
+
+        typeof randomModeState.eligibleCount === "number" &&
+
+        randomModeState.eligibleCount >= 0
+
+      ) {
+
+        const count = randomModeState.eligibleCount;
+
+        elRandomHint.textContent =
+
+          count === 1
+
+            ? "1 morceau eligible pour l'aleatoire (hors Accueil)."
+
+            : `${count} morceaux eligibles pour l'aleatoire (hors Accueil).`;
+
+      } else {
+
+        elRandomHint.textContent =
+
+          "Ignorer la selection et choisir un morceau aleatoire (hors Accueil).";
+
+      }
+
+    }
+
+  }
+
+}
+
+
+
+function applyRandomModeSnapshot(snapshot) {
+
+  if (snapshot && typeof snapshot.enabled === "boolean") {
+
+    randomModeState.enabled = snapshot.enabled;
+
+  }
+
+
+
+  if (snapshot && typeof snapshot.eligible_count === "number") {
+
+    randomModeState.eligibleCount = snapshot.eligible_count;
+
+  } else if (snapshot && Array.isArray(snapshot.eligible)) {
+
+    randomModeState.eligibleCount = snapshot.eligible.length;
+
+  }
+
+
+
+  if (snapshot && typeof snapshot.available === "boolean") {
+
+    randomModeState.available = snapshot.available;
+
+  } else if (randomModeState.eligibleCount !== null) {
+
+    randomModeState.available = randomModeState.eligibleCount > 0;
+
+  }
+
+
+
+  renderRandomModeState();
+
+}
+
+
+
+async function fetchRandomModeState() {
+
+  if (!elRandomToggle) return;
+
+
+
+  try {
+
+    const res = await fetch("/random_mode");
+
+    if (!res.ok) {
+
+      return;
+
+    }
+
+    const payload = await res.json().catch(() => ({}));
+
+    applyRandomModeSnapshot(payload);
+
+  } catch (e) {
+
+    // ignore network errors for optional feature
+
+  }
+
+}
 
 function isJson(f) {
 
@@ -439,6 +594,122 @@ elFileJson?.addEventListener("change", (e) => {
 
 
   updatePills();
+
+
+
+});
+
+
+
+elRandomToggle?.addEventListener("click", async () => {
+
+
+
+  if (randomModeState.busy) {
+
+
+
+    return;
+
+
+
+  }
+
+
+
+  const desired = !randomModeState.enabled;
+
+
+
+  randomModeState.busy = true;
+
+
+
+  renderRandomModeState();
+
+
+
+  try {
+
+
+
+    const res = await fetch("/random_mode", {
+
+
+
+      method: "POST",
+
+
+
+      headers: { "Content-Type": "application/json" },
+
+
+
+      body: JSON.stringify({ enabled: desired }),
+
+
+
+    });
+
+
+
+    const payload = await res.json().catch(() => ({}));
+
+
+
+    if (!res.ok) {
+
+
+
+      const message =
+
+        (payload && (payload.error || payload.message)) ||
+
+        `Erreur ${res.status}`;
+
+
+
+      toast("Erreur mode aleatoire: " + message, true);
+
+
+
+      return;
+
+
+
+    }
+
+
+
+    applyRandomModeSnapshot(payload);
+
+
+
+    toast(desired ? "Mode aleatoire active" : "Mode aleatoire desactive");
+
+
+
+  } catch (e) {
+
+
+
+    toast("Erreur reseau mode aleatoire", true);
+
+
+
+  } finally {
+
+
+
+    randomModeState.busy = false;
+
+
+
+    renderRandomModeState();
+
+
+
+  }
 
 
 
@@ -2092,6 +2363,52 @@ elPlay?.addEventListener("click", async () => {
 
 
 
+    if (payload && typeof payload === "object" && payload.random_mode) {
+
+
+
+      applyRandomModeSnapshot(payload.random_mode);
+
+
+
+    }
+
+
+
+    const randomInfo =
+
+      payload && typeof payload === "object" && payload.random_mode
+
+        ? payload.random_mode
+
+        : {};
+
+
+
+    const actualSession =
+
+      (payload && typeof payload === "object" && payload.session) || sid;
+
+
+
+    const randomEnabled = Boolean(randomInfo && randomInfo.enabled);
+
+
+
+    const randomApplied = Boolean(randomEnabled && randomInfo.applied);
+
+
+
+    const randomUnavailable =
+
+      randomEnabled && randomInfo.available === false;
+
+
+
+    let message = null;
+
+
+
     if (payload.status === "queued") {
 
 
@@ -2100,7 +2417,41 @@ elPlay?.addEventListener("click", async () => {
 
 
 
-      toast("Session ajoutee a la playlist" + pos);
+      if (randomApplied) {
+
+
+
+        const label =
+
+          (randomInfo && randomInfo.selected) || actualSession || "inconnu";
+
+
+
+        message = `Ajoute en mode aleatoire${pos} : ${label}`;
+
+
+
+      } else {
+
+
+
+        message = "Session ajoutee a la playlist" + pos;
+
+
+
+        if (randomUnavailable) {
+
+
+
+          message += " (aleatoire indisponible)";
+
+
+
+        }
+
+
+
+      }
 
 
 
@@ -2108,7 +2459,63 @@ elPlay?.addEventListener("click", async () => {
 
 
 
-      toast("Lecture demarree");
+      if (randomApplied) {
+
+
+
+        const label =
+
+          (randomInfo && randomInfo.selected) || actualSession || "inconnu";
+
+
+
+        message = "Lecture aleatoire lancee : " + label;
+
+
+
+      } else {
+
+
+
+        message = "Lecture demarree";
+
+
+
+        if (randomUnavailable) {
+
+
+
+          message += " (aleatoire indisponible)";
+
+
+
+        }
+
+
+
+      }
+
+
+
+    } else if (randomUnavailable) {
+
+
+
+      message =
+
+        "Mode aleatoire actif mais aucun morceau eligible (hors Accueil).";
+
+
+
+    }
+
+
+
+    if (message) {
+
+
+
+      toast(message);
 
 
 
@@ -2321,6 +2728,14 @@ async function updateStatus() {
 
 
     elStatus.textContent = JSON.stringify(st, null, 2);
+
+
+
+    if (st && typeof st === "object" && st.random_mode) {
+
+      applyRandomModeSnapshot(st.random_mode);
+
+    }
 
 
 
@@ -3245,6 +3660,10 @@ window.addEventListener("load", () => {
 
 
   fetchSessions();
+
+
+
+  fetchRandomModeState();
 
 
 

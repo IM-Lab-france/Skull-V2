@@ -153,6 +153,7 @@ Les scripts front-end (`static/app.js`) affichent un toast & badge OFFLINE si `/
 - PulseAudio doit tourner sous le même utilisateur que le service (`systemctl --user` recommandé).
 - Si vous utilisez une enceinte Bluetooth, définissez le sink par défaut (`pactl set-default-sink ...`).
 - Ajoutez `pcm.!default pulse` / `ctl.!default pulse` dans `/etc/asound.conf` pour rediriger ALSA vers PulseAudio.
+- Exportez `PLAYLIST_BT_DEVICE_ADDR=AA:BB:CC:DD:EE:FF` (adresse MAC) pour que le serveur tente une reconnexion `bluetoothctl connect` avant chaque lecture et lors des commandes volume.
 
 ## Développement
 

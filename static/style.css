@@ -587,6 +587,32 @@ body.theme-halloween::after {
     margin-top: 8px
 }
 
+.random-mode {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.random-mode .btn {
+    width: 100%;
+}
+
+.random-mode .hint {
+    margin: 0;
+}
+
+.btn.toggle-active {
+    background: linear-gradient(135deg, rgba(39, 126, 45, 0.95), rgba(57, 255, 20, 0.85));
+    color: #031b09;
+    border: 1px solid rgba(57, 255, 20, 0.35);
+    box-shadow: 0 0 0 2px rgba(57, 255, 20, 0.2), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.btn.toggle-active:hover {
+    filter: brightness(1.05);
+}
+
 .session-danger-zone {
     margin-top: 16px;
     padding: 12px;

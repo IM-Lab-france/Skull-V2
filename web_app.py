@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import shutil
 import shlex
@@ -36,7 +37,7 @@ from flask import (
     Response,
 )
 
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from pydub import AudioSegment
 from sync_player import SyncPlayer
@@ -67,6 +68,9 @@ _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 _TRANSPORT_RE = re.compile(r"^Transport\s+(/[^\s]+)", re.MULTILINE)
 _VOLUME_RE = re.compile(r"\s*Volume:\s*(?:0x[0-9A-Fa-f]+\s*)?(?:\((\d+)\)|(\d+))")
+_BT_CONNECTED_RE = re.compile(r"\bConnected:\s*(yes|no)\b", re.IGNORECASE)
+
+BT_DEVICE_ADDR = os.environ.get("PLAYLIST_BT_DEVICE_ADDR", "").strip().upper()
 
 
 def _clean_bt_output(text: str) -> str:
@@ -129,6 +133,77 @@ def _parse_volume_text(text: str) -> int | None:
     return None
 
 
+def _bluetooth_info(address: str) -> dict[str, Any] | None:
+    if not address:
+        return None
+    try:
+        proc = _bluetoothctl_script(f"info {address}")
+    except subprocess.TimeoutExpired:
+        servo_logger.logger.warning("BTCTL_INFO_TIMEOUT | address=%s", address)
+        return None
+    except Exception:
+        servo_logger.logger.exception("BTCTL_INFO_ERROR | address=%s", address)
+        return None
+
+    if proc.returncode != 0:
+        servo_logger.logger.warning(
+            "BTCTL_INFO_FAILED | address=%s | code=%s | stderr=%s",
+            address,
+            proc.returncode,
+            (proc.stderr or "").strip(),
+        )
+        return None
+
+    stdout = proc.stdout or ""
+    connected = None
+    match = _BT_CONNECTED_RE.search(stdout)
+    if match:
+        connected = match.group(1).lower() == "yes"
+
+    return {"connected": connected, "raw": stdout}
+
+
+def _ensure_bt_connection(address: str) -> bool:
+    if not address:
+        return True
+
+    info = _bluetooth_info(address)
+    if info and info.get("connected") is True:
+        return True
+
+    servo_logger.logger.warning("BTCTL_RECONNECT_ATTEMPT | address=%s", address)
+    try:
+        proc = _bluetoothctl_script(f"connect {address}")
+    except subprocess.TimeoutExpired:
+        servo_logger.logger.error("BTCTL_CONNECT_TIMEOUT | address=%s", address)
+        return False
+    except Exception:
+        servo_logger.logger.exception("BTCTL_CONNECT_ERROR | address=%s", address)
+        return False
+
+    if proc.returncode != 0:
+        servo_logger.logger.error(
+            "BTCTL_CONNECT_FAILED | address=%s | code=%s | stderr=%s",
+            address,
+            proc.returncode,
+            (proc.stderr or "").strip(),
+        )
+        return False
+
+    time.sleep(0.5)
+    info_after = _bluetooth_info(address)
+    if info_after and info_after.get("connected") is True:
+        servo_logger.logger.info("BTCTL_RECONNECT_SUCCESS | address=%s", address)
+        return True
+
+    servo_logger.logger.error(
+        "BTCTL_RECONNECT_UNCONFIRMED | address=%s | stdout=%s",
+        address,
+        (info_after or {}).get("raw", "")[:200],
+    )
+    return False
+
+
 def _pick_transport_path() -> tuple[str | None, subprocess.CompletedProcess]:
     proc = _bluetoothctl_script("menu transport", "list")
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -179,9 +254,13 @@ def _run_volume_action(action: str) -> tuple[bool, str]:
 
     if not transport:
         detail = ((list_proc.stdout or "") + (list_proc.stderr or "")).strip()
-        if detail:
-            servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
-        return False, "Aucun transport bluetooth actif (périphérique connecté ?)"
+        if BT_DEVICE_ADDR:
+            if _ensure_bt_connection(BT_DEVICE_ADDR):
+                transport, list_proc = _pick_transport_path()
+        if not transport:
+            if detail:
+                servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
+            return False, "Aucun transport bluetooth actif (périphérique connecté ?)"
 
     try:
         current, history = _get_transport_volume(transport)
@@ -367,6 +446,88 @@ def _get_current_entry() -> Optional[dict[str, Any]]:
         return _current_entry.copy()
 
 
+_random_lock = threading.Lock()
+_RANDOM_EXCLUDED_NAMES = {"accueil"}
+_random_enabled = False
+_random_last_pick: Optional[dict[str, Any]] = None
+
+
+def _normalize_session_name(name: str) -> str:
+    return name.strip().lower()
+
+
+def _list_session_names() -> list[str]:
+    try:
+        entries = sorted(DATA_DIR.iterdir(), key=lambda p: p.name.lower())
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        servo_logger.logger.warning("SESSION_LIST_FAILED | error=%s", exc)
+        return []
+
+    sessions: list[str] = []
+    for entry in entries:
+        if entry.is_dir():
+            sessions.append(entry.name)
+    return sessions
+
+
+def _eligible_random_sessions(additional_excludes: Iterable[str] = ()) -> list[str]:
+    excluded = {_normalize_session_name(name) for name in _RANDOM_EXCLUDED_NAMES}
+    for name in additional_excludes:
+        if name:
+            excluded.add(_normalize_session_name(name))
+
+    candidates: list[str] = []
+    for session_name in _list_session_names():
+        if _normalize_session_name(session_name) in excluded:
+            continue
+        candidates.append(session_name)
+    return candidates
+
+
+def _pick_random_session(additional_excludes: Iterable[str] = ()) -> Optional[str]:
+    candidates = _eligible_random_sessions(additional_excludes)
+    if not candidates:
+        return None
+    return random.choice(candidates)
+
+
+def _is_random_mode_enabled() -> bool:
+    with _random_lock:
+        return _random_enabled
+
+
+def _set_random_mode_enabled(enabled: bool) -> bool:
+    global _random_enabled, _random_last_pick
+    with _random_lock:
+        changed = _random_enabled != enabled
+        _random_enabled = enabled
+        if not enabled:
+            _random_last_pick = None
+        return changed
+
+
+def _random_mode_snapshot() -> dict[str, Any]:
+    with _random_lock:
+        snapshot = {"enabled": _random_enabled}
+        if _random_last_pick is not None:
+            snapshot["last_pick"] = _random_last_pick.copy()
+        else:
+            snapshot["last_pick"] = None
+    return snapshot
+
+
+def _record_random_pick(selected: str, requested: Optional[str]) -> None:
+    global _random_last_pick
+    with _random_lock:
+        _random_last_pick = {
+            "session": selected,
+            "requested": requested,
+            "timestamp": time.time(),
+        }
+
+
 def _resolve_existing_session_dir(session_name: str) -> Path:
     """Return the session directory ensuring it is inside DATA_DIR."""
     if not session_name:
@@ -406,6 +567,15 @@ def _start_session(
             f"PLAYLIST_INVALID | session={session_name} | reason={exc}"
         )
         return False
+
+    if BT_DEVICE_ADDR:
+        if not _ensure_bt_connection(BT_DEVICE_ADDR):
+            servo_logger.logger.error(
+                "PLAYLIST_BT_RECONNECT_FAILED | session=%s | source=%s",
+                session_name,
+                source,
+            )
+            return False
 
     try:
         player.load(session_dir)
@@ -677,7 +847,7 @@ def upload():
 @app.route("/sessions")
 def sessions():
     try:
-        sessions_list = [d.name for d in sorted(DATA_DIR.iterdir()) if d.is_dir()]
+        sessions_list = _list_session_names()
         return jsonify({"sessions": sessions_list})
     except Exception as e:
         return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
@@ -769,29 +939,77 @@ def play():
 
         status_info = player.status()
         is_running = bool(status_info.get("running"))
+
+        random_mode_enabled = _is_random_mode_enabled()
+        random_choice = None
+        random_applied = False
+        selected_session = sid
+
+        if random_mode_enabled:
+            random_choice = _pick_random_session([sid])
+            if random_choice:
+                selected_session = random_choice
+                random_applied = selected_session != sid
+                if random_applied:
+                    _record_random_pick(selected_session, sid)
+                    servo_logger.logger.info(
+                        "RANDOM_MODE_SELECT | requested=%s | selected=%s | running=%s",
+                        sid,
+                        selected_session,
+                        is_running,
+                    )
+            else:
+                servo_logger.logger.warning(
+                    "RANDOM_MODE_NO_ELIGIBLE | requested=%s", sid
+                )
+
         if is_running:
-            item, position = playlist.add(sid)
+            item, position = playlist.add(selected_session)
             servo_logger.logger.info(
-                f"PLAYLIST_ENQUEUE | session={sid} | trigger=play_button | position={position}"
+                "PLAYLIST_ENQUEUE | session=%s | trigger=play_button | position=%s | requested=%s | random=%s",
+                selected_session,
+                position,
+                sid,
+                random_mode_enabled,
             )
             return (
                 jsonify(
                     {
                         "status": "queued",
-                        "session": sid,
+                        "session": selected_session,
                         "position": position,
                         "item": item,
+                        "random_mode": {
+                            "enabled": random_mode_enabled,
+                            "applied": random_applied,
+                            "requested": sid,
+                            "selected": selected_session,
+                            "available": random_choice is not None,
+                        },
                     }
                 ),
                 202,
             )
 
-        if not _start_session(sid, "manual"):
-            servo_logger.logger.error(f"PLAY_START_FAILED | session={sid}")
+        if not _start_session(selected_session, "manual"):
+            servo_logger.logger.error(
+                f"PLAY_START_FAILED | session={selected_session}"
+            )
             _ensure_playback_running()
             return jsonify({"error": "Impossible de demarrer la lecture"}), 500
 
-        return jsonify({"status": "playing", "session": sid})
+        response_payload = {
+            "status": "playing",
+            "session": selected_session,
+            "random_mode": {
+                "enabled": random_mode_enabled,
+                "applied": random_applied,
+                "requested": sid,
+                "selected": selected_session,
+                "available": random_choice is not None,
+            },
+        }
+        return jsonify(response_payload)
 
     except Exception as e:
         traceback.print_exc()
@@ -834,9 +1052,53 @@ def status():
         st["channels"] = dict(player_channels)
         st["playlist_size"] = playlist.size()
         st["current_playlist"] = _get_current_entry()
+        random_snapshot = _random_mode_snapshot()
+        random_snapshot["eligible_count"] = len(_eligible_random_sessions())
+        random_snapshot["excluded"] = sorted(_RANDOM_EXCLUDED_NAMES)
+        random_snapshot["available"] = random_snapshot["eligible_count"] > 0
+        st["random_mode"] = random_snapshot
+        if BT_DEVICE_ADDR:
+            info = _bluetooth_info(BT_DEVICE_ADDR)
+            st["bluetooth"] = {
+                "address": BT_DEVICE_ADDR,
+                "connected": info.get("connected") if info else None,
+            }
         return jsonify(st)
     except Exception as e:
         return jsonify({"error": f"Erreur status: {e}"}), 500
+
+
+@app.route("/random_mode", methods=["GET", "POST"])
+def random_mode():
+    if request.method == "GET":
+        snapshot = _random_mode_snapshot()
+        eligible = _eligible_random_sessions()
+        snapshot["eligible"] = eligible
+        snapshot["eligible_count"] = len(eligible)
+        snapshot["excluded"] = sorted(_RANDOM_EXCLUDED_NAMES)
+        snapshot["available"] = bool(eligible)
+        return jsonify(snapshot)
+
+    payload = request.get_json(silent=True) or {}
+    if "enabled" not in payload:
+        return jsonify({"error": "Champ 'enabled' manquant"}), 400
+
+    enabled_value = payload.get("enabled")
+    if not isinstance(enabled_value, bool):
+        return jsonify({"error": "Le champ 'enabled' doit etre booleen"}), 400
+
+    changed = _set_random_mode_enabled(enabled_value)
+    if changed:
+        servo_logger.logger.info("RANDOM_MODE_TOGGLE | enabled=%s", enabled_value)
+
+    snapshot = _random_mode_snapshot()
+    eligible = _eligible_random_sessions()
+    snapshot["eligible"] = eligible
+    snapshot["eligible_count"] = len(eligible)
+    snapshot["excluded"] = sorted(_RANDOM_EXCLUDED_NAMES)
+    snapshot["changed"] = changed
+    snapshot["available"] = bool(eligible)
+    return jsonify(snapshot)
 
 
 @app.route("/volume", methods=["POST"])
