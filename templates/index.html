@@ -66,6 +66,10 @@
                             <button type="button" class="volume-btn" data-volume-action="up" aria-label="Augmenter le volume">+</button>
                         </div>
                         <p class="hint volume-hint">Les commandes partent via bluetoothctl (menu transport).</p>
+                        <div class="bt-status" id="bluetoothStatus" role="status" aria-live="polite">
+                            <span class="bt-dot" id="bluetoothStatusDot" aria-hidden="true"></span>
+                            <span class="bt-text" id="bluetoothStatusText">Bluetooth : inconnu</span>
+                        </div>
                     </div>
 
                     <!-- Status en accordéon -->

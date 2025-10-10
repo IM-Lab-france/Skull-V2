@@ -801,6 +801,42 @@ body.modal-open {
     color: var(--muted);
 }
 
+.bt-status {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: .95rem;
+    color: var(--muted);
+}
+
+.bt-status .bt-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    box-shadow: 0 0 10px rgba(230, 237, 243, .15);
+}
+
+.bt-status.is-connected .bt-dot {
+    background: var(--green);
+    box-shadow: 0 0 10px rgba(57, 255, 20, .5);
+}
+
+.bt-status.is-disconnected .bt-dot {
+    background: var(--danger);
+    box-shadow: 0 0 10px rgba(220, 53, 69, .45);
+}
+
+.bt-status.is-unknown .bt-dot {
+    background: var(--warning);
+    box-shadow: 0 0 10px rgba(240, 173, 78, .4);
+}
+
+.bt-status .bt-text {
+    flex: 1;
+}
+
 /* ========= Zone upload ========= */
 .dropzone {
     border: 2px dashed rgba(255, 122, 24, .4);

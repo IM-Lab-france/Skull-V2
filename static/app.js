@@ -182,6 +182,18 @@ const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
 
 
 
+const elBtStatus = document.getElementById("bluetoothStatus");
+
+
+
+const elBtStatusDot = document.getElementById("bluetoothStatusDot");
+
+
+
+const elBtStatusText = document.getElementById("bluetoothStatusText");
+
+
+
 const elRandomToggle = $("#randomModeToggle");
 
 
@@ -2739,6 +2751,8 @@ async function updateStatus() {
 
 
 
+    applyBluetoothStatus(st && st.bluetooth ? st.bluetooth : null);
+
 
 
 
@@ -2895,6 +2909,13 @@ async function updateStatus() {
 
 
 
+    applyBluetoothStatus(null);
+
+
+
+
+
+
     if (elPlaylistCurrent) {
 
 
@@ -3020,6 +3041,106 @@ function setVolumeButtonsDisabled(disabled) {
 
 
   });
+
+
+
+}
+
+
+
+function applyBluetoothStatus(info) {
+
+
+
+  if (!elBtStatus) return;
+
+
+
+  let statusClass = "bt-status";
+
+
+
+  let text = "Bluetooth : inconnu";
+
+
+
+  if (info && typeof info === "object") {
+
+
+
+    if (info.connected === true) {
+
+
+
+      statusClass += " is-connected";
+
+
+
+      text = "Bluetooth : connecte";
+
+
+
+    } else if (info.connected === false) {
+
+
+
+      statusClass += " is-disconnected";
+
+
+
+      text = "Bluetooth : deconnecte";
+
+
+
+    } else {
+
+
+
+      statusClass += " is-unknown";
+
+
+
+    }
+
+
+
+  } else {
+
+
+
+    statusClass += " is-unknown";
+
+
+
+  }
+
+
+
+  elBtStatus.className = statusClass;
+
+
+
+  if (elBtStatusDot) {
+
+
+
+    elBtStatusDot.className = "bt-dot";
+
+
+
+  }
+
+
+
+  if (elBtStatusText) {
+
+
+
+    elBtStatusText.textContent = text;
+
+
+
+  }
 
 
 
