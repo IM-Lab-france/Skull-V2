@@ -194,6 +194,10 @@ const elBtStatusText = document.getElementById("bluetoothStatusText");
 
 
 
+const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
+
+
+
 const elRandomToggle = $("#randomModeToggle");
 
 
@@ -263,6 +267,10 @@ let lastPlaylistFetch = 0;
 
 
 let volumeBusy = false;
+
+
+
+let shuffleBusy = false;
 
 
 
@@ -2239,6 +2247,10 @@ elPlaylistSkip?.addEventListener("click", async () => {
 
 
 
+    fetchRandomModeState();
+
+
+
     updateStatus();
 
 
@@ -2543,6 +2555,10 @@ elPlay?.addEventListener("click", async () => {
 
 
 
+    fetchRandomModeState();
+
+
+
     updateStatus();
 
 
@@ -2656,6 +2672,10 @@ elStop?.addEventListener("click", async () => {
 
 
     await refreshPlaylist(true);
+
+
+
+    fetchRandomModeState();
 
 
 
@@ -3137,6 +3157,159 @@ function applyBluetoothStatus(info) {
 
 
     elBtStatusText.textContent = text;
+
+
+
+  }
+
+
+
+}
+
+
+
+
+async function triggerShuffleAll() {
+
+
+
+  if (shuffleBusy) return;
+
+
+
+  shuffleBusy = true;
+
+
+
+  if (elShuffleAllBtn) {
+
+
+
+    elShuffleAllBtn.setAttribute("disabled", "disabled");
+
+
+
+  }
+
+
+
+  try {
+
+
+
+    const res = await fetch("/playlist/shuffle", {
+
+
+
+      method: "POST",
+
+
+
+    });
+
+
+
+    const payload = await res.json().catch(() => ({}));
+
+
+
+    if (!res.ok) {
+
+
+
+      const message =
+
+
+
+        payload && typeof payload.error === "string"
+
+
+
+          ? payload.error
+
+
+
+          : `shuffle_http_${res.status}`;
+
+
+
+      throw new Error(message);
+
+
+
+    }
+
+
+
+    const count =
+
+
+
+      payload && typeof payload.count === "number" ? payload.count : null;
+
+
+
+    toast(
+
+
+
+      count
+
+
+
+        ? `Lecture aleatoire continue prete (${count} sessions)`
+
+
+
+        : "Lecture aleatoire continue prete"
+
+
+
+    );
+
+
+
+    await refreshPlaylist(true);
+
+
+
+    fetchRandomModeState();
+
+
+
+    updateStatus();
+
+
+
+  } catch (error) {
+
+
+
+    const message = error && error.message ? error.message : "Erreur shuffle";
+
+
+
+    toast(`Erreur mode aleatoire: ${message}`, true);
+
+
+
+  } finally {
+
+
+
+    shuffleBusy = false;
+
+
+
+    if (elShuffleAllBtn) {
+
+
+
+      elShuffleAllBtn.removeAttribute("disabled");
+
+
+
+    }
 
 
 
@@ -3848,7 +4021,23 @@ window.addEventListener("load", () => {
 
 
 
+  if (elShuffleAllBtn) {
 
+
+
+    elShuffleAllBtn.addEventListener("click", () => {
+
+
+
+      triggerShuffleAll();
+
+
+
+    });
+
+
+
+  }
 
 
 

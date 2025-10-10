@@ -419,6 +419,10 @@ class PlaylistManager:
         with self._lock:
             self._queue.insert(0, item.copy())
 
+    def clear(self) -> None:
+        with self._lock:
+            self._queue.clear()
+
     def size(self) -> int:
         with self._lock:
             return len(self._queue)
@@ -1165,6 +1169,44 @@ def playlist_api():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Erreur playlist: {e}"}), 500
+
+
+@app.route("/playlist/shuffle", methods=["POST"])
+def playlist_shuffle():
+    sessions = _eligible_random_sessions()
+    if not sessions:
+        return (
+            jsonify({"error": "Aucune session disponible pour la lecture aléatoire"}),
+            400,
+        )
+
+    random.shuffle(sessions)
+
+    try:
+        player.stop(reason="shuffle")
+    except Exception:
+        servo_logger.logger.exception("PLAYLIST_SHUFFLE_STOP_FAILED")
+
+    _set_current_entry(None)
+    playlist.clear()
+
+    for session_name in sessions:
+        playlist.add(session_name)
+
+    servo_logger.logger.info(
+        "PLAYLIST_SHUFFLE | count=%s | sessions=%s", len(sessions), ", ".join(sessions)
+    )
+
+    _ensure_playback_running()
+
+    return jsonify(
+        {
+            "status": "shuffled",
+            "count": len(sessions),
+            "sessions": sessions,
+            "playlist": playlist.snapshot(),
+        }
+    )
 
 
 @app.route("/playlist/<int:item_id>", methods=["DELETE"])
