@@ -18,7 +18,7 @@
 
 
 
-// - NOUVEAU: Nom de scène personnalisé
+// - NOUVEAU: Nom de scÃ¨ne personnalisÃ©
 
 
 
@@ -194,11 +194,111 @@ const elBtStatusText = document.getElementById("bluetoothStatusText");
 
 
 
+const elBtTopStatus = document.getElementById("bluetoothTopStatus");
+
+
+
+const elBtTopStatusDot = document.getElementById("bluetoothTopStatusDot");
+
+
+
+const elBtTopStatusText = document.getElementById("bluetoothTopStatusText");
+
+
+
 const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
 
 
 const elRestartServiceBtn = document.getElementById("restartServiceBtn");
+
+
+
+const elEsp32Card = document.getElementById("esp32Card");
+
+
+
+const elEsp32StatusDot = document.getElementById("esp32StatusDot");
+
+
+
+const elEsp32StatusText = document.getElementById("esp32StatusText");
+
+
+
+const elEsp32TopStatus = document.getElementById("esp32TopStatus");
+
+
+
+const elEsp32TopStatusDot = document.getElementById("esp32TopStatusDot");
+
+
+
+const elEsp32TopStatusText = document.getElementById("esp32TopStatusText");
+
+
+
+const elEsp32StatusRefresh = document.getElementById("esp32StatusRefreshBtn");
+
+
+
+const elEsp32ConfigForm = document.getElementById("esp32ConfigForm");
+
+
+
+const elEsp32Host = document.getElementById("esp32Host");
+
+
+
+const elEsp32Port = document.getElementById("esp32Port");
+
+
+
+const elEsp32Enabled = document.getElementById("esp32Enabled");
+
+
+
+const elEsp32RelayOn = document.getElementById("esp32RelayOnBtn");
+
+
+
+const elEsp32RelayOff = document.getElementById("esp32RelayOffBtn");
+
+
+
+const elEsp32AutoRelayToggle = document.getElementById("esp32AutoRelayToggle");
+
+
+
+const elEsp32Restart = document.getElementById("esp32RestartBtn");
+
+
+
+const elEsp32RelayState = document.getElementById("esp32RelayState");
+
+
+
+const elEsp32AutoRelayState = document.getElementById("esp32AutoRelayState");
+
+
+
+const elEsp32CurrentSession = document.getElementById("esp32CurrentSession");
+
+
+
+const elEsp32WifiInfo = document.getElementById("esp32WifiInfo");
+
+
+
+const elEsp32StatusRaw = document.getElementById("esp32StatusRaw");
+
+
+
+const elEsp32ButtonsRefresh = document.getElementById("esp32ButtonsRefreshBtn");
+
+
+
+const elEsp32ButtonsContainer = document.getElementById("esp32ButtonsContainer");
 
 
 
@@ -289,6 +389,66 @@ let randomModeState = {
   available: true,
 
   busy: false,
+
+};
+
+
+
+const ESP32_STATUS_INTERVAL = 5000;
+
+
+
+const ESP32_DEFAULT_BUTTON_COUNT = 5;
+
+
+
+let esp32Config = {
+
+  host: "",
+
+  port: 80,
+
+  enabled: false,
+
+  buttonCount: ESP32_DEFAULT_BUTTON_COUNT,
+
+};
+
+
+
+let esp32StatusTimerId = null;
+
+
+
+let esp32AvailableSessions = [];
+
+
+
+let esp32StatusSnapshot = null;
+
+
+
+let esp32ButtonAssignments = [];
+
+
+
+const esp32ButtonComponents = new Map();
+
+
+
+let esp32Busy = {
+
+  status: false,
+
+  relay: false,
+
+  auto: false,
+
+  restart: false,
+
+  config: false,
+
+  buttons: false,
 
 };
 function renderRandomModeState() {
@@ -467,7 +627,7 @@ function isMp3(f) {
 
 
 
-// NOUVEAU: fonction pour nettoyer le nom de scène
+// NOUVEAU: fonction pour nettoyer le nom de scÃ¨ne
 
 
 
@@ -475,7 +635,7 @@ function sanitizeSceneName(name) {
   if (!name || !name.trim()) return null;
   const cleaned = name
     .trim()
-    .replace(/[^a-zA-Z0-9 _-]/g, "") // garder alphanumériques, espaces, _, -
+    .replace(/[^a-zA-Z0-9 _-]/g, "") // garder alphanumÃ©riques, espaces, _, -
     .trim();
   if (!cleaned) return null;
   return cleaned.substring(0, 50); // Limiter la longueur
@@ -487,7 +647,7 @@ function sanitizeSceneName(name) {
 
 
 
-// NOUVEAU: fonction pour extraire la fréquence du nom de fichier JSON
+// NOUVEAU: fonction pour extraire la frÃ©quence du nom de fichier JSON
 
 
 
@@ -499,7 +659,7 @@ function extractFrequencyFromFilename(filename) {
 
 
 
-  return match ? match[1] : "60"; // 60Hz par défaut
+  return match ? match[1] : "60"; // 60Hz par dÃ©faut
 
 
 
@@ -527,7 +687,7 @@ function updatePills() {
 
 
 
-  // Validation : nom de scène + fichiers requis
+  // Validation : nom de scÃ¨ne + fichiers requis
 
 
 
@@ -583,7 +743,7 @@ function handleFiles(files) {
 
 
 
-// Validation en temps réel du nom de scène
+// Validation en temps rÃ©el du nom de scÃ¨ne
 
 
 
@@ -843,7 +1003,7 @@ elDrop?.addEventListener("click", () => elFileJson.click());
 
 
 
-// Upload avec nom de scène personnalisé
+// Upload avec nom de scÃ¨ne personnalisÃ©
 
 
 
@@ -859,7 +1019,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-  // Validation côté client
+  // Validation cÃ´tÃ© client
 
 
 
@@ -879,7 +1039,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-    toast("Veuillez saisir un nom de scène valide", true);
+    toast("Veuillez saisir un nom de scÃ¨ne valide", true);
 
 
 
@@ -915,7 +1075,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-  // Extraire la fréquence du nom du fichier JSON
+  // Extraire la frÃ©quence du nom du fichier JSON
 
 
 
@@ -935,7 +1095,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-  // Renommer les fichiers selon le format demandé
+  // Renommer les fichiers selon le format demandÃ©
 
 
 
@@ -959,7 +1119,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-  fd.append("scene_name", sanitizedName); // Nom du répertoire
+  fd.append("scene_name", sanitizedName); // Nom du rÃ©pertoire
 
 
 
@@ -1031,7 +1191,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-      toast(`Session "${sceneName}" uploadée avec succès`);
+      toast(`Session "${sceneName}" uploadÃ©e avec succÃ¨s`);
 
 
 
@@ -1087,7 +1247,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-      toast("Échec upload: " + xhr.responseText, true);
+      toast("Ã‰chec upload: " + xhr.responseText, true);
 
 
 
@@ -1115,7 +1275,7 @@ elForm?.addEventListener("submit", (e) => {
 
 
 
-    toast("Erreur réseau upload", true);
+    toast("Erreur rÃ©seau upload", true);
 
 
 
@@ -1335,6 +1495,14 @@ async function fetchSessions(options = {}) {
 
 
 
+    esp32AvailableSessions = sessions;
+
+
+
+    populateEsp32ButtonOptions();
+
+
+
     if (elSelect.options.length) {
 
       const target = preferred ?? previousValue;
@@ -1373,6 +1541,14 @@ async function fetchSessions(options = {}) {
 
     elSelect.innerHTML = "";
 
+    esp32AvailableSessions = [];
+
+
+
+    populateEsp32ButtonOptions();
+
+
+
     syncDeleteSessionState();
 
     return [];
@@ -1397,7 +1573,7 @@ elDeleteSession?.addEventListener("click", () => {
 
   if (!session) {
 
-    toast("Aucune session sélectionnée", true);
+    toast("Aucune session sÃ©lectionnÃ©e", true);
 
     return;
 
@@ -1459,7 +1635,7 @@ elDeleteModalConfirm?.addEventListener("click", async () => {
 
       typeof payload?.removed_from_queue === "number" ? payload.removed_from_queue : 0;
 
-    let successMsg = `Session supprimée: ${prettifySessionName(session) || session}`;
+    let successMsg = `Session supprimÃ©e: ${prettifySessionName(session) || session}`;
 
     if (removedCount > 0) {
 
@@ -1485,9 +1661,9 @@ elDeleteModalConfirm?.addEventListener("click", async () => {
 
     console.error("Erreur suppression session:", e);
 
-    setDeleteModalBusy(false, "Erreur réseau lors de la suppression.");
+    setDeleteModalBusy(false, "Erreur rÃ©seau lors de la suppression.");
 
-    toast("Erreur réseau suppression session", true);
+    toast("Erreur rÃ©seau suppression session", true);
 
     return;
 
@@ -2843,7 +3019,7 @@ async function updateStatus() {
 
 
 
-      elConnectionText.textContent = "Statut : connecte";
+      elConnectionText.textContent = "Skull : connecte";
 
 
 
@@ -3018,7 +3194,7 @@ async function updateStatus() {
 
 
 
-      elConnectionText.textContent = "Statut : hors ligne";
+      elConnectionText.textContent = "Skull : hors ligne";
 
 
 
@@ -3088,18 +3264,15 @@ function setRestartServiceDisabled(disabled) {
 }
 
 function applyBluetoothStatus(info) {
-
-
-
-  if (!elBtStatus) return;
-
-
-
   let statusClass = "bt-status";
 
 
 
   let text = "Bluetooth : inconnu";
+
+
+
+  let topState = "unknown";
 
 
 
@@ -3119,6 +3292,10 @@ function applyBluetoothStatus(info) {
 
 
 
+      topState = "online";
+
+
+
     } else if (info.connected === false) {
 
 
@@ -3131,11 +3308,19 @@ function applyBluetoothStatus(info) {
 
 
 
+      topState = "offline";
+
+
+
     } else {
 
 
 
       statusClass += " is-unknown";
+
+
+
+      topState = "unknown";
 
 
 
@@ -3151,11 +3336,17 @@ function applyBluetoothStatus(info) {
 
 
 
+    topState = "unknown";
+
+
+
   }
 
 
 
-  elBtStatus.className = statusClass;
+  if (elBtStatus) {
+    elBtStatus.className = statusClass;
+  }
 
 
 
@@ -3176,6 +3367,56 @@ function applyBluetoothStatus(info) {
 
 
     elBtStatusText.textContent = text;
+
+
+
+  }
+
+
+
+  if (elBtTopStatus) {
+
+
+
+    const base = "connection-chip connection-chip--secondary";
+
+
+
+    const stateClass =
+
+      topState === "online" ? "online" : topState === "offline" ? "offline" : "unknown";
+
+
+
+    elBtTopStatus.className = `${base} ${stateClass}`;
+
+
+
+  }
+
+
+
+  if (elBtTopStatusDot) {
+
+
+
+    elBtTopStatusDot.className = "connection-dot";
+
+
+
+    elBtTopStatusDot.setAttribute("aria-label", text);
+
+
+
+  }
+
+
+
+  if (elBtTopStatusText) {
+
+
+
+    elBtTopStatusText.textContent = text;
 
 
 
@@ -3207,10 +3448,10 @@ async function triggerServiceRestart() {
       throw new Error(message);
     }
 
-    toast("Service en redémarrage");
+    toast("Service en redÃ©marrage");
   } catch (error) {
-    const message = error && error.message ? error.message : "Redémarrage échoué";
-    toast(`Erreur redémarrage: ${message}`, true);
+    const message = error && error.message ? error.message : "RedÃ©marrage Ã©chouÃ©";
+    toast(`Erreur redÃ©marrage: ${message}`, true);
   } finally {
     restartServiceBusy = false;
     setRestartServiceDisabled(false);
@@ -3434,7 +3675,7 @@ async function sendVolumeAction(action) {
 
 
 
-        `Commande volume échouée (${response.status})`;
+        `Commande volume Ã©chouÃ©e (${response.status})`;
 
 
 
@@ -3454,7 +3695,7 @@ async function sendVolumeAction(action) {
 
 
 
-        (action === "mute" ? "Volume coupé" : "Volume ajusté");
+        (action === "mute" ? "Volume coupÃ©" : "Volume ajustÃ©");
 
 
 
@@ -3470,7 +3711,7 @@ async function sendVolumeAction(action) {
 
 
 
-    toast("Erreur réseau /volume", true);
+    toast("Erreur rÃ©seau /volume", true);
 
 
 
@@ -3706,7 +3947,7 @@ async function postChannels(c) {
 
 
 
-    toast("Erreur réseau /channels", true);
+    toast("Erreur rÃ©seau /channels", true);
 
 
 
@@ -3790,7 +4031,7 @@ function updatePitchDisplay() {
 
 
 
-      if (valueSpan) valueSpan.textContent = slider.value + "°";
+      if (valueSpan) valueSpan.textContent = slider.value + "Â°";
 
 
 
@@ -3946,7 +4187,7 @@ async function postPitch() {
 
 
 
-    toast("Erreur réseau /pitch", true);
+    toast("Erreur rÃ©seau /pitch", true);
 
 
 
@@ -3994,11 +4235,912 @@ Object.values(pitchSliders).forEach((slider) => {
 
 
 
+
+
+
+
+// -------------------- ESP32 Gateway --------------------
+
+function esp32ValueIsOn(value) {
+  if (value === true) {
+    return true
+  }
+
+  if (value === false) {
+    return false
+  }
+
+  if (typeof value === "number") {
+    if (value === 0) {
+      return false
+    }
+    if (value === 1) {
+      return true
+    }
+  }
+
+  if (typeof value === "string") {
+    const norm = value.trim().toLowerCase()
+    if (norm === "1" || norm === "true" || norm === "on") {
+      return true
+    }
+    if (norm === "0" || norm === "false" || norm === "off") {
+      return false
+    }
+  }
+
+  return Boolean(value)
+}
+
+function setEsp32Badge(element, value, labels = { on: "ON", off: "OFF" }) {
+  if (!element) {
+    return
+  }
+
+  element.classList.remove("esp32-badge-on", "esp32-badge-off", "esp32-badge-idle")
+
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    element.textContent = "-"
+    element.classList.add("esp32-badge-idle")
+    return
+  }
+
+  const isOn = esp32ValueIsOn(value)
+  if (isOn) {
+    element.textContent = labels?.on ?? "ON"
+    element.classList.add("esp32-badge-on")
+  } else {
+    element.textContent = labels?.off ?? "OFF"
+    element.classList.add("esp32-badge-off")
+  }
+}
+
+function setEsp32Reachability(state, message = "") {
+  const resolvedDefault =
+    state === true
+      ? "En ligne"
+      : state === false
+        ? "Hors ligne"
+        : "Inactif (desactive)"
+
+  const resolvedMessage = message || resolvedDefault
+  const topLabel = `ESP32 : ${resolvedMessage}`
+  const stateClass =
+    state === true ? "online" : state === false ? "offline" : "disabled"
+
+  if (elEsp32StatusDot) {
+    elEsp32StatusDot.classList.remove("online", "offline", "disabled")
+    elEsp32StatusDot.classList.add(stateClass)
+    elEsp32StatusDot.setAttribute("aria-label", resolvedMessage.toLowerCase())
+  }
+
+  if (elEsp32StatusText) {
+    elEsp32StatusText.textContent = resolvedMessage
+  }
+
+  if (elEsp32TopStatus) {
+    const base = "connection-chip connection-chip--secondary"
+    elEsp32TopStatus.className = `${base} ${stateClass}`
+  }
+
+  if (elEsp32TopStatusDot) {
+    elEsp32TopStatusDot.className = "connection-dot"
+    elEsp32TopStatusDot.setAttribute("aria-label", topLabel)
+  }
+
+  if (elEsp32TopStatusText) {
+    elEsp32TopStatusText.textContent = topLabel
+  }
+}
+
+function setEsp32ControlAvailability(enabled) {
+  const disabled = !enabled
+  const controls = [
+    elEsp32RelayOn,
+    elEsp32RelayOff,
+    elEsp32AutoRelayToggle,
+    elEsp32Restart,
+    elEsp32StatusRefresh,
+    elEsp32ButtonsRefresh,
+  ]
+  controls.forEach((el) => {
+    if (el) {
+      el.disabled = disabled
+    }
+  })
+
+  esp32ButtonComponents.forEach(({ select, saveBtn }) => {
+    if (select) {
+      select.disabled = disabled
+    }
+    if (saveBtn) {
+      saveBtn.disabled = disabled
+    }
+  })
+}
+
+function updateEsp32AutoRelayButton(state) {
+  if (!elEsp32AutoRelayToggle) {
+    return
+  }
+
+  const isActive = esp32ValueIsOn(state)
+  elEsp32AutoRelayToggle.setAttribute("aria-pressed", isActive ? "true" : "false")
+  elEsp32AutoRelayToggle.textContent = isActive ? "Auto-relay ON" : "Auto-relay OFF"
+}
+
+function resetEsp32StatusView() {
+  setEsp32Badge(elEsp32RelayState, null)
+  setEsp32Badge(elEsp32AutoRelayState, null)
+  if (elEsp32CurrentSession) {
+    elEsp32CurrentSession.textContent = "-"
+  }
+  if (elEsp32WifiInfo) {
+    elEsp32WifiInfo.textContent = "-"
+  }
+  if (elEsp32StatusRaw) {
+    elEsp32StatusRaw.textContent = ""
+  }
+  updateEsp32ButtonStates(null)
+  updateEsp32AutoRelayButton(false)
+}
+
+function formatEsp32WifiInfo(wifi) {
+  if (!wifi || typeof wifi !== "object") {
+    return "-"
+  }
+
+  const ip = typeof wifi.ip === "string" && wifi.ip.trim() ? wifi.ip.trim() : ""
+  const rssiValue = wifi.rssi
+  const hasRssi = typeof rssiValue === "number" && Number.isFinite(rssiValue)
+
+  if (ip && hasRssi) {
+    return `${ip} (RSSI ${rssiValue})`
+  }
+  if (ip) {
+    return ip
+  }
+  if (hasRssi) {
+    return `RSSI ${rssiValue}`
+  }
+  return "-"
+}
+
+function rebuildEsp32Buttons(count) {
+  if (!elEsp32ButtonsContainer) {
+    return
+  }
+
+  const total =
+    typeof count === "number" && Number.isFinite(count) && count > 0
+      ? Math.min(count, 12)
+      : ESP32_DEFAULT_BUTTON_COUNT
+
+  esp32ButtonComponents.clear()
+  elEsp32ButtonsContainer.innerHTML = ""
+
+  for (let idx = 0; idx < total; idx += 1) {
+    const item = document.createElement("div")
+    item.className = "esp32-button-item"
+
+    const header = document.createElement("div")
+    header.className = "esp32-button-header"
+
+    const label = document.createElement("span")
+    label.textContent = `Bouton ${idx + 1}`
+
+    const badge = document.createElement("span")
+    badge.className = "badge esp32-badge-idle"
+    badge.id = `esp32ButtonState${idx}`
+    badge.textContent = "-"
+
+    header.append(label, badge)
+
+    const select = document.createElement("select")
+    select.className = "select esp32-button-select"
+    select.dataset.esp32Button = String(idx)
+
+    const emptyOption = document.createElement("option")
+    emptyOption.value = ""
+    emptyOption.textContent = "-- Aucun --"
+    select.append(emptyOption)
+
+    const actions = document.createElement("div")
+    actions.className = "esp32-button-actions"
+
+    const saveBtn = document.createElement("button")
+    saveBtn.type = "button"
+    saveBtn.className = "btn secondary esp32-button-save"
+    saveBtn.dataset.esp32Button = String(idx)
+    saveBtn.textContent = "Associer"
+
+    actions.append(saveBtn)
+    item.append(header, select, actions)
+    elEsp32ButtonsContainer.append(item)
+
+    esp32ButtonComponents.set(idx, {
+      select,
+      badge,
+      saveBtn,
+      container: item,
+    })
+  }
+
+  populateEsp32ButtonOptions()
+  applyEsp32ButtonAssignments(esp32ButtonAssignments)
+  setEsp32ControlAvailability(esp32Config.enabled)
+}
+
+function populateEsp32ButtonOptions() {
+  const sessions = Array.isArray(esp32AvailableSessions)
+    ? esp32AvailableSessions
+    : []
+
+  esp32ButtonComponents.forEach(({ select }, index) => {
+    if (!select) {
+      return
+    }
+
+    const assigned = esp32ButtonAssignments[index] || ""
+    const previousValue = select.value
+
+    select.innerHTML = ""
+
+    const emptyOption = document.createElement("option")
+    emptyOption.value = ""
+    emptyOption.textContent = "-- Aucun --"
+    select.append(emptyOption)
+
+    sessions.forEach((session) => {
+      const opt = document.createElement("option")
+      opt.value = session
+      opt.textContent = session
+      select.append(opt)
+    })
+
+    const target = assigned || previousValue || ""
+    if (target) {
+      if (!sessions.includes(target)) {
+        const missing = document.createElement("option")
+        missing.value = target
+        missing.textContent = `${target} (absent)`
+        missing.dataset.missing = "true"
+        select.append(missing)
+      }
+      select.value = target
+    } else {
+      select.value = ""
+    }
+  })
+}
+
+function applyEsp32ButtonAssignments(assignments) {
+  if (Array.isArray(assignments)) {
+    esp32ButtonAssignments = assignments.slice()
+  } else {
+    esp32ButtonAssignments = []
+  }
+  populateEsp32ButtonOptions()
+}
+
+function updateEsp32ButtonStates(states) {
+  const list = Array.isArray(states) ? states : null
+
+  esp32ButtonComponents.forEach(({ badge }, index) => {
+    if (!badge) {
+      return
+    }
+
+    if (!list) {
+      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" })
+      return
+    }
+
+    const raw = list[index]
+    if (raw === 0) {
+      setEsp32Badge(badge, false, { on: "Relache", off: "Appuye" })
+    } else if (raw === 1) {
+      setEsp32Badge(badge, true, { on: "Relache", off: "Appuye" })
+    } else {
+      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" })
+    }
+  })
+}
+
+function scheduleEsp32StatusPolling() {
+  if (esp32StatusTimerId) {
+    clearInterval(esp32StatusTimerId)
+    esp32StatusTimerId = null
+  }
+
+  if (!esp32Config.enabled) {
+    return
+  }
+
+  esp32StatusTimerId = window.setInterval(() => {
+    refreshEsp32Status({ silent: true })
+  }, ESP32_STATUS_INTERVAL)
+}
+
+async function refreshEsp32Status(options = {}) {
+  if (!elEsp32Card) {
+    return
+  }
+
+  if (!esp32Config.enabled) {
+    setEsp32Reachability(null, "Inactif (desactive)")
+    resetEsp32StatusView()
+    return
+  }
+
+  if (esp32Busy.status) {
+    return
+  }
+
+  const { silent = false } = options
+  esp32Busy.status = true
+
+  try {
+    const res = await fetch("/esp32/status")
+    const data = await res.json()
+
+    if (res.ok && data && data.reachable) {
+      esp32StatusSnapshot = data.status || {}
+      setEsp32Reachability(true, "En ligne")
+
+      setEsp32Badge(elEsp32RelayState, esp32StatusSnapshot.relay)
+      setEsp32Badge(elEsp32AutoRelayState, esp32StatusSnapshot.autoRelay)
+      updateEsp32AutoRelayButton(esp32StatusSnapshot.autoRelay)
+
+      if (elEsp32CurrentSession) {
+        elEsp32CurrentSession.textContent =
+          esp32StatusSnapshot.currentSession || "-"
+      }
+
+      if (elEsp32WifiInfo) {
+        elEsp32WifiInfo.textContent = formatEsp32WifiInfo(
+          esp32StatusSnapshot.wifi
+        )
+      }
+
+      if (elEsp32StatusRaw) {
+        elEsp32StatusRaw.textContent = JSON.stringify(
+          esp32StatusSnapshot,
+          null,
+          2
+        )
+      }
+
+      updateEsp32ButtonStates(esp32StatusSnapshot.buttons)
+      return
+    }
+
+    const errorText =
+      data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+    setEsp32Reachability(false, `Hors ligne (${errorText})`)
+    resetEsp32StatusView()
+    esp32StatusSnapshot = null
+
+    if (!silent) {
+      toast(`ESP32 statut: ${errorText}`, true)
+    }
+  } catch (err) {
+    console.error("ESP32 status error:", err)
+    setEsp32Reachability(false, "Hors ligne (erreur)")
+    resetEsp32StatusView()
+    esp32StatusSnapshot = null
+    if (!silent) {
+      toast("Erreur reseau ESP32 (status)", true)
+    }
+  } finally {
+    esp32Busy.status = false
+  }
+}
+
+async function fetchEsp32Buttons(options = {}) {
+  if (!elEsp32ButtonsContainer || !esp32Config.enabled) {
+    return
+  }
+
+  if (esp32Busy.buttons) {
+    return
+  }
+
+  const { silent = false } = options
+  esp32Busy.buttons = true
+
+  if (elEsp32ButtonsRefresh) {
+    elEsp32ButtonsRefresh.disabled = true
+  }
+
+  try {
+    const res = await fetch("/esp32/button-config")
+    const data = await res.json()
+
+    if (res.ok && data && data.reachable) {
+      applyEsp32ButtonAssignments(
+        Array.isArray(data.sessions) ? data.sessions : []
+      )
+    } else {
+      const errorText =
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+      if (!silent) {
+        toast(`ESP32 boutons: ${errorText}`, true)
+      }
+    }
+  } catch (err) {
+    console.error("ESP32 button config error:", err)
+    if (!silent) {
+      toast("Erreur reseau ESP32 (boutons)", true)
+    }
+  } finally {
+    esp32Busy.buttons = false
+    if (elEsp32ButtonsRefresh) {
+      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled
+    }
+  }
+}
+
+async function setEsp32Relay(on) {
+  if (!esp32Config.enabled) {
+    toast("Activer l'ESP32 avant de piloter le relais", true)
+    return
+  }
+
+  if (esp32Busy.relay) {
+    return
+  }
+
+  esp32Busy.relay = true
+
+  if (elEsp32RelayOn) {
+    elEsp32RelayOn.disabled = true
+  }
+
+  if (elEsp32RelayOff) {
+    elEsp32RelayOff.disabled = true
+  }
+
+  try {
+    const res = await fetch("/esp32/relay", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ on: Boolean(on) }),
+    })
+    const data = await res.json()
+
+    if (res.ok && data && data.success !== false) {
+      toast(on ? "Relais ESP32 active" : "Relais ESP32 desactive")
+      await refreshEsp32Status({ silent: true })
+    } else {
+      const errorText =
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+      toast(`ESP32 relais: ${errorText}`, true)
+    }
+  } catch (err) {
+    console.error("ESP32 relay error:", err)
+    toast("Erreur reseau ESP32 (relais)", true)
+  } finally {
+    esp32Busy.relay = false
+    setEsp32ControlAvailability(esp32Config.enabled)
+  }
+}
+
+async function setEsp32AutoRelay(nextState) {
+  if (!esp32Config.enabled) {
+    toast("Activer l'ESP32 avant de modifier l'auto-relay", true)
+    return
+  }
+
+  if (esp32Busy.auto) {
+    return
+  }
+
+  esp32Busy.auto = true
+
+  if (elEsp32AutoRelayToggle) {
+    elEsp32AutoRelayToggle.disabled = true
+  }
+
+  try {
+    const res = await fetch("/esp32/auto-relay", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled: Boolean(nextState) }),
+    })
+    const data = await res.json()
+
+    if (res.ok && data && data.success !== false) {
+      toast(
+        nextState
+          ? "Mode auto-relay active"
+          : "Mode auto-relay desactive"
+      )
+      await refreshEsp32Status({ silent: true })
+    } else {
+      const errorText =
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+      toast(`ESP32 auto-relay: ${errorText}`, true)
+    }
+  } catch (err) {
+    console.error("ESP32 auto-relay error:", err)
+    toast("Erreur reseau ESP32 (auto-relay)", true)
+  } finally {
+    esp32Busy.auto = false
+    if (elEsp32AutoRelayToggle) {
+      elEsp32AutoRelayToggle.disabled = !esp32Config.enabled
+    }
+  }
+}
+
+function toggleEsp32AutoRelay() {
+  const current = esp32ValueIsOn(esp32StatusSnapshot?.autoRelay)
+  setEsp32AutoRelay(!current)
+}
+
+async function requestEsp32Restart() {
+  if (!esp32Config.enabled) {
+    toast("Activer l'ESP32 avant de redemarrer", true)
+    return
+  }
+
+  if (esp32Busy.restart) {
+    return
+  }
+
+  if (!window.confirm("Redemarrer l'ESP32 maintenant ?")) {
+    return
+  }
+
+  esp32Busy.restart = true
+
+  if (elEsp32Restart) {
+    elEsp32Restart.disabled = true
+  }
+
+  try {
+    const res = await fetch("/esp32/restart", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+    const data = await res.json()
+
+    if (res.ok && data && data.success !== false) {
+      toast("Commande de redemarrage envoyee")
+      setEsp32Reachability(false, "Hors ligne (redemarrage)")
+    } else {
+      const errorText =
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+      toast(`ESP32 restart: ${errorText}`, true)
+    }
+  } catch (err) {
+    console.error("ESP32 restart error:", err)
+    toast("Erreur reseau ESP32 (restart)", true)
+  } finally {
+    esp32Busy.restart = false
+    if (elEsp32Restart) {
+      elEsp32Restart.disabled = !esp32Config.enabled
+    }
+  }
+}
+
+async function handleEsp32ButtonSave(buttonIndex) {
+  if (!Number.isInteger(buttonIndex) || buttonIndex < 0) {
+    return
+  }
+
+  if (!esp32Config.enabled) {
+    toast("Activer l'ESP32 avant de modifier les boutons", true)
+    return
+  }
+
+  const entry = esp32ButtonComponents.get(buttonIndex)
+  if (!entry || esp32Busy.buttons) {
+    return
+  }
+
+  const { select, saveBtn } = entry
+  const sessionValue = select ? select.value : ""
+
+  esp32Busy.buttons = true
+
+  if (saveBtn) {
+    saveBtn.disabled = true
+    saveBtn.textContent = "Envoi..."
+  }
+
+  try {
+    const res = await fetch("/esp32/button-config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        button: buttonIndex,
+        session: sessionValue || "",
+      }),
+    })
+    const data = await res.json()
+
+    if (res.ok && data && data.success !== false) {
+      if (Array.isArray(data.sessions)) {
+        applyEsp32ButtonAssignments(data.sessions)
+      } else {
+        esp32ButtonAssignments[buttonIndex] = sessionValue || ""
+        populateEsp32ButtonOptions()
+      }
+      toast(`Bouton ${buttonIndex + 1} mis a jour`)
+      await refreshEsp32Status({ silent: true })
+    } else {
+      const errorText =
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+      toast(`ESP32 bouton ${buttonIndex + 1}: ${errorText}`, true)
+    }
+  } catch (err) {
+    console.error("ESP32 button update error:", err)
+    toast("Erreur reseau ESP32 (boutons)", true)
+  } finally {
+    esp32Busy.buttons = false
+    if (saveBtn) {
+      saveBtn.disabled = !esp32Config.enabled
+      saveBtn.textContent = "Associer"
+    }
+    if (elEsp32ButtonsRefresh) {
+      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled
+    }
+  }
+}
+
+async function fetchEsp32Config() {
+  if (!elEsp32Card) {
+    return
+  }
+
+  try {
+    const res = await fetch("/esp32/config")
+    const data = await res.json()
+
+    if (!res.ok) {
+      const errorText = data?.error || `HTTP ${res.status}`
+      setEsp32Reachability(null, "Inactif (desactive)")
+      setEsp32ControlAvailability(false)
+      resetEsp32StatusView()
+      toast(`ESP32 config: ${errorText}`, true)
+      return
+    }
+
+    esp32Config = {
+      host: typeof data.host === "string" ? data.host.trim() : "",
+      port:
+        typeof data.port === "number" && Number.isFinite(data.port)
+          ? data.port
+          : parseInt(data.port, 10) || 80,
+      enabled: Boolean(data.enabled),
+      buttonCount:
+        typeof data.buttonCount === "number" && data.buttonCount > 0
+          ? data.buttonCount
+          : ESP32_DEFAULT_BUTTON_COUNT,
+    }
+
+    if (elEsp32Host) {
+      elEsp32Host.value = esp32Config.host || ""
+    }
+    if (elEsp32Port) {
+      elEsp32Port.value = String(esp32Config.port || 80)
+    }
+    if (elEsp32Enabled) {
+      elEsp32Enabled.checked = esp32Config.enabled
+    }
+
+    rebuildEsp32Buttons(esp32Config.buttonCount)
+
+    if (esp32Config.enabled) {
+      setEsp32ControlAvailability(true)
+      await refreshEsp32Status({ silent: true })
+      await fetchEsp32Buttons({ silent: true })
+    } else {
+      setEsp32ControlAvailability(false)
+      setEsp32Reachability(null, "Inactif (desactive)")
+      resetEsp32StatusView()
+    }
+
+    scheduleEsp32StatusPolling()
+  } catch (err) {
+    console.error("ESP32 config load error:", err)
+    setEsp32Reachability(null, "Inactif (desactive)")
+    setEsp32ControlAvailability(false)
+    resetEsp32StatusView()
+    toast("Impossible de charger la configuration ESP32", true)
+  }
+}
+
+async function handleEsp32ConfigSubmit(event) {
+  event.preventDefault()
+
+  if (esp32Busy.config) {
+    return
+  }
+
+  esp32Busy.config = true
+
+  const submitBtn = document.getElementById("esp32ConfigSaveBtn")
+  if (submitBtn) {
+    submitBtn.disabled = true
+  }
+
+  const host = elEsp32Host ? elEsp32Host.value.trim() : ""
+  const rawPort = elEsp32Port ? elEsp32Port.value.trim() : ""
+  let port = parseInt(rawPort, 10)
+  if (!Number.isFinite(port) || port <= 0) {
+    port = 80
+  }
+  const enabled = elEsp32Enabled ? elEsp32Enabled.checked : false
+
+  const payload = {
+    host,
+    port,
+    enabled,
+  }
+
+  try {
+    const res = await fetch("/esp32/config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json()
+
+    if (!res.ok || data?.error) {
+      const errorText = data?.error || `HTTP ${res.status}`
+      toast(`Configuration ESP32: ${errorText}`, true)
+      return
+    }
+
+    toast("Configuration ESP32 mise a jour")
+
+    esp32Config = {
+      host: typeof data.host === "string" ? data.host.trim() : "",
+      port:
+        typeof data.port === "number" && Number.isFinite(data.port)
+          ? data.port
+          : parseInt(data.port, 10) || 80,
+      enabled: Boolean(data.enabled),
+      buttonCount:
+        typeof data.buttonCount === "number" && data.buttonCount > 0
+          ? data.buttonCount
+          : ESP32_DEFAULT_BUTTON_COUNT,
+    }
+
+    if (elEsp32Host) {
+      elEsp32Host.value = esp32Config.host || ""
+    }
+    if (elEsp32Port) {
+      elEsp32Port.value = String(esp32Config.port || 80)
+    }
+    if (elEsp32Enabled) {
+      elEsp32Enabled.checked = esp32Config.enabled
+    }
+
+    rebuildEsp32Buttons(esp32Config.buttonCount)
+
+    if (esp32Config.enabled) {
+      setEsp32ControlAvailability(true)
+      await refreshEsp32Status({ silent: true })
+      await fetchEsp32Buttons({ silent: true })
+    } else {
+      setEsp32ControlAvailability(false)
+      setEsp32Reachability(null, "Inactif (desactive)")
+      resetEsp32StatusView()
+    }
+
+    scheduleEsp32StatusPolling()
+  } catch (err) {
+    console.error("ESP32 config update error:", err)
+    toast("Erreur lors de la sauvegarde ESP32", true)
+  } finally {
+    esp32Busy.config = false
+    if (submitBtn) {
+      submitBtn.disabled = false
+    }
+  }
+}
+
+function initEsp32Section() {
+  if (!elEsp32Card) {
+    return
+  }
+
+  if (elEsp32ConfigForm) {
+    elEsp32ConfigForm.addEventListener("submit", handleEsp32ConfigSubmit)
+  }
+
+  if (elEsp32StatusRefresh) {
+    elEsp32StatusRefresh.addEventListener("click", () => {
+      if (!esp32Config.enabled) {
+        toast("Activer l'ESP32 avant de tester la connexion", true)
+        return
+      }
+      refreshEsp32Status()
+    })
+  }
+
+  if (elEsp32RelayOn) {
+    elEsp32RelayOn.addEventListener("click", () => setEsp32Relay(true))
+  }
+
+  if (elEsp32RelayOff) {
+    elEsp32RelayOff.addEventListener("click", () => setEsp32Relay(false))
+  }
+
+  if (elEsp32AutoRelayToggle) {
+    elEsp32AutoRelayToggle.addEventListener("click", toggleEsp32AutoRelay)
+  }
+
+  if (elEsp32Restart) {
+    elEsp32Restart.addEventListener("click", requestEsp32Restart)
+  }
+
+  if (elEsp32ButtonsRefresh) {
+    elEsp32ButtonsRefresh.addEventListener("click", () => {
+      fetchEsp32Buttons()
+    })
+  }
+
+  if (elEsp32ButtonsContainer) {
+    elEsp32ButtonsContainer.addEventListener("click", (event) => {
+      const target = event.target
+      if (
+        target &&
+        target.classList &&
+        target.classList.contains("esp32-button-save")
+      ) {
+        const idx = parseInt(target.dataset.esp32Button, 10)
+        if (Number.isInteger(idx)) {
+          handleEsp32ButtonSave(idx)
+        }
+      }
+    })
+
+    elEsp32ButtonsContainer.addEventListener("change", (event) => {
+      const target = event.target
+      if (
+        target &&
+        target.classList &&
+        target.classList.contains("esp32-button-select")
+      ) {
+        const idx = parseInt(target.dataset.esp32Button, 10)
+        if (Number.isInteger(idx)) {
+          esp32ButtonAssignments[idx] = target.value || ""
+        }
+      }
+    })
+  }
+
+  setEsp32Reachability(null, "Inactif (desactive)")
+  setEsp32ControlAvailability(false)
+  resetEsp32StatusView()
+  rebuildEsp32Buttons(ESP32_DEFAULT_BUTTON_COUNT)
+  fetchEsp32Config()
+}
+
 // Boot
 
 
 
 window.addEventListener("load", () => {
+
+
+
+  initEsp32Section();
 
 
 
@@ -4093,7 +5235,7 @@ window.addEventListener("load", () => {
   if (elRestartServiceBtn) {
     elRestartServiceBtn.addEventListener("click", () => {
       if (restartServiceBusy) return;
-      const confirmMessage = "Redémarrer le service servo-sync ?";
+      const confirmMessage = "RedÃ©marrer le service servo-sync ?";
       if (window.confirm(confirmMessage)) {
         triggerServiceRestart();
       }
@@ -4105,6 +5247,7 @@ window.addEventListener("load", () => {
 
 
 });
+
 
 
 

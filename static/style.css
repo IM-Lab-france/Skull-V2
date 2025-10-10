@@ -420,26 +420,35 @@ body.theme-halloween::after {
     border: 1px solid rgba(255, 122, 24, .3)
 }
 
-/* ========= Statut de connexion : FIXE en haut à droite ========= */
-.connection-status {
+/* ========= Statuts de connexion (cluster haut droit) ========= */
+.connection-banner {
     position: fixed;
     top: 12px;
-    /* collé en haut */
     right: 12px;
-    /* collé à droite */
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 12px;
+    z-index: 2000;
+}
+
+.connection-chip {
+    display: inline-flex;
     align-items: center;
-    background: rgba(0, 0, 0, 0.55);
+    gap: 8px;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: 14px;
     font-size: .9rem;
     border: 1px solid var(--border);
-    backdrop-filter: blur(8px);
-    z-index: 9999;
-    /* au-dessus de tout */
+    background: rgba(0, 0, 0, .55);
     color: var(--fg);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+    backdrop-filter: blur(8px);
+    transition: box-shadow .3s ease, border-color .3s ease, background .3s ease;
+}
+
+.connection-chip--secondary {
+    background: rgba(0, 0, 0, .38);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .28);
 }
 
 .connection-dot {
@@ -447,24 +456,36 @@ body.theme-halloween::after {
     height: 10px;
     border-radius: 50%;
     display: inline-block;
-    background: #666;
-    box-shadow: 0 0 10px currentColor;
+    background: var(--muted);
+    box-shadow: 0 0 10px rgba(255, 255, 255, .08);
+    transition: background .3s ease, box-shadow .3s ease, opacity .3s ease;
 }
 
-.connection-status.online .connection-dot {
+.connection-chip.online {
+    border-color: rgba(57, 255, 20, .35);
+    box-shadow: 0 0 18px rgba(57, 255, 20, .18);
+}
+
+.connection-chip.online .connection-dot {
     background: var(--success);
+    box-shadow: 0 0 10px rgba(57, 255, 20, .5);
 }
 
-.connection-status.offline .connection-dot {
+.connection-chip.offline {
+    border-color: rgba(220, 53, 69, .35);
+    box-shadow: 0 0 18px rgba(220, 53, 69, .2);
+}
+
+.connection-chip.offline .connection-dot {
     background: var(--danger);
+    box-shadow: 0 0 10px rgba(220, 53, 69, .5);
 }
 
-.connection-status.online {
-    box-shadow: 0 0 18px rgba(57, 255, 20, .2)
-}
-
-.connection-status.offline {
-    box-shadow: 0 0 18px rgba(220, 53, 69, .25)
+.connection-chip.disabled .connection-dot,
+.connection-chip.unknown .connection-dot {
+    background: var(--muted);
+    box-shadow: 0 0 8px rgba(255, 255, 255, .08);
+    opacity: .7;
 }
 
 /* ========= Formes & champs ========= */
@@ -1025,5 +1046,197 @@ body.modal-open {
 }
 
 .pitch-slider {
+    width: 100%
+}
+
+/* ========= ESP32 control ========= */
+.esp32-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px
+}
+
+.esp32-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+.esp32-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px
+}
+
+.esp32-connection {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, .04)
+}
+
+.esp32-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    box-shadow: 0 0 8px rgba(0, 0, 0, .4);
+    transition: background .3s ease, box-shadow .3s ease, opacity .3s ease
+}
+
+.esp32-dot.online {
+    background: var(--success);
+    box-shadow: 0 0 10px rgba(40, 167, 69, .45)
+}
+
+.esp32-dot.offline {
+    background: var(--danger);
+    box-shadow: 0 0 10px rgba(220, 53, 69, .45)
+}
+
+.esp32-dot.disabled {
+    background: var(--muted);
+    opacity: .45;
+    box-shadow: none
+}
+
+.esp32-status-text {
+    font-weight: 600
+}
+
+.esp32-config {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.esp32-config-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+.esp32-field {
+    flex: 0 0 auto;
+    min-width: 120px
+}
+
+.esp32-field .input {
+    width: 110px
+}
+
+.esp32-enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none
+}
+
+.esp32-buttons-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px
+}
+
+.esp32-status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.esp32-subtitle {
+    margin: 0;
+    font-size: 1rem
+}
+
+.esp32-status-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))
+}
+
+.esp32-status-grid .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    text-transform: uppercase;
+    letter-spacing: .04em
+}
+
+.esp32-badge-on {
+    background: var(--success);
+    color: #000
+}
+
+.esp32-badge-off {
+    background: var(--danger);
+    color: #fff
+}
+
+.esp32-badge-idle {
+    background: rgba(255, 255, 255, .18);
+    color: var(--fg)
+}
+
+.status-box.esp32-status-raw {
+    max-height: 140px;
+    overflow-y: auto;
+    font-size: .85rem;
+    background: rgba(0, 0, 0, .35)
+}
+
+.esp32-buttons-config {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.esp32-buttons-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+.esp32-buttons-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))
+}
+
+.esp32-button-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .02)
+}
+
+.esp32-button-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-weight: 600
+}
+
+.esp32-button-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap
+}
+
+.esp32-button-item .select {
     width: 100%
 }

@@ -28,6 +28,9 @@ import traceback
 import threading
 from itertools import count
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 from flask import (
     Flask,
     request,
@@ -37,7 +40,7 @@ from flask import (
     Response,
 )
 
-from typing import Any, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from pydub import AudioSegment
 from sync_player import SyncPlayer
@@ -49,6 +52,7 @@ CONFIG_DIR = Path("config")
 CONFIG_DIR.mkdir(exist_ok=True)
 PITCH_CONFIG_PATH = CONFIG_DIR / "pitch_offsets.json"
 CHANNELS_CONFIG_PATH = CONFIG_DIR / "channels_state.json"
+ESP32_CONFIG_PATH = CONFIG_DIR / "esp32_settings.json"
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -61,6 +65,10 @@ VOLUME_TOOL = os.environ.get("PLAYLIST_VOLUME_CLI", "bluetoothctl")
 _VOLUME_CMD_BASE = shlex.split(VOLUME_TOOL) if VOLUME_TOOL else ["bluetoothctl"]
 if not _VOLUME_CMD_BASE:
     _VOLUME_CMD_BASE = ["bluetoothctl"]
+
+ESP32_DEFAULT_CONFIG = {"host": "", "port": 80, "enabled": False}
+ESP32_BUTTON_COUNT = 5
+ESP32_HTTP_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
 
 VOLUME_ACTIONS = {"up", "down", "mute"}
 
@@ -687,6 +695,213 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
             pass
 
 
+class ESP32Error(Exception):
+    """Base class for ESP32 gateway errors."""
+
+
+class ESP32ConfigError(ESP32Error):
+    """Raised when ESP32 configuration is missing or disabled."""
+
+
+class ESP32CommunicationError(ESP32Error):
+    """Raised when ESP32 cannot be reached or returns invalid data."""
+
+
+def _sanitize_esp32_endpoint(raw_host: str, raw_port: Any) -> Tuple[str, int]:
+    host_value = (raw_host or "").strip()
+    parsed_host = ""
+    inferred_port: Optional[int] = None
+
+    if host_value:
+        to_parse = host_value
+        if not to_parse.startswith(("http://", "https://")):
+            to_parse = f"http://{to_parse}"
+        parsed = urlparse(to_parse)
+        parsed_host = parsed.hostname or ""
+        if parsed.port:
+            inferred_port = parsed.port
+        if not parsed_host and host_value:
+            parsed_host = host_value.split("/")[0]
+
+    port_value = raw_port
+    if port_value in (None, "", 0):
+        port = inferred_port or 80
+    else:
+        try:
+            port = int(port_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Port ESP32 invalide") from exc
+
+    if port < 1 or port > 65535:
+        raise ValueError("Le port ESP32 doit etre compris entre 1 et 65535")
+
+    return parsed_host, port
+
+
+def load_esp32_config() -> Dict[str, Any]:
+    """Load ESP32 configuration (host, port, activation flag)."""
+    config = dict(ESP32_DEFAULT_CONFIG)
+    if not ESP32_CONFIG_PATH.exists():
+        return config
+    try:
+        with open(ESP32_CONFIG_PATH, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except Exception as exc:
+        servo_logger.logger.warning("ESP32_CFG_LOAD_FAILED | %s", exc)
+        return config
+
+    if isinstance(raw, dict):
+        host = raw.get("host")
+        if isinstance(host, str):
+            config["host"] = host.strip()
+
+        port = raw.get("port")
+        try:
+            if port is not None:
+                config["port"] = int(port)
+        except (TypeError, ValueError):
+            servo_logger.logger.warning("ESP32_CFG_LOAD_INVALID_PORT | %s", port)
+
+        enabled = raw.get("enabled")
+        if isinstance(enabled, bool):
+            config["enabled"] = enabled
+        elif enabled is not None:
+            config["enabled"] = bool(enabled)
+
+    return config
+
+
+def update_esp32_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Update and persist ESP32 configuration."""
+    if not isinstance(payload, dict):
+        raise ValueError("Format JSON invalide pour la configuration ESP32.")
+
+    current = load_esp32_config()
+    host_candidate = current["host"]
+    if "host" in payload:
+        host_candidate = str(payload.get("host") or "").strip()
+
+    requested_port = payload.get("port", current["port"])
+
+    try:
+        sanitized_host, sanitized_port = _sanitize_esp32_endpoint(
+            host_candidate, requested_port
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    enabled_candidate = payload.get("enabled", current["enabled"])
+    if isinstance(enabled_candidate, bool):
+        enabled_flag = enabled_candidate
+    elif enabled_candidate is None:
+        enabled_flag = False
+    elif isinstance(enabled_candidate, str):
+        enabled_flag = enabled_candidate.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        enabled_flag = bool(enabled_candidate)
+
+    new_config = {
+        "host": sanitized_host,
+        "port": sanitized_port,
+        "enabled": enabled_flag,
+    }
+
+    if new_config["enabled"] and not new_config["host"]:
+        raise ValueError(
+            "Configurer l'adresse IP ou le nom mDNS avant d'activer le pilotage ESP32."
+        )
+
+    _write_json_atomic(ESP32_CONFIG_PATH, new_config)
+    return new_config
+
+
+def _require_esp32_endpoint() -> Dict[str, Any]:
+    config = load_esp32_config()
+    if not config.get("enabled"):
+        raise ESP32ConfigError("Pilotage ESP32 desactive.")
+
+    host = config.get("host", "").strip()
+    if not host:
+        raise ESP32ConfigError("Aucune adresse ESP32 configuree.")
+
+    port = config.get("port") or 80
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = 80
+
+    base = f"http://{host}"
+    if port != 80:
+        base = f"{base}:{port}"
+
+    return {"base_url": base, "config": config}
+
+
+def _esp32_request(
+    path: str, method: str = "GET", json_payload: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    endpoint = _require_esp32_endpoint()
+    base_url = endpoint["base_url"]
+    url = f"{base_url}{path}"
+    headers = {"Accept": "application/json"}
+    data_bytes = None
+
+    if json_payload is not None:
+        data_bytes = json.dumps(json_payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = Request(url, data=data_bytes, headers=headers, method=method.upper())
+
+    try:
+        with urlopen(req, timeout=ESP32_HTTP_TIMEOUT) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            raw = resp.read()
+            if not raw:
+                return {}
+            text = raw.decode(charset, errors="replace")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ESP32CommunicationError(
+                    "Reponse JSON invalide recue de l'ESP32."
+                ) from exc
+    except HTTPError as exc:
+        body = ""
+        try:
+            raw_body = exc.read()
+            if raw_body:
+                body = raw_body.decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        servo_logger.logger.warning(
+            "ESP32_HTTP_ERROR | method=%s | path=%s | status=%s | body=%s",
+            method,
+            path,
+            exc.code,
+            body[:200],
+        )
+        message = f"Erreur HTTP ESP32 ({exc.code})"
+        if body:
+            message = f"{message}: {body.strip()[:200]}"
+        raise ESP32CommunicationError(message) from exc
+    except URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        servo_logger.logger.warning(
+            "ESP32_UNREACHABLE | method=%s | path=%s | reason=%s",
+            method,
+            path,
+            reason,
+        )
+        raise ESP32CommunicationError(f"Connexion impossible ({reason})") from exc
+    except ESP32ConfigError:
+        raise
+    except Exception as exc:
+        servo_logger.logger.exception(
+            "ESP32_UNEXPECTED_ERROR | method=%s | path=%s", method, path
+        )
+        raise ESP32CommunicationError(str(exc)) from exc
+
+
 def save_pitch_offsets() -> None:
     offsets = {name: spec.pitch_offset for name, spec in player.hw.SPECS.items()}
     _write_json_atomic(PITCH_CONFIG_PATH, offsets)
@@ -750,6 +965,173 @@ def load_channel_flags() -> None:
 
 load_pitch_offsets()
 load_channel_flags()
+
+
+# -------------------- ESP32 Gateway --------------------
+
+
+def _esp32_response_error(message: str, reason: str = "error") -> Dict[str, Any]:
+    return {"reachable": False, "error": message, "reason": reason}
+
+
+@app.route("/esp32/config", methods=["GET"])
+def esp32_get_config():
+    config = load_esp32_config()
+    payload = dict(config)
+    payload["buttonCount"] = ESP32_BUTTON_COUNT
+    return jsonify(payload)
+
+
+@app.route("/esp32/config", methods=["POST"])
+def esp32_update_config():
+    body = request.get_json(silent=True) or {}
+    try:
+        updated = update_esp32_config(body)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    payload = dict(updated)
+    payload["buttonCount"] = ESP32_BUTTON_COUNT
+    return jsonify(payload)
+
+
+@app.route("/esp32/status")
+def esp32_status():
+    try:
+        status_payload = _esp32_request("/api/status", method="GET")
+        return jsonify({"reachable": True, "status": status_payload})
+    except ESP32ConfigError as exc:
+        return jsonify(_esp32_response_error(str(exc), reason="config"))
+    except ESP32CommunicationError as exc:
+        return jsonify(_esp32_response_error(str(exc), reason="network"))
+
+
+@app.route("/esp32/relay", methods=["POST"])
+def esp32_set_relay():
+    body = request.get_json(silent=True) or {}
+    if "on" not in body:
+        return jsonify({"success": False, "error": "Champ 'on' manquant."}), 400
+    desired = bool(body.get("on"))
+    try:
+        payload = _esp32_request(
+            "/api/relay", method="POST", json_payload={"on": desired}
+        )
+        return jsonify({"success": True, "reachable": True, "response": payload})
+    except ESP32ConfigError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+    except ESP32CommunicationError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+
+
+@app.route("/esp32/auto-relay", methods=["POST"])
+def esp32_set_auto_relay():
+    body = request.get_json(silent=True) or {}
+    if "enabled" not in body:
+        return jsonify({"success": False, "error": "Champ 'enabled' manquant."}), 400
+    enabled = bool(body.get("enabled"))
+    try:
+        payload = _esp32_request(
+            "/api/auto-relay", method="POST", json_payload={"enabled": enabled}
+        )
+        return jsonify({"success": True, "reachable": True, "response": payload})
+    except ESP32ConfigError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+    except ESP32CommunicationError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+
+
+@app.route("/esp32/button-config", methods=["GET"])
+def esp32_button_config():
+    try:
+        payload = _esp32_request("/api/button-config", method="GET")
+        sessions = payload.get("sessions")
+        if not isinstance(sessions, list):
+            sessions = []
+        return jsonify(
+            {
+                "reachable": True,
+                "sessions": sessions,
+                "buttonCount": ESP32_BUTTON_COUNT,
+            }
+        )
+    except ESP32ConfigError as exc:
+        return jsonify(
+            {
+                **_esp32_response_error(str(exc), reason="config"),
+                "sessions": [],
+                "buttonCount": ESP32_BUTTON_COUNT,
+            }
+        )
+    except ESP32CommunicationError as exc:
+        return jsonify(
+            {
+                **_esp32_response_error(str(exc), reason="network"),
+                "sessions": [],
+                "buttonCount": ESP32_BUTTON_COUNT,
+            }
+        )
+
+
+@app.route("/esp32/button-config", methods=["POST"])
+def esp32_set_button_config():
+    body = request.get_json(silent=True) or {}
+    if "button" not in body:
+        return jsonify({"success": False, "error": "Champ 'button' manquant."}), 400
+
+    try:
+        button_index = int(body.get("button"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "Index de bouton invalide."}), 400
+
+    if button_index < 0 or button_index >= ESP32_BUTTON_COUNT:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1}).",
+                }
+            ),
+            400,
+        )
+
+    session = body.get("session", "")
+    if session is None:
+        session = ""
+    if not isinstance(session, str):
+        session = str(session)
+
+    try:
+        payload = _esp32_request(
+            "/api/button-config",
+            method="POST",
+            json_payload={"button": button_index, "session": session},
+        )
+        response_sessions = payload.get("sessions")
+        if not isinstance(response_sessions, list):
+            response_sessions = []
+        return jsonify(
+            {
+                "success": True,
+                "reachable": True,
+                "response": payload,
+                "sessions": response_sessions,
+                "button": button_index,
+            }
+        )
+    except ESP32ConfigError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+    except ESP32CommunicationError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+
+
+@app.route("/esp32/restart", methods=["POST"])
+def esp32_restart():
+    try:
+        payload = _esp32_request("/api/restart", method="POST", json_payload={})
+        return jsonify({"success": True, "reachable": True, "response": payload})
+    except ESP32ConfigError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+    except ESP32CommunicationError as exc:
+        return jsonify({"success": False, "reachable": False, "error": str(exc)})
 
 
 def sanitize_scene_name(name: str) -> str:

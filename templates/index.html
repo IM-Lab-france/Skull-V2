@@ -10,9 +10,19 @@
 </head>
 
 <body class="theme-halloween">
-    <div id="connectionStatus" class="connection-status offline" role="status" aria-live="polite">
-        <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
-        <span id="connectionStatusText" class="connection-label">Statut : inconnu</span>
+    <div class="connection-banner" aria-live="polite">
+        <div id="connectionStatus" class="connection-chip offline" role="status">
+            <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
+            <span id="connectionStatusText" class="connection-label">Skull : inconnu</span>
+        </div>
+        <div id="bluetoothTopStatus" class="connection-chip connection-chip--secondary unknown" role="status">
+            <span id="bluetoothTopStatusDot" class="connection-dot" aria-hidden="true"></span>
+            <span id="bluetoothTopStatusText" class="connection-label">Bluetooth : inconnu</span>
+        </div>
+        <div id="esp32TopStatus" class="connection-chip connection-chip--secondary disabled" role="status">
+            <span id="esp32TopStatusDot" class="connection-dot" aria-hidden="true"></span>
+            <span id="esp32TopStatusText" class="connection-label">ESP32 : inactif</span>
+        </div>
     </div>
 
     <header class="site-header">
@@ -203,6 +213,75 @@
                                 </p>
                             </div>
                         </details>
+                    </div>
+                </section>
+                <section class="card esp32-card" id="esp32Card">
+                    <h2>Pilotage ESP32</h2>
+                    <div class="esp32-header">
+                        <div class="esp32-connection" role="status" aria-live="polite">
+                            <span class="esp32-dot" id="esp32StatusDot" aria-hidden="true"></span>
+                            <span id="esp32StatusText" class="esp32-status-text">Inactif (desactive)</span>
+                        </div>
+                        <div class="esp32-header-actions">
+                            <button type="button" class="btn secondary" id="esp32StatusRefreshBtn">Tester la connexion</button>
+                        </div>
+                    </div>
+                    <form id="esp32ConfigForm" class="esp32-config" autocomplete="off">
+                        <div class="row">
+                            <label for="esp32Host" class="label">Adresse IP ou mDNS</label>
+                            <input type="text" id="esp32Host" class="input" placeholder="SkullHard.local">
+                        </div>
+                        <div class="esp32-config-row">
+                            <div class="esp32-field">
+                                <label for="esp32Port" class="label">Port</label>
+                                <input type="number" id="esp32Port" class="input" min="1" max="65535" value="80">
+                            </div>
+                            <label class="checkbox esp32-enabled">
+                                <input type="checkbox" id="esp32Enabled">
+                                <span>Activer le pilotage</span>
+                            </label>
+                            <button type="submit" class="btn primary" id="esp32ConfigSaveBtn">Enregistrer</button>
+                        </div>
+                        <p class="hint">Sauvegarde dans <code>config/esp32_settings.json</code>.</p>
+                    </form>
+                    <div class="esp32-actions">
+                        <div class="esp32-buttons-group" role="group" aria-label="Commandes ESP32">
+                            <button type="button" class="btn success" id="esp32RelayOnBtn">Relais ON</button>
+                            <button type="button" class="btn secondary" id="esp32RelayOffBtn">Relais OFF</button>
+                            <button type="button" class="btn info" id="esp32AutoRelayToggle" aria-pressed="false">Auto-relay</button>
+                            <button type="button" class="btn warning" id="esp32RestartBtn">Redemarrer l'ESP32</button>
+                        </div>
+                    </div>
+                    <div class="esp32-status-panel">
+                        <h3 class="esp32-subtitle">Etat courant</h3>
+                        <div class="esp32-status-grid">
+                            <div>
+                                <span class="label">Relais</span>
+                                <span class="badge" id="esp32RelayState">-</span>
+                            </div>
+                            <div>
+                                <span class="label">Mode auto</span>
+                                <span class="badge" id="esp32AutoRelayState">-</span>
+                            </div>
+                            <div>
+                                <span class="label">Session actuelle</span>
+                                <span id="esp32CurrentSession">-</span>
+                            </div>
+                            <div>
+                                <span class="label">Wi-Fi</span>
+                                <span id="esp32WifiInfo">-</span>
+                            </div>
+                        </div>
+                        <pre id="esp32StatusRaw" class="status-box esp32-status-raw" aria-live="polite"></pre>
+                    </div>
+                    <div class="esp32-buttons-config">
+                        <div class="esp32-buttons-header">
+                            <h3 class="esp32-subtitle">Boutons physiques</h3>
+                            <button type="button" class="btn secondary" id="esp32ButtonsRefreshBtn">Actualiser</button>
+                        </div>
+                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group" aria-label="Association boutons ESP32">
+                        </div>
+                        <p class="hint">Choisissez une session pour chaque bouton. Selectionnez "-- Aucun --" pour vider l'association.</p>
                     </div>
                 </section>
             </div>
