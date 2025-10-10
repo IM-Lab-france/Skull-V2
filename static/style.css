@@ -837,6 +837,17 @@ body.modal-open {
     flex: 1;
 }
 
+.service-box {
+    margin-top: 14px;
+    padding: 12px 16px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .02);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 /* ========= Zone upload ========= */
 .dropzone {
     border: 2px dashed rgba(255, 122, 24, .4);

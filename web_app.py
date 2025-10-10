@@ -71,6 +71,16 @@ _VOLUME_RE = re.compile(r"\s*Volume:\s*(?:0x[0-9A-Fa-f]+\s*)?(?:\((\d+)\)|(\d+))
 _BT_CONNECTED_RE = re.compile(r"\bConnected:\s*(yes|no)\b", re.IGNORECASE)
 
 BT_DEVICE_ADDR = os.environ.get("PLAYLIST_BT_DEVICE_ADDR", "").strip().upper()
+_DEFAULT_RESTART_CMD = "sudo systemctl restart servo-sync.service"
+_SERVICE_RESTART_RAW = os.environ.get(
+    "PLAYLIST_SERVICE_RESTART_CMD", _DEFAULT_RESTART_CMD
+).strip()
+SERVICE_RESTART_CMD = (
+    shlex.split(_SERVICE_RESTART_RAW) if _SERVICE_RESTART_RAW else []
+)
+SERVICE_RESTART_TIMEOUT = float(
+    os.environ.get("PLAYLIST_SERVICE_RESTART_TIMEOUT", "15")
+)
 
 
 def _clean_bt_output(text: str) -> str:
@@ -1258,7 +1268,45 @@ def playlist_skip():
         return jsonify({"error": f"Erreur skip: {e}"}), 500
 
 
+@app.route("/service/restart", methods=["POST"])
+def service_restart():
+    """Restart the servo-sync systemd service from the web UI."""
+    if not SERVICE_RESTART_CMD:
+        return jsonify({"error": "Commande restart non configurée"}), 500
+
+    try:
+        servo_logger.logger.info("SERVICE_RESTART_REQUEST | cmd=%s", SERVICE_RESTART_CMD[0])
+        proc = subprocess.run(
+            SERVICE_RESTART_CMD,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=SERVICE_RESTART_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        servo_logger.logger.error("SERVICE_RESTART_TIMEOUT | timeout=%s", SERVICE_RESTART_TIMEOUT)
+        return jsonify({"error": "Redémarrage service timeout"}), 504
+    except Exception:
+        servo_logger.logger.exception("SERVICE_RESTART_ERROR")
+        return jsonify({"error": "Redémarrage service impossible"}), 500
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if proc.returncode != 0:
+        servo_logger.logger.error("SERVICE_RESTART_FAILED | code=%s | stderr=%s", proc.returncode, stderr[:400])
+        return jsonify({"error": "Échec redémarrage service", "code": proc.returncode, "stderr": stderr}), 500
+
+    if stdout:
+        servo_logger.logger.info("SERVICE_RESTART_STDOUT | %s", stdout[:400])
+    if stderr:
+        servo_logger.logger.info("SERVICE_RESTART_STDERR | %s", stderr[:400])
+
+    return jsonify({"status": "restarted"})
+
+
 # -------------------- Channels API --------------------
+
+
 @app.route("/channels", methods=["GET", "POST"])
 def channels():
     global player_channels

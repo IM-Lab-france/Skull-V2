@@ -1,4 +1,4 @@
-﻿// Enhanced front-end for Servo Sync Player UI
+// Enhanced front-end for Servo Sync Player UI
 
 
 
@@ -198,6 +198,10 @@ const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
 
 
+const elRestartServiceBtn = document.getElementById("restartServiceBtn");
+
+
+
 const elRandomToggle = $("#randomModeToggle");
 
 
@@ -271,6 +275,8 @@ let volumeBusy = false;
 
 
 let shuffleBusy = false;
+
+let restartServiceBusy = false;
 
 
 
@@ -3068,6 +3074,19 @@ function setVolumeButtonsDisabled(disabled) {
 
 
 
+
+function setRestartServiceDisabled(disabled) {
+
+  if (!elRestartServiceBtn) return;
+
+  if (disabled) {
+    elRestartServiceBtn.setAttribute("disabled", "disabled");
+  } else {
+    elRestartServiceBtn.removeAttribute("disabled");
+  }
+
+}
+
 function applyBluetoothStatus(info) {
 
 
@@ -3168,6 +3187,36 @@ function applyBluetoothStatus(info) {
 
 
 
+
+async function triggerServiceRestart() {
+
+  if (restartServiceBusy) return;
+
+  restartServiceBusy = true;
+  setRestartServiceDisabled(true);
+
+  try {
+    const res = await fetch("/service/restart", { method: "POST" });
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message =
+        payload && typeof payload.error === "string"
+          ? payload.error
+          : `service_restart_http_${res.status}`;
+      throw new Error(message);
+    }
+
+    toast("Service en redémarrage");
+  } catch (error) {
+    const message = error && error.message ? error.message : "Redémarrage échoué";
+    toast(`Erreur redémarrage: ${message}`, true);
+  } finally {
+    restartServiceBusy = false;
+    setRestartServiceDisabled(false);
+  }
+
+}
 
 async function triggerShuffleAll() {
 
@@ -4040,6 +4089,16 @@ window.addEventListener("load", () => {
   }
 
 
+
+  if (elRestartServiceBtn) {
+    elRestartServiceBtn.addEventListener("click", () => {
+      if (restartServiceBusy) return;
+      const confirmMessage = "Redémarrer le service servo-sync ?";
+      if (window.confirm(confirmMessage)) {
+        triggerServiceRestart();
+      }
+    });
+  }
 
   updatePills();
 
