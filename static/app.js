@@ -1,387 +1,192 @@
 // Enhanced front-end for Servo Sync Player UI
 
-
-
 // - Drag & drop + buttons for JSON/MP3 selection
-
-
 
 // - Upload with progress bar (XHR)
 
-
-
 // - Sessions listing + controls + status badge
-
-
 
 // - Real-time channel toggles (eyes/neck/jaw) via /channels
 
-
-
 // - NOUVEAU: Nom de scÃ¨ne personnalisÃ©
-
-
-
-
-
-
 
 const $ = (sel) => document.querySelector(sel);
 
-
-
-
-
-
-
 // Elements
-
-
 
 const elForm = $("#uploadForm");
 
-
-
 const elDrop = $("#dropzone");
-
-
 
 const elPickJson = $("#btnPickJson");
 
-
-
 const elPickMp3 = $("#btnPickMp3");
-
-
 
 const elFileJson = $("#fileJson");
 
-
-
 const elFileMp3 = $("#fileMp3");
-
-
 
 const elPillJson = $("#pillJson .file-name");
 
-
-
 const elPillMp3 = $("#pillMp3 .file-name");
-
-
 
 const elBtnUpload = $("#btnUpload");
 
-
-
 const elProg = $("#uploadProgress");
-
-
 
 const elBar = $("#uploadBar");
 
-
-
 const elSceneName = $("#sceneName"); // NOUVEAU
-
-
-
-
-
-
 
 const elSelect = $("#sessionSelect");
 
-
-
 const elRefresh = $("#refreshBtn");
-
-
 
 const elPlay = $("#playBtn");
 
-
-
 const elPause = $("#pauseBtn");
-
-
 
 const elResume = $("#resumeBtn");
 
-
-
 const elStop = $("#stopBtn");
-
-
 
 const elStatus = $("#statusBox");
 
-
-
 const elBadge = $("#badgeState");
 
+const elConnection = document.getElementById("connectionStatus");
 
+const elConnectionDot = document.getElementById("connectionStatusDot");
 
-const elConnection = document.getElementById('connectionStatus');
-
-
-
-const elConnectionDot = document.getElementById('connectionStatusDot');
-
-
-
-const elConnectionText = document.getElementById('connectionStatusText');
-
-
+const elConnectionText = document.getElementById("connectionStatusText");
 
 const elPlaylistList = $("#playlistList");
 
-
-
 const elPlaylistCurrent = $("#playlistCurrent");
-
-
 
 const elPlaylistSkip = $("#playlistSkipBtn");
 
-
-
 const elPlaylistRefresh = $("#playlistRefreshBtn");
-
-
 
 const elDeleteSession = $("#deleteSessionBtn");
 
-
-
 const elDeleteModal = $("#deleteSessionModal");
-
-
 
 const elDeleteModalName = $("#deleteSessionName");
 
-
-
 const elDeleteModalMessage = $("#deleteSessionMessage");
-
-
 
 const elDeleteModalConfirm = $("#deleteSessionConfirm");
 
-
-
 const elDeleteModalCancel = $("#deleteSessionCancel");
-
-
 
 const elDeleteModalClose = $("#deleteSessionClose");
 
-
-
 const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
-
-
 
 const elBtStatus = document.getElementById("bluetoothStatus");
 
-
-
 const elBtStatusDot = document.getElementById("bluetoothStatusDot");
-
-
 
 const elBtStatusText = document.getElementById("bluetoothStatusText");
 
-
-
 const elBtTopStatus = document.getElementById("bluetoothTopStatus");
-
-
 
 const elBtTopStatusDot = document.getElementById("bluetoothTopStatusDot");
 
-
-
 const elBtTopStatusText = document.getElementById("bluetoothTopStatusText");
-
-
 
 const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
-
-
 const elRestartServiceBtn = document.getElementById("restartServiceBtn");
 
-
+const elRestartBluetoothBtn = document.getElementById("restartBluetoothBtn");
 
 const elEsp32Card = document.getElementById("esp32Card");
 
-
-
 const elEsp32StatusDot = document.getElementById("esp32StatusDot");
-
-
 
 const elEsp32StatusText = document.getElementById("esp32StatusText");
 
-
-
 const elEsp32TopStatus = document.getElementById("esp32TopStatus");
-
-
 
 const elEsp32TopStatusDot = document.getElementById("esp32TopStatusDot");
 
-
-
 const elEsp32TopStatusText = document.getElementById("esp32TopStatusText");
-
-
 
 const elEsp32StatusRefresh = document.getElementById("esp32StatusRefreshBtn");
 
-
-
 const elEsp32ConfigForm = document.getElementById("esp32ConfigForm");
-
-
 
 const elEsp32Host = document.getElementById("esp32Host");
 
-
-
 const elEsp32Port = document.getElementById("esp32Port");
-
-
 
 const elEsp32Enabled = document.getElementById("esp32Enabled");
 
-
-
 const elEsp32RelayOn = document.getElementById("esp32RelayOnBtn");
-
-
 
 const elEsp32RelayOff = document.getElementById("esp32RelayOffBtn");
 
-
-
 const elEsp32AutoRelayToggle = document.getElementById("esp32AutoRelayToggle");
-
-
 
 const elEsp32Restart = document.getElementById("esp32RestartBtn");
 
-
-
 const elEsp32RelayState = document.getElementById("esp32RelayState");
-
-
 
 const elEsp32AutoRelayState = document.getElementById("esp32AutoRelayState");
 
-
-
 const elEsp32CurrentSession = document.getElementById("esp32CurrentSession");
-
-
 
 const elEsp32WifiInfo = document.getElementById("esp32WifiInfo");
 
-
-
 const elEsp32StatusRaw = document.getElementById("esp32StatusRaw");
-
-
 
 const elEsp32ButtonsRefresh = document.getElementById("esp32ButtonsRefreshBtn");
 
-
-
-const elEsp32ButtonsContainer = document.getElementById("esp32ButtonsContainer");
-
-
+const elEsp32ButtonsContainer = document.getElementById(
+  "esp32ButtonsContainer"
+);
 
 const elRandomToggle = $("#randomModeToggle");
 
-
-
 const elRandomHint = $("#randomModeHint");
-
-
-
-
-
-
 
 // Channel checkboxes
 
-
-
 const elCbEyeLeft = $("#cbEyeLeft");
-
-
 
 const elCbEyeRight = $("#cbEyeRight");
 
-
-
 const elCbNeck = $("#cbNeck");
-
-
 
 const elCbJaw = $("#cbJaw");
 
-
-
-
-
-
-
 let fileJson = null;
-
-
 
 let fileMp3 = null;
 
-
-
 let serverReachable = true;
-
-
 
 let nextStatusAttempt = 0;
 
-
-
 let playlistCurrentData = null;
-
-
 
 let playlistQueueData = [];
 
-
-
 let playlistFetchInFlight = false;
-
-
 
 let lastPlaylistFetch = 0;
 
-
-
 let volumeBusy = false;
-
-
 
 let shuffleBusy = false;
 
 let restartServiceBusy = false;
 
-
+let restartBluetoothBusy = false;
 
 let randomModeState = {
-
   enabled: false,
 
   eligibleCount: null,
@@ -389,21 +194,13 @@ let randomModeState = {
   available: true,
 
   busy: false,
-
 };
-
-
 
 const ESP32_STATUS_INTERVAL = 5000;
 
-
-
 const ESP32_DEFAULT_BUTTON_COUNT = 5;
 
-
-
 let esp32Config = {
-
   host: "",
 
   port: 80,
@@ -411,33 +208,19 @@ let esp32Config = {
   enabled: false,
 
   buttonCount: ESP32_DEFAULT_BUTTON_COUNT,
-
 };
-
-
 
 let esp32StatusTimerId = null;
 
-
-
 let esp32AvailableSessions = [];
-
-
 
 let esp32StatusSnapshot = null;
 
-
-
 let esp32ButtonAssignments = [];
-
-
 
 const esp32ButtonComponents = new Map();
 
-
-
 let esp32Busy = {
-
   status: false,
 
   relay: false,
@@ -449,187 +232,98 @@ let esp32Busy = {
   config: false,
 
   buttons: false,
-
 };
 function renderRandomModeState() {
-
   if (elRandomToggle) {
-
     elRandomToggle.classList.toggle("toggle-active", randomModeState.enabled);
 
     elRandomToggle.setAttribute(
-
       "aria-pressed",
 
       randomModeState.enabled ? "true" : "false"
-
     );
 
     const label = randomModeState.enabled
-
       ? "Mode aleatoire : ON"
-
       : "Mode aleatoire : OFF";
 
     elRandomToggle.textContent = label;
 
     elRandomToggle.disabled = randomModeState.busy;
-
   }
 
-
-
   if (elRandomHint) {
-
     if (!randomModeState.available) {
-
       elRandomHint.textContent =
-
         "Aucun morceau eligible pour l'aleatoire (hors Accueil).";
-
     } else {
-
       if (
-
         typeof randomModeState.eligibleCount === "number" &&
-
         randomModeState.eligibleCount >= 0
-
       ) {
-
         const count = randomModeState.eligibleCount;
 
         elRandomHint.textContent =
-
           count === 1
-
             ? "1 morceau eligible pour l'aleatoire (hors Accueil)."
-
             : `${count} morceaux eligibles pour l'aleatoire (hors Accueil).`;
-
       } else {
-
         elRandomHint.textContent =
-
           "Ignorer la selection et choisir un morceau aleatoire (hors Accueil).";
-
       }
-
     }
-
   }
-
 }
-
-
 
 function applyRandomModeSnapshot(snapshot) {
-
   if (snapshot && typeof snapshot.enabled === "boolean") {
-
     randomModeState.enabled = snapshot.enabled;
-
   }
-
-
 
   if (snapshot && typeof snapshot.eligible_count === "number") {
-
     randomModeState.eligibleCount = snapshot.eligible_count;
-
   } else if (snapshot && Array.isArray(snapshot.eligible)) {
-
     randomModeState.eligibleCount = snapshot.eligible.length;
-
   }
-
-
 
   if (snapshot && typeof snapshot.available === "boolean") {
-
     randomModeState.available = snapshot.available;
-
   } else if (randomModeState.eligibleCount !== null) {
-
     randomModeState.available = randomModeState.eligibleCount > 0;
-
   }
 
-
-
   renderRandomModeState();
-
 }
 
-
-
 async function fetchRandomModeState() {
-
   if (!elRandomToggle) return;
 
-
-
   try {
-
     const res = await fetch("/random_mode");
 
     if (!res.ok) {
-
       return;
-
     }
 
     const payload = await res.json().catch(() => ({}));
 
     applyRandomModeSnapshot(payload);
-
   } catch (e) {
-
     // ignore network errors for optional feature
-
   }
-
 }
 
 function isJson(f) {
-
-
-
   return f && f.name.toLowerCase().endsWith(".json");
-
-
-
 }
-
-
 
 function isMp3(f) {
-
-
-
   return (
-
-
-
     f && (f.type === "audio/mpeg" || f.name.toLowerCase().endsWith(".mp3"))
-
-
-
   );
-
-
-
 }
 
-
-
-
-
-
-
 // NOUVEAU: fonction pour nettoyer le nom de scÃ¨ne
-
-
 
 function sanitizeSceneName(name) {
   if (!name || !name.trim()) return null;
@@ -641,696 +335,259 @@ function sanitizeSceneName(name) {
   return cleaned.substring(0, 50); // Limiter la longueur
 }
 
-
-
-
-
-
-
 // NOUVEAU: fonction pour extraire la frÃ©quence du nom de fichier JSON
 
-
-
 function extractFrequencyFromFilename(filename) {
-
-
-
   const match = filename.match(/(\d+)Hz/i);
 
-
-
   return match ? match[1] : "60"; // 60Hz par dÃ©faut
-
-
-
 }
 
-
-
-
-
-
-
 function updatePills() {
-
-
-
   elPillJson.textContent = fileJson ? fileJson.name : "aucun";
-
-
 
   elPillMp3.textContent = fileMp3 ? fileMp3.name : "aucun";
 
-
-
-
-
-
-
   // Validation : nom de scÃ¨ne + fichiers requis
 
-
-
   const sceneName = elSceneName?.value?.trim();
-
-
 
   const hasValidSceneName = sceneName && sanitizeSceneName(sceneName);
 
-
-
   elBtnUpload.disabled = !(fileJson && fileMp3 && hasValidSceneName);
-
-
-
 }
-
-
-
-
-
-
 
 function handleFiles(files) {
-
-
-
   for (const f of files) {
-
-
-
     if (isJson(f)) fileJson = f;
-
-
-
     else if (isMp3(f)) fileMp3 = f;
-
-
-
   }
 
-
-
   updatePills();
-
-
-
 }
-
-
-
-
-
-
 
 // Validation en temps rÃ©el du nom de scÃ¨ne
 
-
-
 elSceneName?.addEventListener("input", updatePills);
-
-
-
-
-
-
 
 // Pickers
 
-
-
 elPickJson?.addEventListener("click", () => elFileJson.click());
-
-
 
 elPickMp3?.addEventListener("click", () => elFileMp3.click());
 
-
-
-
-
-
-
 elFileJson?.addEventListener("change", (e) => {
-
-
-
   fileJson = e.target.files[0] || null;
 
-
-
   updatePills();
-
-
-
 });
 
-
-
 elRandomToggle?.addEventListener("click", async () => {
-
-
-
   if (randomModeState.busy) {
-
-
-
     return;
-
-
-
   }
-
-
 
   const desired = !randomModeState.enabled;
 
-
-
   randomModeState.busy = true;
-
-
 
   renderRandomModeState();
 
-
-
   try {
-
-
-
     const res = await fetch("/random_mode", {
-
-
-
       method: "POST",
-
-
 
       headers: { "Content-Type": "application/json" },
 
-
-
       body: JSON.stringify({ enabled: desired }),
-
-
-
     });
-
-
 
     const payload = await res.json().catch(() => ({}));
 
-
-
     if (!res.ok) {
-
-
-
       const message =
-
         (payload && (payload.error || payload.message)) ||
-
         `Erreur ${res.status}`;
-
-
 
       toast("Erreur mode aleatoire: " + message, true);
 
-
-
       return;
-
-
-
     }
-
-
 
     applyRandomModeSnapshot(payload);
 
-
-
     toast(desired ? "Mode aleatoire active" : "Mode aleatoire desactive");
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur reseau mode aleatoire", true);
-
-
-
   } finally {
-
-
-
     randomModeState.busy = false;
 
-
-
     renderRandomModeState();
-
-
-
   }
-
-
-
 });
-
-
 
 elFileMp3?.addEventListener("change", (e) => {
-
-
-
   fileMp3 = e.target.files[0] || null;
 
-
-
   updatePills();
-
-
-
 });
-
-
-
-
-
-
 
 // Dropzone
 
-
-
 ["dragenter", "dragover"].forEach((ev) =>
-
-
-
   elDrop?.addEventListener(ev, (e) => {
-
-
-
     e.preventDefault();
 
-
-
     e.stopPropagation();
-
-
 
     elDrop.classList.add("hover");
-
-
-
   })
-
-
-
 );
 
-
-
 ["dragleave", "drop"].forEach((ev) =>
-
-
-
   elDrop?.addEventListener(ev, (e) => {
-
-
-
     e.preventDefault();
-
-
 
     e.stopPropagation();
 
-
-
     elDrop.classList.remove("hover");
-
-
-
   })
-
-
-
 );
 
-
-
 elDrop?.addEventListener("drop", (e) => {
-
-
-
   handleFiles(e.dataTransfer.files);
-
-
-
 });
-
-
 
 elDrop?.addEventListener("click", () => elFileJson.click());
 
-
-
-
-
-
-
 // Upload avec nom de scÃ¨ne personnalisÃ©
 
-
-
 elForm?.addEventListener("submit", (e) => {
-
-
-
   e.preventDefault();
-
-
-
-
-
-
 
   // Validation cÃ´tÃ© client
 
-
-
   const sceneName = elSceneName?.value?.trim();
-
-
 
   const sanitizedName = sanitizeSceneName(sceneName);
 
-
-
-
-
-
-
   if (!sanitizedName) {
-
-
-
     toast("Veuillez saisir un nom de scÃ¨ne valide", true);
 
-
-
     return;
-
-
-
   }
-
-
-
-
-
-
 
   if (!(fileJson && fileMp3)) {
-
-
-
     toast("Fichiers JSON et MP3 requis", true);
 
-
-
     return;
-
-
-
   }
-
-
-
-
-
-
 
   // Extraire la frÃ©quence du nom du fichier JSON
 
-
-
   const frequency = extractFrequencyFromFilename(fileJson.name);
-
-
-
-
-
-
 
   const fd = new FormData();
 
-
-
-
-
-
-
   // Renommer les fichiers selon le format demandÃ©
-
-
 
   const mp3Name = `${sanitizedName}.mp3`;
 
-
-
   const jsonName = `${sanitizedName}_${frequency}Hz.json`;
-
-
-
-
-
-
 
   fd.append("json", fileJson, jsonName);
 
-
-
   fd.append("mp3", fileMp3, mp3Name);
-
-
 
   fd.append("scene_name", sanitizedName); // Nom du rÃ©pertoire
 
-
-
-
-
-
-
   const xhr = new XMLHttpRequest();
-
-
 
   xhr.open("POST", "/upload");
 
-
-
-
-
-
-
   xhr.upload.onprogress = (e) => {
-
-
-
     if (e.lengthComputable) {
-
-
-
       const pct = Math.round((e.loaded / e.total) * 100);
-
-
 
       elProg.hidden = false;
 
-
-
       elBar.style.width = pct + "%";
-
-
-
     }
-
-
-
   };
 
-
-
-
-
-
-
   xhr.onload = async () => {
-
-
-
     elProg.hidden = true;
-
-
 
     elBar.style.width = "0%";
 
-
-
-
-
-
-
     if (xhr.status >= 200 && xhr.status < 300) {
-
-
-
       toast(`Session "${sceneName}" uploadÃ©e avec succÃ¨s`);
-
-
 
       await fetchSessions();
 
-
-
       if (elSelect.options.length) {
-
-
-
         elSelect.selectedIndex = elSelect.options.length - 1;
-
-
-
       }
-
-
-
-
-
-
 
       // Reset du formulaire
 
-
-
       fileJson = null;
-
-
 
       fileMp3 = null;
 
-
-
       elSceneName.value = "";
-
-
 
       elFileJson.value = "";
 
-
-
       elFileMp3.value = "";
 
-
-
       updatePills();
-
-
-
     } else {
-
-
-
       toast("Ã‰chec upload: " + xhr.responseText, true);
-
-
-
     }
-
-
-
   };
 
-
-
-
-
-
-
   xhr.onerror = () => {
-
-
-
     elProg.hidden = true;
-
-
 
     elBar.style.width = "0%";
 
-
-
     toast("Erreur rÃ©seau upload", true);
-
-
-
   };
 
-
-
-
-
-
-
   xhr.send(fd);
-
-
-
 });
-
-
-
-
-
-
 
 // Sessions
 
-const deleteButtonDefaultLabel = elDeleteSession?.textContent || "Supprimer la session";
+const deleteButtonDefaultLabel =
+  elDeleteSession?.textContent || "Supprimer la session";
 
-const deleteModalConfirmDefaultLabel = elDeleteModalConfirm?.textContent || "Oui, supprimer";
+const deleteModalConfirmDefaultLabel =
+  elDeleteModalConfirm?.textContent || "Oui, supprimer";
 
-const deleteModalCancelDefaultLabel = elDeleteModalCancel?.textContent || "Annuler";
+const deleteModalCancelDefaultLabel =
+  elDeleteModalCancel?.textContent || "Annuler";
 
 let pendingDeleteSession = null;
 
 let deleteModalBusy = false;
 
-
-
 function syncDeleteSessionState() {
-
   if (!elDeleteSession) return;
 
-  const hasSessions = !!(elSelect && elSelect.options && elSelect.options.length);
+  const hasSessions = !!(
+    elSelect &&
+    elSelect.options &&
+    elSelect.options.length
+  );
 
   elDeleteSession.disabled = !hasSessions;
-
 }
 
-
-
 function computeFallbackSession(session) {
-
   if (!elSelect || !elSelect.options || elSelect.options.length <= 1) {
-
     return null;
-
   }
 
   const options = Array.from(elSelect.options);
@@ -1338,139 +595,96 @@ function computeFallbackSession(session) {
   const currentIndex = options.findIndex((opt) => opt.value === session);
 
   if (currentIndex === -1) {
-
     return options[0] ? options[0].value : null;
-
   }
 
   const nextOption = options[currentIndex + 1] || options[currentIndex - 1];
 
   return nextOption ? nextOption.value : null;
-
 }
 
-
-
 function setDeleteModalBusy(isBusy, message = "") {
-
   deleteModalBusy = isBusy;
 
   if (elDeleteModal) {
-
     elDeleteModal.setAttribute("aria-busy", isBusy ? "true" : "false");
-
   }
 
   if (elDeleteModalConfirm) {
-
     elDeleteModalConfirm.disabled = isBusy;
 
-    elDeleteModalConfirm.textContent = isBusy ? "Suppression..." : deleteModalConfirmDefaultLabel;
-
+    elDeleteModalConfirm.textContent = isBusy
+      ? "Suppression..."
+      : deleteModalConfirmDefaultLabel;
   }
 
   if (elDeleteModalCancel) {
-
     elDeleteModalCancel.disabled = isBusy;
 
     elDeleteModalCancel.textContent = deleteModalCancelDefaultLabel;
-
   }
 
   if (elDeleteModalClose) {
-
     elDeleteModalClose.disabled = isBusy;
-
   }
 
   if (typeof message === "string" && elDeleteModalMessage) {
-
     elDeleteModalMessage.textContent = message;
-
   }
-
 }
 
-
-
 function openDeleteModal(session) {
-
   pendingDeleteSession = session;
 
   if (elDeleteModalName) {
-
     elDeleteModalName.textContent = prettifySessionName(session) || session;
-
   }
 
   setDeleteModalBusy(false, "");
 
   if (elDeleteModalMessage) {
-
     elDeleteModalMessage.textContent = "";
-
   }
 
   if (elDeleteModal) {
-
     elDeleteModal.classList.remove("hidden");
 
     elDeleteModal.setAttribute("aria-hidden", "false");
-
   }
 
   document.body?.classList.add("modal-open");
 
   window.setTimeout(() => {
-
     elDeleteModalConfirm?.focus();
-
   }, 0);
-
 }
 
-
-
 function closeDeleteModal() {
-
   pendingDeleteSession = null;
 
   if (elDeleteModal) {
-
     elDeleteModal.classList.add("hidden");
 
     elDeleteModal.setAttribute("aria-hidden", "true");
-
   }
 
   document.body?.classList.remove("modal-open");
 
   setDeleteModalBusy(false, "");
-
 }
 
-
-
 async function fetchSessions(options = {}) {
-
   if (!elSelect) {
-
     syncDeleteSessionState();
 
     return [];
-
   }
-
-
 
   const { preferred = null, keepCurrent = true } = options;
 
   const previousValue = keepCurrent ? elSelect.value : null;
 
-
-
   try {
-
     const res = await fetch("/sessions");
 
     const data = await res.json();
@@ -1479,10 +693,7 @@ async function fetchSessions(options = {}) {
 
     elSelect.innerHTML = "";
 
-
-
     sessions.forEach((s) => {
-
       const opt = document.createElement("option");
 
       opt.value = s;
@@ -1490,135 +701,91 @@ async function fetchSessions(options = {}) {
       opt.textContent = s;
 
       elSelect.appendChild(opt);
-
     });
-
-
 
     esp32AvailableSessions = sessions;
 
-
-
     populateEsp32ButtonOptions();
 
-
-
     if (elSelect.options.length) {
-
       const target = preferred ?? previousValue;
 
       if (target) {
-
-        const match = Array.from(elSelect.options).find((opt) => opt.value === target);
+        const match = Array.from(elSelect.options).find(
+          (opt) => opt.value === target
+        );
 
         if (match) {
-
           match.selected = true;
-
         } else {
-
           elSelect.selectedIndex = 0;
-
         }
-
       } else {
-
         elSelect.selectedIndex = 0;
-
       }
-
     }
-
-
 
     syncDeleteSessionState();
 
     return sessions;
-
   } catch (e) {
-
     console.error("Erreur lors du chargement des sessions:", e);
 
     elSelect.innerHTML = "";
 
     esp32AvailableSessions = [];
 
-
-
     populateEsp32ButtonOptions();
-
-
 
     syncDeleteSessionState();
 
     return [];
-
   }
-
 }
-
-
 
 syncDeleteSessionState();
 
-elRefresh?.addEventListener("click", () => fetchSessions({ keepCurrent: true }));
-
-
+elRefresh?.addEventListener("click", () =>
+  fetchSessions({ keepCurrent: true })
+);
 
 elDeleteSession?.addEventListener("click", () => {
-
   if (!elSelect) return;
 
   const session = elSelect.value;
 
   if (!session) {
-
     toast("Aucune session sÃ©lectionnÃ©e", true);
 
     return;
-
   }
 
   openDeleteModal(session);
-
 });
 
-
-
 elDeleteModalConfirm?.addEventListener("click", async () => {
-
   if (!pendingDeleteSession || deleteModalBusy) return;
 
   const session = pendingDeleteSession;
 
   const fallbackSession = computeFallbackSession(session);
 
-
-
   setDeleteModalBusy(true, "Suppression en cours...");
 
   if (elDeleteSession) {
-
     elDeleteSession.disabled = true;
 
     elDeleteSession.textContent = "Suppression...";
-
   }
 
-
-
   try {
-
     const res = await fetch(`/sessions/${encodeURIComponent(session)}`, {
-
       method: "DELETE",
-
     });
 
     const payload = await res.json().catch(() => ({}));
 
     if (!res.ok || (payload && payload.error)) {
-
       const errorMsg = payload?.error || `HTTP ${res.status}`;
 
       setDeleteModalBusy(false, `Suppression impossible: ${errorMsg}`);
@@ -1626,26 +793,22 @@ elDeleteModalConfirm?.addEventListener("click", async () => {
       toast(`Suppression impossible: ${errorMsg}`, true);
 
       return;
-
     }
 
-
-
     const removedCount =
+      typeof payload?.removed_from_queue === "number"
+        ? payload.removed_from_queue
+        : 0;
 
-      typeof payload?.removed_from_queue === "number" ? payload.removed_from_queue : 0;
-
-    let successMsg = `Session supprimÃ©e: ${prettifySessionName(session) || session}`;
+    let successMsg = `Session supprimÃ©e: ${
+      prettifySessionName(session) || session
+    }`;
 
     if (removedCount > 0) {
-
       successMsg += ` (playlist: -${removedCount})`;
-
     }
 
     toast(successMsg);
-
-
 
     await fetchSessions({ preferred: fallbackSession, keepCurrent: false });
 
@@ -1653,12 +816,8 @@ elDeleteModalConfirm?.addEventListener("click", async () => {
 
     updateStatus();
 
-
-
     closeDeleteModal();
-
   } catch (e) {
-
     console.error("Erreur suppression session:", e);
 
     setDeleteModalBusy(false, "Erreur rÃ©seau lors de la suppression.");
@@ -1666,1593 +825,564 @@ elDeleteModalConfirm?.addEventListener("click", async () => {
     toast("Erreur rÃ©seau suppression session", true);
 
     return;
-
   } finally {
-
     if (elDeleteSession) {
-
       elDeleteSession.textContent = deleteButtonDefaultLabel;
 
       elDeleteSession.disabled = false;
-
     }
 
     syncDeleteSessionState();
-
   }
-
 });
-
-
 
 elDeleteModalCancel?.addEventListener("click", () => {
-
   if (!deleteModalBusy) {
-
     closeDeleteModal();
-
   }
-
 });
-
-
 
 elDeleteModalClose?.addEventListener("click", () => {
-
   if (!deleteModalBusy) {
-
     closeDeleteModal();
-
   }
-
 });
-
-
 
 elDeleteModal?.addEventListener("click", (event) => {
-
   if (!deleteModalBusy && event.target === elDeleteModal) {
-
     closeDeleteModal();
-
   }
-
 });
 
-
-
 document.addEventListener("keydown", (event) => {
-
-  if (event.key === "Escape" && !deleteModalBusy && elDeleteModal && !elDeleteModal.classList.contains("hidden")) {
-
+  if (
+    event.key === "Escape" &&
+    !deleteModalBusy &&
+    elDeleteModal &&
+    !elDeleteModal.classList.contains("hidden")
+  ) {
     event.preventDefault();
 
     closeDeleteModal();
-
   }
-
 });
 
 // ===================== Playlist =====================
 
-
-
-
-
-
-
 function prettifySessionName(name) {
-
-
-
   if (!name) return "";
 
-
-
   return name.replace(/[_-]+/g, " ").trim();
-
-
-
 }
 
-
-
-
-
-
-
 function renderPlaylist(payload) {
-
-
-
   playlistCurrentData = payload && payload.current ? payload.current : null;
 
-
-
-  playlistQueueData = Array.isArray(payload && payload.queue) ? payload.queue : [];
-
-
-
-
-
-
+  playlistQueueData = Array.isArray(payload && payload.queue)
+    ? payload.queue
+    : [];
 
   if (elPlaylistCurrent) {
-
-
-
     elPlaylistCurrent.innerHTML = "";
 
-
-
     if (playlistCurrentData && playlistCurrentData.session) {
-
-
-
       const strong = document.createElement("strong");
-
-
 
       strong.textContent = "En cours :";
 
-
-
       const span = document.createElement("span");
-
-
 
       span.textContent = " " + prettifySessionName(playlistCurrentData.session);
 
-
-
       elPlaylistCurrent.appendChild(strong);
 
-
-
       elPlaylistCurrent.appendChild(span);
-
-
-
     } else if (playlistQueueData.length) {
-
-
-
       elPlaylistCurrent.textContent = "Lecture en attente...";
-
-
-
     } else {
-
-
-
       elPlaylistCurrent.textContent = "Playlist vide";
-
-
-
     }
-
-
-
   }
 
-
-
-
-
-
-
   if (elPlaylistList) {
-
-
-
     elPlaylistList.innerHTML = "";
 
-
-
     if (!playlistQueueData.length) {
-
-
-
       const empty = document.createElement("li");
 
-
-
       empty.className = "playlist-empty";
-
-
 
       empty.textContent = "Aucun morceau en attente";
 
-
-
       elPlaylistList.appendChild(empty);
-
-
-
     } else {
-
-
-
       playlistQueueData.forEach((item, index) => {
-
-
-
         const li = document.createElement("li");
-
-
 
         li.className = "playlist-item";
 
-
-
         if (index === 0) li.classList.add("is-next");
-
-
 
         li.dataset.id = String(item.id);
 
-
-
-
-
-
-
         const name = document.createElement("span");
-
-
 
         name.className = "playlist-name";
 
-
-
         name.textContent = `${index + 1}. ${prettifySessionName(item.session)}`;
-
-
-
-
-
-
 
         const controls = document.createElement("div");
 
-
-
         controls.className = "playlist-controls";
-
-
-
-
-
-
 
         const btnUp = document.createElement("button");
 
-
-
         btnUp.className = "playlist-btn";
-
-
 
         btnUp.dataset.action = "up";
 
-
-
         btnUp.textContent = "Monter";
-
-
-
-
-
-
 
         const btnDown = document.createElement("button");
 
-
-
         btnDown.className = "playlist-btn";
-
-
 
         btnDown.dataset.action = "down";
 
-
-
         btnDown.textContent = "Descendre";
-
-
-
-
-
-
 
         const btnDelete = document.createElement("button");
 
-
-
         btnDelete.className = "playlist-btn danger";
-
-
 
         btnDelete.dataset.action = "delete";
 
-
-
         btnDelete.textContent = "Supprimer";
-
-
-
-
-
-
 
         controls.appendChild(btnUp);
 
-
-
         controls.appendChild(btnDown);
-
-
 
         controls.appendChild(btnDelete);
 
-
-
-
-
-
-
         li.appendChild(name);
-
-
 
         li.appendChild(controls);
 
-
-
         elPlaylistList.appendChild(li);
-
-
-
       });
-
-
-
     }
-
-
-
   }
-
-
-
-
-
-
 
   if (elPlaylistSkip) {
-
-
-
     const hasSomething =
-
-
-
       !!(playlistCurrentData && playlistCurrentData.session) ||
-
-
-
       playlistQueueData.length > 0;
 
-
-
     elPlaylistSkip.disabled = !hasSomething;
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 async function refreshPlaylist(force = false) {
-
-
-
   if (playlistFetchInFlight) {
-
-
-
     return;
-
-
-
   }
-
-
 
   if (!force && !serverReachable) {
-
-
-
     return;
-
-
-
   }
-
-
 
   const now = Date.now();
 
-
-
   if (!force && now - lastPlaylistFetch < 1200) {
-
-
-
     return;
-
-
-
   }
-
-
-
-
-
-
 
   playlistFetchInFlight = true;
 
-
-
   lastPlaylistFetch = now;
 
-
-
   try {
-
-
-
     const res = await fetch("/playlist");
 
-
-
     if (!res.ok) {
-
-
-
       throw new Error(`playlist_http_${res.status}`);
-
-
-
     }
-
-
 
     const payload = await res.json();
 
-
-
     lastPlaylistFetch = Date.now();
 
-
-
     renderPlaylist(payload);
-
-
-
   } catch (e) {
-
-
-
     if (force) {
-
-
-
       toast("Playlist indisponible", true);
-
-
-
     }
-
-
 
     playlistQueueData = [];
 
-
-
     playlistCurrentData = null;
 
-
-
     if (elPlaylistCurrent) {
-
-
-
       elPlaylistCurrent.textContent = "Playlist indisponible";
-
-
-
     }
 
-
-
     if (elPlaylistList) {
-
-
-
       elPlaylistList.innerHTML = "";
-
-
 
       const empty = document.createElement("li");
 
-
-
       empty.className = "playlist-empty";
-
-
 
       empty.textContent = "Playlist indisponible";
 
-
-
       elPlaylistList.appendChild(empty);
-
-
-
     }
-
-
 
     if (elPlaylistSkip) {
-
-
-
       elPlaylistSkip.disabled = true;
-
-
-
     }
-
-
-
   } finally {
-
-
-
     playlistFetchInFlight = false;
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 elPlaylistList?.addEventListener("click", async (event) => {
-
-
-
   const btn = event.target.closest("button[data-action]");
-
-
 
   if (!btn) return;
 
-
-
   const itemEl = btn.closest("li[data-id]");
-
-
 
   if (!itemEl) return;
 
-
-
   const id = parseInt(itemEl.dataset.id, 10);
-
-
 
   if (Number.isNaN(id)) return;
 
-
-
   const action = btn.dataset.action;
 
-
-
-
-
-
-
   try {
-
-
-
     if (action === "delete") {
-
-
-
       const res = await fetch(`/playlist/${id}`, { method: "DELETE" });
 
-
-
       if (!res.ok) {
-
-
-
         const txt = await res.text();
 
-
-
         throw new Error(txt);
-
-
-
       }
-
-
-
     } else if (action === "up" || action === "down") {
-
-
-
       const res = await fetch(`/playlist/${id}/move`, {
-
-
-
         method: "POST",
-
-
 
         headers: { "Content-Type": "application/json" },
 
-
-
         body: JSON.stringify({ direction: action }),
-
-
-
       });
 
-
-
       if (!res.ok) {
-
-
-
         const txt = await res.text();
 
-
-
         throw new Error(txt);
-
-
-
       }
-
-
-
     }
-
-
 
     await refreshPlaylist(true);
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur playlist: " + e, true);
-
-
-
   }
-
-
-
 });
 
-
-
-
-
-
-
 elPlaylistSkip?.addEventListener("click", async () => {
-
-
-
   elPlaylistSkip.disabled = true;
 
-
-
   try {
-
-
-
     const res = await fetch("/playlist/skip", { method: "POST" });
 
-
-
     if (!res.ok) {
-
-
-
       const txt = await res.text();
 
-
-
       throw new Error(txt);
-
-
-
     }
-
-
 
     const payload = await res.json().catch(() => ({}));
 
-
-
     if (payload && payload.status === "idle") {
-
-
-
       toast("Playlist vide", true);
-
-
-
     }
-
-
 
     await refreshPlaylist(true);
 
-
-
     fetchRandomModeState();
 
-
-
     updateStatus();
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur skip playlist: " + e, true);
-
-
-
   } finally {
-
-
-
     elPlaylistSkip.disabled = false;
-
-
-
   }
-
-
-
 });
-
-
-
-
-
-
 
 elPlaylistRefresh?.addEventListener("click", () => {
-
-
-
   refreshPlaylist(true);
-
-
-
 });
-
-
-
-
-
-
 
 // Controls
 
-
-
 elPlay?.addEventListener("click", async () => {
-
-
-
   const sid = elSelect.value;
 
-
-
   if (!sid) {
-
-
-
     toast("Aucune session selectionnee", true);
 
-
-
     return;
-
-
-
   }
 
-
-
-
-
-
-
   try {
-
-
-
     const res = await fetch("/play", {
-
-
-
       method: "POST",
-
-
 
       headers: { "Content-Type": "application/json" },
 
-
-
       body: JSON.stringify({ session: sid }),
-
-
-
     });
 
-
-
-
-
-
-
     if (!res.ok) {
-
-
-
       const errorText = await res.text();
-
-
 
       toast("Erreur lecture: " + errorText, true);
 
-
-
       return;
-
-
-
     }
-
-
-
-
-
-
 
     const payload = await res.json().catch(() => ({}));
 
-
-
     if (payload && typeof payload === "object" && payload.random_mode) {
-
-
-
       applyRandomModeSnapshot(payload.random_mode);
-
-
-
     }
 
-
-
     const randomInfo =
-
       payload && typeof payload === "object" && payload.random_mode
-
         ? payload.random_mode
-
         : {};
 
-
-
     const actualSession =
-
       (payload && typeof payload === "object" && payload.session) || sid;
-
-
 
     const randomEnabled = Boolean(randomInfo && randomInfo.enabled);
 
-
-
     const randomApplied = Boolean(randomEnabled && randomInfo.applied);
 
-
-
-    const randomUnavailable =
-
-      randomEnabled && randomInfo.available === false;
-
-
+    const randomUnavailable = randomEnabled && randomInfo.available === false;
 
     let message = null;
 
-
-
     if (payload.status === "queued") {
-
-
-
       const pos = payload.position ? ` (position ${payload.position})` : "";
 
-
-
       if (randomApplied) {
-
-
-
         const label =
-
           (randomInfo && randomInfo.selected) || actualSession || "inconnu";
-
-
 
         message = `Ajoute en mode aleatoire${pos} : ${label}`;
-
-
-
       } else {
-
-
-
         message = "Session ajoutee a la playlist" + pos;
 
-
-
         if (randomUnavailable) {
-
-
-
           message += " (aleatoire indisponible)";
-
-
-
         }
-
-
-
       }
-
-
-
     } else if (payload.status === "playing") {
-
-
-
       if (randomApplied) {
-
-
-
         const label =
-
           (randomInfo && randomInfo.selected) || actualSession || "inconnu";
 
-
-
         message = "Lecture aleatoire lancee : " + label;
-
-
-
       } else {
-
-
-
         message = "Lecture demarree";
 
-
-
         if (randomUnavailable) {
-
-
-
           message += " (aleatoire indisponible)";
-
-
-
         }
-
-
-
       }
-
-
-
     } else if (randomUnavailable) {
-
-
-
       message =
-
         "Mode aleatoire actif mais aucun morceau eligible (hors Accueil).";
-
-
-
     }
-
-
 
     if (message) {
-
-
-
       toast(message);
-
-
-
     }
 
-
-
-
-
-
-
     await refreshPlaylist(true);
-
-
 
     fetchRandomModeState();
 
-
-
     updateStatus();
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur reseau lors de la lecture", true);
-
-
-
   }
-
-
-
 });
-
-
-
-
-
-
-
-
-
-
 
 elPause?.addEventListener("click", async () => {
-
-
-
   try {
-
-
-
     await fetch("/pause", { method: "POST" });
 
-
-
     updateStatus();
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur pause", true);
-
-
-
   }
-
-
-
 });
-
-
-
-
-
-
 
 elResume?.addEventListener("click", async () => {
-
-
-
   try {
-
-
-
     await fetch("/resume", { method: "POST" });
 
-
-
     updateStatus();
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur resume", true);
-
-
-
   }
-
-
-
 });
 
-
-
-
-
-
-
 elStop?.addEventListener("click", async () => {
-
-
-
   try {
-
-
-
     await fetch("/stop", { method: "POST" });
-
-
 
     await refreshPlaylist(true);
 
-
-
     fetchRandomModeState();
 
-
-
     updateStatus();
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur stop", true);
-
-
-
   }
-
-
-
 });
-
-
-
-
-
-
-
-
-
-
 
 // Status
 
-
-
 async function updateStatus() {
-
-
-
   const now = Date.now();
 
-
-
   if (!serverReachable && now < nextStatusAttempt) {
-
-
-
     return;
-
-
-
   }
 
-
-
-
-
-
-
   try {
-
-
-
     const res = await fetch("/status");
 
-
-
     if (!res.ok) {
-
-
-
       throw new Error(`status_http_${res.status}`);
-
-
-
     }
-
-
 
     const st = await res.json();
 
-
-
     elStatus.textContent = JSON.stringify(st, null, 2);
 
-
-
     if (st && typeof st === "object" && st.random_mode) {
-
       applyRandomModeSnapshot(st.random_mode);
-
     }
-
-
 
     applyBluetoothStatus(st && st.bluetooth ? st.bluetooth : null);
 
-
-
-
-
     const txt = st.running ? (st.paused ? "PAUSED" : "PLAYING") : "IDLE";
-
-
 
     elBadge.textContent = txt;
 
-
-
     elBadge.className =
-
-
-
       "badge " +
-
-
-
       (txt === "PLAYING"
-
-
-
         ? "is-playing"
-
-
-
         : txt === "PAUSED"
-
-
-
         ? "is-paused"
-
-
-
         : "is-idle");
 
-
-
-
-
-
-
     if (elConnection) {
-
-
-
       elConnection.classList.remove("offline");
 
-
-
       elConnection.classList.add("online");
-
-
-
     }
-
-
 
     if (elConnectionText) {
-
-
-
       elConnectionText.textContent = "Skull : connecte";
-
-
-
     }
-
-
 
     if (elConnectionDot) {
-
-
-
       elConnectionDot.setAttribute("aria-label", "connecte");
-
-
-
     }
-
-
-
-
-
-
 
     if (!serverReachable) {
-
-
-
       toast("Skull en ligne");
-
-
-
     }
-
-
 
     serverReachable = true;
 
-
-
     nextStatusAttempt = Date.now() + 1500;
 
-
-
     refreshPlaylist();
-
-
-
   } catch (e) {
-
-
-
     if (serverReachable) {
-
-
-
       toast("Skull non disponible", true);
 
-
-
       console.warn("Skull unreachable:", e);
-
-
-
     }
-
-
 
     serverReachable = false;
 
-
-
     nextStatusAttempt = Date.now() + 5000;
-
-
-
-
-
-
 
     elStatus.textContent = "Skull non disponible (serveur injoignable)";
 
-
-
     elBadge.textContent = "OFFLINE";
-
-
 
     elBadge.className = "badge is-offline";
 
-
-
     applyBluetoothStatus(null);
 
-
-
-
-
-
     if (elPlaylistCurrent) {
-
-
-
       elPlaylistCurrent.textContent = "Playlist indisponible";
-
-
-
     }
 
-
-
     if (elPlaylistList) {
-
-
-
       elPlaylistList.innerHTML = "";
-
-
 
       const empty = document.createElement("li");
 
-
-
       empty.className = "playlist-empty";
-
-
 
       empty.textContent = "Playlist indisponible";
 
-
-
       elPlaylistList.appendChild(empty);
-
-
-
     }
-
-
 
     if (elPlaylistSkip) {
-
-
-
       elPlaylistSkip.disabled = true;
-
-
-
     }
-
-
-
-
-
-
 
     if (elConnection) {
-
-
-
       elConnection.classList.remove("online");
 
-
-
       elConnection.classList.add("offline");
-
-
-
     }
-
-
 
     if (elConnectionText) {
-
-
-
       elConnectionText.textContent = "Skull : hors ligne";
-
-
-
     }
-
-
 
     if (elConnectionDot) {
-
-
-
       elConnectionDot.setAttribute("aria-label", "hors ligne");
-
-
-
     }
-
-
-
   }
-
-
-
 }
-
-
-
-
-
-
 
 function setVolumeButtonsDisabled(disabled) {
-
-
-
   if (!elVolumeButtons || !elVolumeButtons.length) return;
 
-
-
   elVolumeButtons.forEach((btn) => {
-
-
-
     if (btn) btn.disabled = disabled;
-
-
-
   });
-
-
-
 }
 
-
-
-
 function setRestartServiceDisabled(disabled) {
-
   if (!elRestartServiceBtn) return;
 
   if (disabled) {
@@ -3260,177 +1390,76 @@ function setRestartServiceDisabled(disabled) {
   } else {
     elRestartServiceBtn.removeAttribute("disabled");
   }
-
 }
 
 function applyBluetoothStatus(info) {
   let statusClass = "bt-status";
 
-
-
   let text = "Bluetooth : inconnu";
-
-
 
   let topState = "unknown";
 
-
-
   if (info && typeof info === "object") {
-
-
-
     if (info.connected === true) {
-
-
-
       statusClass += " is-connected";
-
-
 
       text = "Bluetooth : connecte";
 
-
-
       topState = "online";
-
-
-
     } else if (info.connected === false) {
-
-
-
       statusClass += " is-disconnected";
-
-
 
       text = "Bluetooth : deconnecte";
 
-
-
       topState = "offline";
-
-
-
     } else {
-
-
-
       statusClass += " is-unknown";
 
-
-
       topState = "unknown";
-
-
-
     }
-
-
-
   } else {
-
-
-
     statusClass += " is-unknown";
 
-
-
     topState = "unknown";
-
-
-
   }
-
-
 
   if (elBtStatus) {
     elBtStatus.className = statusClass;
   }
 
-
-
   if (elBtStatusDot) {
-
-
-
     elBtStatusDot.className = "bt-dot";
-
-
-
   }
-
-
 
   if (elBtStatusText) {
-
-
-
     elBtStatusText.textContent = text;
-
-
-
   }
-
-
 
   if (elBtTopStatus) {
-
-
-
     const base = "connection-chip connection-chip--secondary";
 
-
-
     const stateClass =
-
-      topState === "online" ? "online" : topState === "offline" ? "offline" : "unknown";
-
-
+      topState === "online"
+        ? "online"
+        : topState === "offline"
+        ? "offline"
+        : "unknown";
 
     elBtTopStatus.className = `${base} ${stateClass}`;
-
-
-
   }
-
-
 
   if (elBtTopStatusDot) {
-
-
-
     elBtTopStatusDot.className = "connection-dot";
 
-
-
     elBtTopStatusDot.setAttribute("aria-label", text);
-
-
-
   }
-
-
 
   if (elBtTopStatusText) {
-
-
-
     elBtTopStatusText.textContent = text;
-
-
-
   }
-
-
-
 }
 
-
-
-
 async function triggerServiceRestart() {
-
   if (restartServiceBusy) return;
 
   restartServiceBusy = true;
@@ -3450,848 +1479,363 @@ async function triggerServiceRestart() {
 
     toast("Service en redÃ©marrage");
   } catch (error) {
-    const message = error && error.message ? error.message : "RedÃ©marrage Ã©chouÃ©";
+    const message =
+      error && error.message ? error.message : "RedÃ©marrage Ã©chouÃ©";
     toast(`Erreur redÃ©marrage: ${message}`, true);
   } finally {
     restartServiceBusy = false;
     setRestartServiceDisabled(false);
   }
+}
 
+async function triggerBluetoothRestart() {
+  if (restartBluetoothBusy) return;
+  restartBluetoothBusy = true;
+  setRestartBluetoothDisabled(true);
+
+  try {
+    const res = await fetch("/bluetooth/restart", { method: "POST" });
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message =
+        payload && typeof payload.error === "string"
+          ? payload.error
+          : `bluetooth_restart_http_${res.status}`;
+      throw new Error(message);
+    }
+
+    toast("Bluetooth en redémarrage");
+  } catch (error) {
+    const message =
+      error && error.message ? error.message : "Redémarrage échoué";
+    toast(`Erreur redémarrage Bluetooth: ${message}`, true);
+  } finally {
+    restartBluetoothBusy = false;
+    setRestartBluetoothDisabled(false);
+  }
+}
+
+function setRestartBluetoothDisabled(disabled) {
+  if (!elRestartBluetoothBtn) return;
+  if (disabled) {
+    elRestartBluetoothBtn.setAttribute("disabled", "disabled");
+  } else {
+    elRestartBluetoothBtn.removeAttribute("disabled");
+  }
 }
 
 async function triggerShuffleAll() {
-
-
-
   if (shuffleBusy) return;
-
-
 
   shuffleBusy = true;
 
-
-
   if (elShuffleAllBtn) {
-
-
-
     elShuffleAllBtn.setAttribute("disabled", "disabled");
-
-
-
   }
 
-
-
   try {
-
-
-
     const res = await fetch("/playlist/shuffle", {
-
-
-
       method: "POST",
-
-
-
     });
-
-
 
     const payload = await res.json().catch(() => ({}));
 
-
-
     if (!res.ok) {
-
-
-
       const message =
-
-
-
         payload && typeof payload.error === "string"
-
-
-
           ? payload.error
-
-
-
           : `shuffle_http_${res.status}`;
 
-
-
       throw new Error(message);
-
-
-
     }
 
-
-
     const count =
-
-
-
       payload && typeof payload.count === "number" ? payload.count : null;
 
-
-
     toast(
-
-
-
       count
-
-
-
         ? `Lecture aleatoire continue prete (${count} sessions)`
-
-
-
         : "Lecture aleatoire continue prete"
-
-
-
     );
-
-
 
     await refreshPlaylist(true);
 
-
-
     fetchRandomModeState();
 
-
-
     updateStatus();
-
-
-
   } catch (error) {
-
-
-
     const message = error && error.message ? error.message : "Erreur shuffle";
 
-
-
     toast(`Erreur mode aleatoire: ${message}`, true);
-
-
-
   } finally {
-
-
-
     shuffleBusy = false;
 
-
-
     if (elShuffleAllBtn) {
-
-
-
       elShuffleAllBtn.removeAttribute("disabled");
-
-
-
     }
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 async function sendVolumeAction(action) {
-
-
-
   if (!action || volumeBusy) return;
-
-
 
   volumeBusy = true;
 
-
-
   setVolumeButtonsDisabled(true);
 
-
-
   try {
-
-
-
     const response = await fetch("/volume", {
-
-
-
       method: "POST",
-
-
 
       headers: { "Content-Type": "application/json" },
 
-
-
       body: JSON.stringify({ action }),
-
-
-
     });
-
-
 
     const payload = await response.json().catch(() => ({}));
 
-
-
     const ok = response.ok && payload && payload.ok !== false;
 
-
-
     if (!ok) {
-
-
-
       const message =
-
-
-
         (payload && (payload.error || payload.message)) ||
-
-
-
         `Commande volume Ã©chouÃ©e (${response.status})`;
 
-
-
       toast(message, true);
-
-
-
     } else {
-
-
-
       const message =
-
-
-
         (payload && payload.message) ||
-
-
-
         (action === "mute" ? "Volume coupÃ©" : "Volume ajustÃ©");
 
-
-
       toast(message);
-
-
-
     }
-
-
-
   } catch (error) {
-
-
-
     toast("Erreur rÃ©seau /volume", true);
-
-
-
   } finally {
-
-
-
     setVolumeButtonsDisabled(false);
 
-
-
     volumeBusy = false;
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 function toast(msg, isErr = false) {
-
-
-
   const t = document.createElement("div");
-
-
 
   t.className = "toast" + (isErr ? " err" : "");
 
-
-
   t.textContent = msg;
-
-
 
   document.body.appendChild(t);
 
-
-
   setTimeout(() => t.classList.add("show"), 10);
 
-
-
   setTimeout(() => {
-
-
-
     t.classList.remove("show");
 
-
-
     t.addEventListener("transitionend", () => t.remove(), { once: true });
-
-
-
   }, 2500);
-
-
-
 }
-
-
-
-
-
-
 
 // ===================== Channels API =====================
 
-
-
 function readChannelsFromUI() {
-
-
-
   return {
-
-
-
     eye_left: !!elCbEyeLeft?.checked,
-
-
 
     eye_right: !!elCbEyeRight?.checked,
 
-
-
     neck: !!elCbNeck?.checked,
 
-
-
     jaw: !!elCbJaw?.checked,
-
-
-
   };
-
-
-
 }
 
-
-
-
-
-
-
 function setChannelsToUI(c) {
-
-
-
   if (elCbEyeLeft) elCbEyeLeft.checked = !!c.eye_left;
-
-
 
   if (elCbEyeRight) elCbEyeRight.checked = !!c.eye_right;
 
-
-
   if (elCbNeck) elCbNeck.checked = !!c.neck;
 
-
-
   if (elCbJaw) elCbJaw.checked = !!c.jaw;
-
-
-
 }
 
-
-
-
-
-
-
 async function fetchChannels() {
-
-
-
   try {
-
-
-
     const res = await fetch("/channels");
 
-
-
     if (!res.ok) return;
-
-
 
     const c = await res.json();
 
-
-
     setChannelsToUI(c);
-
-
-
   } catch (e) {
-
-
-
     // Ignorer si l'endpoint n'est pas disponible
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 async function postChannels(c) {
-
-
-
   try {
-
-
-
     const res = await fetch("/channels", {
-
-
-
       method: "POST",
-
-
 
       headers: { "Content-Type": "application/json" },
 
-
-
       body: JSON.stringify(c),
-
-
-
     });
 
-
-
     if (!res.ok) {
-
-
-
       const txt = await res.text();
 
-
-
       toast("Erreur canaux: " + txt, true);
-
-
-
     }
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur rÃ©seau /channels", true);
-
-
-
   }
-
-
-
 }
-
-
-
-
-
-
 
 // Attach change handlers
 
-
-
 [elCbEyeLeft, elCbEyeRight, elCbNeck, elCbJaw].forEach((cb) => {
-
-
-
   cb?.addEventListener("change", () => postChannels(readChannelsFromUI()));
-
-
-
 });
-
-
-
-
-
-
 
 // ===================== Pitch API =====================
 
-
-
 const pitchSliders = {
-
-
-
   jaw: $("#pitchJaw"),
-
-
 
   eye_left: $("#pitchEyeLeft"),
 
-
-
   eye_right: $("#pitchEyeRight"),
 
-
-
   neck_pan: $("#pitchNeck"),
-
-
-
 };
 
-
-
-
-
-
-
 function updatePitchDisplay() {
-
-
-
   Object.entries(pitchSliders).forEach(([servo, slider]) => {
-
-
-
     if (slider) {
-
-
-
       const valueSpan = slider.nextElementSibling;
 
-
-
       if (valueSpan) valueSpan.textContent = slider.value + "Â°";
-
-
-
     }
-
-
-
   });
-
-
-
 }
 
-
-
-
-
-
-
 async function fetchPitch() {
-
-
-
   try {
-
-
-
     const res = await fetch("/pitch");
-
-
 
     if (!res.ok) return;
 
-
-
     const offsets = await res.json();
 
-
-
-
-
-
-
     Object.entries(pitchSliders).forEach(([servo, slider]) => {
-
-
-
       if (slider && servo in offsets) {
-
-
-
         slider.value = offsets[servo];
-
-
-
       }
-
-
-
     });
 
-
-
     updatePitchDisplay();
-
-
-
   } catch (e) {
-
-
-
     // Ignorer si l'endpoint n'est pas disponible
-
-
-
   }
-
-
-
 }
 
-
-
-
-
-
-
 async function postPitch() {
-
-
-
   const offsets = {};
 
-
-
   Object.entries(pitchSliders).forEach(([servo, slider]) => {
-
-
-
     if (slider) offsets[servo] = parseFloat(slider.value);
-
-
-
   });
 
-
-
-
-
-
-
   try {
-
-
-
     const res = await fetch("/pitch", {
-
-
-
       method: "POST",
-
-
 
       headers: { "Content-Type": "application/json" },
 
-
-
       body: JSON.stringify(offsets),
-
-
-
     });
 
-
-
     if (!res.ok) {
-
-
-
       const txt = await res.text();
 
-
-
       toast("Erreur pitch: " + txt, true);
-
-
-
     }
-
-
-
   } catch (e) {
-
-
-
     toast("Erreur rÃ©seau /pitch", true);
-
-
-
   }
-
-
-
 }
-
-
-
-
-
-
 
 // Attach pitch change handlers
 
-
-
 Object.values(pitchSliders).forEach((slider) => {
-
-
-
   if (slider) {
-
-
-
     slider.addEventListener("input", updatePitchDisplay);
 
-
-
     slider.addEventListener("change", postPitch);
-
-
-
   }
-
-
-
 });
-
-
-
-
-
-
-
-
-
-
 
 // -------------------- ESP32 Gateway --------------------
 
 function esp32ValueIsOn(value) {
   if (value === true) {
-    return true
+    return true;
   }
 
   if (value === false) {
-    return false
+    return false;
   }
 
   if (typeof value === "number") {
     if (value === 0) {
-      return false
+      return false;
     }
     if (value === 1) {
-      return true
+      return true;
     }
   }
 
   if (typeof value === "string") {
-    const norm = value.trim().toLowerCase()
+    const norm = value.trim().toLowerCase();
     if (norm === "1" || norm === "true" || norm === "on") {
-      return true
+      return true;
     }
     if (norm === "0" || norm === "false" || norm === "off") {
-      return false
+      return false;
     }
   }
 
-  return Boolean(value)
+  return Boolean(value);
 }
 
 function setEsp32Badge(element, value, labels = { on: "ON", off: "OFF" }) {
   if (!element) {
-    return
+    return;
   }
 
-  element.classList.remove("esp32-badge-on", "esp32-badge-off", "esp32-badge-idle")
+  element.classList.remove(
+    "esp32-badge-on",
+    "esp32-badge-off",
+    "esp32-badge-idle"
+  );
 
   if (value === null || value === undefined || Number.isNaN(value)) {
-    element.textContent = "-"
-    element.classList.add("esp32-badge-idle")
-    return
+    element.textContent = "-";
+    element.classList.add("esp32-badge-idle");
+    return;
   }
 
-  const isOn = esp32ValueIsOn(value)
+  const isOn = esp32ValueIsOn(value);
   if (isOn) {
-    element.textContent = labels?.on ?? "ON"
-    element.classList.add("esp32-badge-on")
+    element.textContent = labels?.on ?? "ON";
+    element.classList.add("esp32-badge-on");
   } else {
-    element.textContent = labels?.off ?? "OFF"
-    element.classList.add("esp32-badge-off")
+    element.textContent = labels?.off ?? "OFF";
+    element.classList.add("esp32-badge-off");
   }
 }
 
@@ -4300,41 +1844,41 @@ function setEsp32Reachability(state, message = "") {
     state === true
       ? "En ligne"
       : state === false
-        ? "Hors ligne"
-        : "Inactif (desactive)"
+      ? "Hors ligne"
+      : "Inactif (desactive)";
 
-  const resolvedMessage = message || resolvedDefault
-  const topLabel = `ESP32 : ${resolvedMessage}`
+  const resolvedMessage = message || resolvedDefault;
+  const topLabel = `ESP32 : ${resolvedMessage}`;
   const stateClass =
-    state === true ? "online" : state === false ? "offline" : "disabled"
+    state === true ? "online" : state === false ? "offline" : "disabled";
 
   if (elEsp32StatusDot) {
-    elEsp32StatusDot.classList.remove("online", "offline", "disabled")
-    elEsp32StatusDot.classList.add(stateClass)
-    elEsp32StatusDot.setAttribute("aria-label", resolvedMessage.toLowerCase())
+    elEsp32StatusDot.classList.remove("online", "offline", "disabled");
+    elEsp32StatusDot.classList.add(stateClass);
+    elEsp32StatusDot.setAttribute("aria-label", resolvedMessage.toLowerCase());
   }
 
   if (elEsp32StatusText) {
-    elEsp32StatusText.textContent = resolvedMessage
+    elEsp32StatusText.textContent = resolvedMessage;
   }
 
   if (elEsp32TopStatus) {
-    const base = "connection-chip connection-chip--secondary"
-    elEsp32TopStatus.className = `${base} ${stateClass}`
+    const base = "connection-chip connection-chip--secondary";
+    elEsp32TopStatus.className = `${base} ${stateClass}`;
   }
 
   if (elEsp32TopStatusDot) {
-    elEsp32TopStatusDot.className = "connection-dot"
-    elEsp32TopStatusDot.setAttribute("aria-label", topLabel)
+    elEsp32TopStatusDot.className = "connection-dot";
+    elEsp32TopStatusDot.setAttribute("aria-label", topLabel);
   }
 
   if (elEsp32TopStatusText) {
-    elEsp32TopStatusText.textContent = topLabel
+    elEsp32TopStatusText.textContent = topLabel;
   }
 }
 
 function setEsp32ControlAvailability(enabled) {
-  const disabled = !enabled
+  const disabled = !enabled;
   const controls = [
     elEsp32RelayOn,
     elEsp32RelayOff,
@@ -4342,265 +1886,271 @@ function setEsp32ControlAvailability(enabled) {
     elEsp32Restart,
     elEsp32StatusRefresh,
     elEsp32ButtonsRefresh,
-  ]
+  ];
   controls.forEach((el) => {
     if (el) {
-      el.disabled = disabled
+      el.disabled = disabled;
     }
-  })
+  });
 
   esp32ButtonComponents.forEach(({ select, saveBtn }) => {
     if (select) {
-      select.disabled = disabled
+      select.disabled = disabled;
     }
     if (saveBtn) {
-      saveBtn.disabled = disabled
+      saveBtn.disabled = disabled;
     }
-  })
+  });
 }
 
 function updateEsp32AutoRelayButton(state) {
   if (!elEsp32AutoRelayToggle) {
-    return
+    return;
   }
 
-  const isActive = esp32ValueIsOn(state)
-  elEsp32AutoRelayToggle.setAttribute("aria-pressed", isActive ? "true" : "false")
-  elEsp32AutoRelayToggle.textContent = isActive ? "Auto-relay ON" : "Auto-relay OFF"
+  const isActive = esp32ValueIsOn(state);
+  elEsp32AutoRelayToggle.setAttribute(
+    "aria-pressed",
+    isActive ? "true" : "false"
+  );
+  elEsp32AutoRelayToggle.textContent = isActive
+    ? "Auto-relay ON"
+    : "Auto-relay OFF";
 }
 
 function resetEsp32StatusView() {
-  setEsp32Badge(elEsp32RelayState, null)
-  setEsp32Badge(elEsp32AutoRelayState, null)
+  setEsp32Badge(elEsp32RelayState, null);
+  setEsp32Badge(elEsp32AutoRelayState, null);
   if (elEsp32CurrentSession) {
-    elEsp32CurrentSession.textContent = "-"
+    elEsp32CurrentSession.textContent = "-";
   }
   if (elEsp32WifiInfo) {
-    elEsp32WifiInfo.textContent = "-"
+    elEsp32WifiInfo.textContent = "-";
   }
   if (elEsp32StatusRaw) {
-    elEsp32StatusRaw.textContent = ""
+    elEsp32StatusRaw.textContent = "";
   }
-  updateEsp32ButtonStates(null)
-  updateEsp32AutoRelayButton(false)
+  updateEsp32ButtonStates(null);
+  updateEsp32AutoRelayButton(false);
 }
 
 function formatEsp32WifiInfo(wifi) {
   if (!wifi || typeof wifi !== "object") {
-    return "-"
+    return "-";
   }
 
-  const ip = typeof wifi.ip === "string" && wifi.ip.trim() ? wifi.ip.trim() : ""
-  const rssiValue = wifi.rssi
-  const hasRssi = typeof rssiValue === "number" && Number.isFinite(rssiValue)
+  const ip =
+    typeof wifi.ip === "string" && wifi.ip.trim() ? wifi.ip.trim() : "";
+  const rssiValue = wifi.rssi;
+  const hasRssi = typeof rssiValue === "number" && Number.isFinite(rssiValue);
 
   if (ip && hasRssi) {
-    return `${ip} (RSSI ${rssiValue})`
+    return `${ip} (RSSI ${rssiValue})`;
   }
   if (ip) {
-    return ip
+    return ip;
   }
   if (hasRssi) {
-    return `RSSI ${rssiValue}`
+    return `RSSI ${rssiValue}`;
   }
-  return "-"
+  return "-";
 }
 
 function rebuildEsp32Buttons(count) {
   if (!elEsp32ButtonsContainer) {
-    return
+    return;
   }
 
   const total =
     typeof count === "number" && Number.isFinite(count) && count > 0
       ? Math.min(count, 12)
-      : ESP32_DEFAULT_BUTTON_COUNT
+      : ESP32_DEFAULT_BUTTON_COUNT;
 
-  esp32ButtonComponents.clear()
-  elEsp32ButtonsContainer.innerHTML = ""
+  esp32ButtonComponents.clear();
+  elEsp32ButtonsContainer.innerHTML = "";
 
   for (let idx = 0; idx < total; idx += 1) {
-    const item = document.createElement("div")
-    item.className = "esp32-button-item"
+    const item = document.createElement("div");
+    item.className = "esp32-button-item";
 
-    const header = document.createElement("div")
-    header.className = "esp32-button-header"
+    const header = document.createElement("div");
+    header.className = "esp32-button-header";
 
-    const label = document.createElement("span")
-    label.textContent = `Bouton ${idx + 1}`
+    const label = document.createElement("span");
+    label.textContent = `Bouton ${idx + 1}`;
 
-    const badge = document.createElement("span")
-    badge.className = "badge esp32-badge-idle"
-    badge.id = `esp32ButtonState${idx}`
-    badge.textContent = "-"
+    const badge = document.createElement("span");
+    badge.className = "badge esp32-badge-idle";
+    badge.id = `esp32ButtonState${idx}`;
+    badge.textContent = "-";
 
-    header.append(label, badge)
+    header.append(label, badge);
 
-    const select = document.createElement("select")
-    select.className = "select esp32-button-select"
-    select.dataset.esp32Button = String(idx)
+    const select = document.createElement("select");
+    select.className = "select esp32-button-select";
+    select.dataset.esp32Button = String(idx);
 
-    const emptyOption = document.createElement("option")
-    emptyOption.value = ""
-    emptyOption.textContent = "-- Aucun --"
-    select.append(emptyOption)
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "-- Aucun --";
+    select.append(emptyOption);
 
-    const actions = document.createElement("div")
-    actions.className = "esp32-button-actions"
+    const actions = document.createElement("div");
+    actions.className = "esp32-button-actions";
 
-    const saveBtn = document.createElement("button")
-    saveBtn.type = "button"
-    saveBtn.className = "btn secondary esp32-button-save"
-    saveBtn.dataset.esp32Button = String(idx)
-    saveBtn.textContent = "Associer"
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "btn secondary esp32-button-save";
+    saveBtn.dataset.esp32Button = String(idx);
+    saveBtn.textContent = "Associer";
 
-    actions.append(saveBtn)
-    item.append(header, select, actions)
-    elEsp32ButtonsContainer.append(item)
+    actions.append(saveBtn);
+    item.append(header, select, actions);
+    elEsp32ButtonsContainer.append(item);
 
     esp32ButtonComponents.set(idx, {
       select,
       badge,
       saveBtn,
       container: item,
-    })
+    });
   }
 
-  populateEsp32ButtonOptions()
-  applyEsp32ButtonAssignments(esp32ButtonAssignments)
-  setEsp32ControlAvailability(esp32Config.enabled)
+  populateEsp32ButtonOptions();
+  applyEsp32ButtonAssignments(esp32ButtonAssignments);
+  setEsp32ControlAvailability(esp32Config.enabled);
 }
 
 function populateEsp32ButtonOptions() {
   const sessions = Array.isArray(esp32AvailableSessions)
     ? esp32AvailableSessions
-    : []
+    : [];
 
   esp32ButtonComponents.forEach(({ select }, index) => {
     if (!select) {
-      return
+      return;
     }
 
-    const assigned = esp32ButtonAssignments[index] || ""
-    const previousValue = select.value
+    const assigned = esp32ButtonAssignments[index] || "";
+    const previousValue = select.value;
 
-    select.innerHTML = ""
+    select.innerHTML = "";
 
-    const emptyOption = document.createElement("option")
-    emptyOption.value = ""
-    emptyOption.textContent = "-- Aucun --"
-    select.append(emptyOption)
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "-- Aucun --";
+    select.append(emptyOption);
 
     sessions.forEach((session) => {
-      const opt = document.createElement("option")
-      opt.value = session
-      opt.textContent = session
-      select.append(opt)
-    })
+      const opt = document.createElement("option");
+      opt.value = session;
+      opt.textContent = session;
+      select.append(opt);
+    });
 
-    const target = assigned || previousValue || ""
+    const target = assigned || previousValue || "";
     if (target) {
       if (!sessions.includes(target)) {
-        const missing = document.createElement("option")
-        missing.value = target
-        missing.textContent = `${target} (absent)`
-        missing.dataset.missing = "true"
-        select.append(missing)
+        const missing = document.createElement("option");
+        missing.value = target;
+        missing.textContent = `${target} (absent)`;
+        missing.dataset.missing = "true";
+        select.append(missing);
       }
-      select.value = target
+      select.value = target;
     } else {
-      select.value = ""
+      select.value = "";
     }
-  })
+  });
 }
 
 function applyEsp32ButtonAssignments(assignments) {
   if (Array.isArray(assignments)) {
-    esp32ButtonAssignments = assignments.slice()
+    esp32ButtonAssignments = assignments.slice();
   } else {
-    esp32ButtonAssignments = []
+    esp32ButtonAssignments = [];
   }
-  populateEsp32ButtonOptions()
+  populateEsp32ButtonOptions();
 }
 
 function updateEsp32ButtonStates(states) {
-  const list = Array.isArray(states) ? states : null
+  const list = Array.isArray(states) ? states : null;
 
   esp32ButtonComponents.forEach(({ badge }, index) => {
     if (!badge) {
-      return
+      return;
     }
 
     if (!list) {
-      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" })
-      return
+      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" });
+      return;
     }
 
-    const raw = list[index]
+    const raw = list[index];
     if (raw === 0) {
-      setEsp32Badge(badge, false, { on: "Relache", off: "Appuye" })
+      setEsp32Badge(badge, false, { on: "Relache", off: "Appuye" });
     } else if (raw === 1) {
-      setEsp32Badge(badge, true, { on: "Relache", off: "Appuye" })
+      setEsp32Badge(badge, true, { on: "Relache", off: "Appuye" });
     } else {
-      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" })
+      setEsp32Badge(badge, null, { on: "Relache", off: "Appuye" });
     }
-  })
+  });
 }
 
 function scheduleEsp32StatusPolling() {
   if (esp32StatusTimerId) {
-    clearInterval(esp32StatusTimerId)
-    esp32StatusTimerId = null
+    clearInterval(esp32StatusTimerId);
+    esp32StatusTimerId = null;
   }
 
   if (!esp32Config.enabled) {
-    return
+    return;
   }
 
   esp32StatusTimerId = window.setInterval(() => {
-    refreshEsp32Status({ silent: true })
-  }, ESP32_STATUS_INTERVAL)
+    refreshEsp32Status({ silent: true });
+  }, ESP32_STATUS_INTERVAL);
 }
 
 async function refreshEsp32Status(options = {}) {
   if (!elEsp32Card) {
-    return
+    return;
   }
 
   if (!esp32Config.enabled) {
-    setEsp32Reachability(null, "Inactif (desactive)")
-    resetEsp32StatusView()
-    return
+    setEsp32Reachability(null, "Inactif (desactive)");
+    resetEsp32StatusView();
+    return;
   }
 
   if (esp32Busy.status) {
-    return
+    return;
   }
 
-  const { silent = false } = options
-  esp32Busy.status = true
+  const { silent = false } = options;
+  esp32Busy.status = true;
 
   try {
-    const res = await fetch("/esp32/status")
-    const data = await res.json()
+    const res = await fetch("/esp32/status");
+    const data = await res.json();
 
     if (res.ok && data && data.reachable) {
-      esp32StatusSnapshot = data.status || {}
-      setEsp32Reachability(true, "En ligne")
+      esp32StatusSnapshot = data.status || {};
+      setEsp32Reachability(true, "En ligne");
 
-      setEsp32Badge(elEsp32RelayState, esp32StatusSnapshot.relay)
-      setEsp32Badge(elEsp32AutoRelayState, esp32StatusSnapshot.autoRelay)
-      updateEsp32AutoRelayButton(esp32StatusSnapshot.autoRelay)
+      setEsp32Badge(elEsp32RelayState, esp32StatusSnapshot.relay);
+      setEsp32Badge(elEsp32AutoRelayState, esp32StatusSnapshot.autoRelay);
+      updateEsp32AutoRelayButton(esp32StatusSnapshot.autoRelay);
 
       if (elEsp32CurrentSession) {
         elEsp32CurrentSession.textContent =
-          esp32StatusSnapshot.currentSession || "-"
+          esp32StatusSnapshot.currentSession || "-";
       }
 
       if (elEsp32WifiInfo) {
         elEsp32WifiInfo.textContent = formatEsp32WifiInfo(
           esp32StatusSnapshot.wifi
-        )
+        );
       }
 
       if (elEsp32StatusRaw) {
@@ -4608,97 +2158,97 @@ async function refreshEsp32Status(options = {}) {
           esp32StatusSnapshot,
           null,
           2
-        )
+        );
       }
 
-      updateEsp32ButtonStates(esp32StatusSnapshot.buttons)
-      return
+      updateEsp32ButtonStates(esp32StatusSnapshot.buttons);
+      return;
     }
 
     const errorText =
-      data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
-    setEsp32Reachability(false, `Hors ligne (${errorText})`)
-    resetEsp32StatusView()
-    esp32StatusSnapshot = null
+      data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+    setEsp32Reachability(false, `Hors ligne (${errorText})`);
+    resetEsp32StatusView();
+    esp32StatusSnapshot = null;
 
     if (!silent) {
-      toast(`ESP32 statut: ${errorText}`, true)
+      toast(`ESP32 statut: ${errorText}`, true);
     }
   } catch (err) {
-    console.error("ESP32 status error:", err)
-    setEsp32Reachability(false, "Hors ligne (erreur)")
-    resetEsp32StatusView()
-    esp32StatusSnapshot = null
+    console.error("ESP32 status error:", err);
+    setEsp32Reachability(false, "Hors ligne (erreur)");
+    resetEsp32StatusView();
+    esp32StatusSnapshot = null;
     if (!silent) {
-      toast("Erreur reseau ESP32 (status)", true)
+      toast("Erreur reseau ESP32 (status)", true);
     }
   } finally {
-    esp32Busy.status = false
+    esp32Busy.status = false;
   }
 }
 
 async function fetchEsp32Buttons(options = {}) {
   if (!elEsp32ButtonsContainer || !esp32Config.enabled) {
-    return
+    return;
   }
 
   if (esp32Busy.buttons) {
-    return
+    return;
   }
 
-  const { silent = false } = options
-  esp32Busy.buttons = true
+  const { silent = false } = options;
+  esp32Busy.buttons = true;
 
   if (elEsp32ButtonsRefresh) {
-    elEsp32ButtonsRefresh.disabled = true
+    elEsp32ButtonsRefresh.disabled = true;
   }
 
   try {
-    const res = await fetch("/esp32/button-config")
-    const data = await res.json()
+    const res = await fetch("/esp32/button-config");
+    const data = await res.json();
 
     if (res.ok && data && data.reachable) {
       applyEsp32ButtonAssignments(
         Array.isArray(data.sessions) ? data.sessions : []
-      )
+      );
     } else {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
       if (!silent) {
-        toast(`ESP32 boutons: ${errorText}`, true)
+        toast(`ESP32 boutons: ${errorText}`, true);
       }
     }
   } catch (err) {
-    console.error("ESP32 button config error:", err)
+    console.error("ESP32 button config error:", err);
     if (!silent) {
-      toast("Erreur reseau ESP32 (boutons)", true)
+      toast("Erreur reseau ESP32 (boutons)", true);
     }
   } finally {
-    esp32Busy.buttons = false
+    esp32Busy.buttons = false;
     if (elEsp32ButtonsRefresh) {
-      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled
+      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled;
     }
   }
 }
 
 async function setEsp32Relay(on) {
   if (!esp32Config.enabled) {
-    toast("Activer l'ESP32 avant de piloter le relais", true)
-    return
+    toast("Activer l'ESP32 avant de piloter le relais", true);
+    return;
   }
 
   if (esp32Busy.relay) {
-    return
+    return;
   }
 
-  esp32Busy.relay = true
+  esp32Busy.relay = true;
 
   if (elEsp32RelayOn) {
-    elEsp32RelayOn.disabled = true
+    elEsp32RelayOn.disabled = true;
   }
 
   if (elEsp32RelayOff) {
-    elEsp32RelayOff.disabled = true
+    elEsp32RelayOff.disabled = true;
   }
 
   try {
@@ -4708,40 +2258,40 @@ async function setEsp32Relay(on) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ on: Boolean(on) }),
-    })
-    const data = await res.json()
+    });
+    const data = await res.json();
 
     if (res.ok && data && data.success !== false) {
-      toast(on ? "Relais ESP32 active" : "Relais ESP32 desactive")
-      await refreshEsp32Status({ silent: true })
+      toast(on ? "Relais ESP32 active" : "Relais ESP32 desactive");
+      await refreshEsp32Status({ silent: true });
     } else {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
-      toast(`ESP32 relais: ${errorText}`, true)
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+      toast(`ESP32 relais: ${errorText}`, true);
     }
   } catch (err) {
-    console.error("ESP32 relay error:", err)
-    toast("Erreur reseau ESP32 (relais)", true)
+    console.error("ESP32 relay error:", err);
+    toast("Erreur reseau ESP32 (relais)", true);
   } finally {
-    esp32Busy.relay = false
-    setEsp32ControlAvailability(esp32Config.enabled)
+    esp32Busy.relay = false;
+    setEsp32ControlAvailability(esp32Config.enabled);
   }
 }
 
 async function setEsp32AutoRelay(nextState) {
   if (!esp32Config.enabled) {
-    toast("Activer l'ESP32 avant de modifier l'auto-relay", true)
-    return
+    toast("Activer l'ESP32 avant de modifier l'auto-relay", true);
+    return;
   }
 
   if (esp32Busy.auto) {
-    return
+    return;
   }
 
-  esp32Busy.auto = true
+  esp32Busy.auto = true;
 
   if (elEsp32AutoRelayToggle) {
-    elEsp32AutoRelayToggle.disabled = true
+    elEsp32AutoRelayToggle.disabled = true;
   }
 
   try {
@@ -4751,55 +2301,51 @@ async function setEsp32AutoRelay(nextState) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ enabled: Boolean(nextState) }),
-    })
-    const data = await res.json()
+    });
+    const data = await res.json();
 
     if (res.ok && data && data.success !== false) {
-      toast(
-        nextState
-          ? "Mode auto-relay active"
-          : "Mode auto-relay desactive"
-      )
-      await refreshEsp32Status({ silent: true })
+      toast(nextState ? "Mode auto-relay active" : "Mode auto-relay desactive");
+      await refreshEsp32Status({ silent: true });
     } else {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
-      toast(`ESP32 auto-relay: ${errorText}`, true)
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+      toast(`ESP32 auto-relay: ${errorText}`, true);
     }
   } catch (err) {
-    console.error("ESP32 auto-relay error:", err)
-    toast("Erreur reseau ESP32 (auto-relay)", true)
+    console.error("ESP32 auto-relay error:", err);
+    toast("Erreur reseau ESP32 (auto-relay)", true);
   } finally {
-    esp32Busy.auto = false
+    esp32Busy.auto = false;
     if (elEsp32AutoRelayToggle) {
-      elEsp32AutoRelayToggle.disabled = !esp32Config.enabled
+      elEsp32AutoRelayToggle.disabled = !esp32Config.enabled;
     }
   }
 }
 
 function toggleEsp32AutoRelay() {
-  const current = esp32ValueIsOn(esp32StatusSnapshot?.autoRelay)
-  setEsp32AutoRelay(!current)
+  const current = esp32ValueIsOn(esp32StatusSnapshot?.autoRelay);
+  setEsp32AutoRelay(!current);
 }
 
 async function requestEsp32Restart() {
   if (!esp32Config.enabled) {
-    toast("Activer l'ESP32 avant de redemarrer", true)
-    return
+    toast("Activer l'ESP32 avant de redemarrer", true);
+    return;
   }
 
   if (esp32Busy.restart) {
-    return
+    return;
   }
 
   if (!window.confirm("Redemarrer l'ESP32 maintenant ?")) {
-    return
+    return;
   }
 
-  esp32Busy.restart = true
+  esp32Busy.restart = true;
 
   if (elEsp32Restart) {
-    elEsp32Restart.disabled = true
+    elEsp32Restart.disabled = true;
   }
 
   try {
@@ -4809,51 +2355,51 @@ async function requestEsp32Restart() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({}),
-    })
-    const data = await res.json()
+    });
+    const data = await res.json();
 
     if (res.ok && data && data.success !== false) {
-      toast("Commande de redemarrage envoyee")
-      setEsp32Reachability(false, "Hors ligne (redemarrage)")
+      toast("Commande de redemarrage envoyee");
+      setEsp32Reachability(false, "Hors ligne (redemarrage)");
     } else {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
-      toast(`ESP32 restart: ${errorText}`, true)
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+      toast(`ESP32 restart: ${errorText}`, true);
     }
   } catch (err) {
-    console.error("ESP32 restart error:", err)
-    toast("Erreur reseau ESP32 (restart)", true)
+    console.error("ESP32 restart error:", err);
+    toast("Erreur reseau ESP32 (restart)", true);
   } finally {
-    esp32Busy.restart = false
+    esp32Busy.restart = false;
     if (elEsp32Restart) {
-      elEsp32Restart.disabled = !esp32Config.enabled
+      elEsp32Restart.disabled = !esp32Config.enabled;
     }
   }
 }
 
 async function handleEsp32ButtonSave(buttonIndex) {
   if (!Number.isInteger(buttonIndex) || buttonIndex < 0) {
-    return
+    return;
   }
 
   if (!esp32Config.enabled) {
-    toast("Activer l'ESP32 avant de modifier les boutons", true)
-    return
+    toast("Activer l'ESP32 avant de modifier les boutons", true);
+    return;
   }
 
-  const entry = esp32ButtonComponents.get(buttonIndex)
+  const entry = esp32ButtonComponents.get(buttonIndex);
   if (!entry || esp32Busy.buttons) {
-    return
+    return;
   }
 
-  const { select, saveBtn } = entry
-  const sessionValue = select ? select.value : ""
+  const { select, saveBtn } = entry;
+  const sessionValue = select ? select.value : "";
 
-  esp32Busy.buttons = true
+  esp32Busy.buttons = true;
 
   if (saveBtn) {
-    saveBtn.disabled = true
-    saveBtn.textContent = "Envoi..."
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Envoi...";
   }
 
   try {
@@ -4866,54 +2412,54 @@ async function handleEsp32ButtonSave(buttonIndex) {
         button: buttonIndex,
         session: sessionValue || "",
       }),
-    })
-    const data = await res.json()
+    });
+    const data = await res.json();
 
     if (res.ok && data && data.success !== false) {
       if (Array.isArray(data.sessions)) {
-        applyEsp32ButtonAssignments(data.sessions)
+        applyEsp32ButtonAssignments(data.sessions);
       } else {
-        esp32ButtonAssignments[buttonIndex] = sessionValue || ""
-        populateEsp32ButtonOptions()
+        esp32ButtonAssignments[buttonIndex] = sessionValue || "";
+        populateEsp32ButtonOptions();
       }
-      toast(`Bouton ${buttonIndex + 1} mis a jour`)
-      await refreshEsp32Status({ silent: true })
+      toast(`Bouton ${buttonIndex + 1} mis a jour`);
+      await refreshEsp32Status({ silent: true });
     } else {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`)
-      toast(`ESP32 bouton ${buttonIndex + 1}: ${errorText}`, true)
+        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+      toast(`ESP32 bouton ${buttonIndex + 1}: ${errorText}`, true);
     }
   } catch (err) {
-    console.error("ESP32 button update error:", err)
-    toast("Erreur reseau ESP32 (boutons)", true)
+    console.error("ESP32 button update error:", err);
+    toast("Erreur reseau ESP32 (boutons)", true);
   } finally {
-    esp32Busy.buttons = false
+    esp32Busy.buttons = false;
     if (saveBtn) {
-      saveBtn.disabled = !esp32Config.enabled
-      saveBtn.textContent = "Associer"
+      saveBtn.disabled = !esp32Config.enabled;
+      saveBtn.textContent = "Associer";
     }
     if (elEsp32ButtonsRefresh) {
-      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled
+      elEsp32ButtonsRefresh.disabled = !esp32Config.enabled;
     }
   }
 }
 
 async function fetchEsp32Config() {
   if (!elEsp32Card) {
-    return
+    return;
   }
 
   try {
-    const res = await fetch("/esp32/config")
-    const data = await res.json()
+    const res = await fetch("/esp32/config");
+    const data = await res.json();
 
     if (!res.ok) {
-      const errorText = data?.error || `HTTP ${res.status}`
-      setEsp32Reachability(null, "Inactif (desactive)")
-      setEsp32ControlAvailability(false)
-      resetEsp32StatusView()
-      toast(`ESP32 config: ${errorText}`, true)
-      return
+      const errorText = data?.error || `HTTP ${res.status}`;
+      setEsp32Reachability(null, "Inactif (desactive)");
+      setEsp32ControlAvailability(false);
+      resetEsp32StatusView();
+      toast(`ESP32 config: ${errorText}`, true);
+      return;
     }
 
     esp32Config = {
@@ -4927,67 +2473,67 @@ async function fetchEsp32Config() {
         typeof data.buttonCount === "number" && data.buttonCount > 0
           ? data.buttonCount
           : ESP32_DEFAULT_BUTTON_COUNT,
-    }
+    };
 
     if (elEsp32Host) {
-      elEsp32Host.value = esp32Config.host || ""
+      elEsp32Host.value = esp32Config.host || "";
     }
     if (elEsp32Port) {
-      elEsp32Port.value = String(esp32Config.port || 80)
+      elEsp32Port.value = String(esp32Config.port || 80);
     }
     if (elEsp32Enabled) {
-      elEsp32Enabled.checked = esp32Config.enabled
+      elEsp32Enabled.checked = esp32Config.enabled;
     }
 
-    rebuildEsp32Buttons(esp32Config.buttonCount)
+    rebuildEsp32Buttons(esp32Config.buttonCount);
 
     if (esp32Config.enabled) {
-      setEsp32ControlAvailability(true)
-      await refreshEsp32Status({ silent: true })
-      await fetchEsp32Buttons({ silent: true })
+      setEsp32ControlAvailability(true);
+      await refreshEsp32Status({ silent: true });
+      await fetchEsp32Buttons({ silent: true });
     } else {
-      setEsp32ControlAvailability(false)
-      setEsp32Reachability(null, "Inactif (desactive)")
-      resetEsp32StatusView()
+      setEsp32ControlAvailability(false);
+      setEsp32Reachability(null, "Inactif (desactive)");
+      resetEsp32StatusView();
     }
 
-    scheduleEsp32StatusPolling()
+    scheduleEsp32StatusPolling();
   } catch (err) {
-    console.error("ESP32 config load error:", err)
-    setEsp32Reachability(null, "Inactif (desactive)")
-    setEsp32ControlAvailability(false)
-    resetEsp32StatusView()
-    toast("Impossible de charger la configuration ESP32", true)
+    console.error("ESP32 config load error:", err);
+    setEsp32Reachability(null, "Inactif (desactive)");
+    setEsp32ControlAvailability(false);
+    resetEsp32StatusView();
+    toast("Impossible de charger la configuration ESP32", true);
   }
 }
 
 async function handleEsp32ConfigSubmit(event) {
-  event.preventDefault()
+  event.preventDefault();
 
   if (esp32Busy.config) {
-    return
+    return;
   }
 
-  esp32Busy.config = true
+  esp32Busy.config = true;
 
-  const submitBtn = document.getElementById("esp32ConfigSaveBtn")
+  const submitBtn = document.getElementById("esp32ConfigSaveBtn");
   if (submitBtn) {
-    submitBtn.disabled = true
+    submitBtn.disabled = true;
   }
 
-  const host = elEsp32Host ? elEsp32Host.value.trim() : ""
-  const rawPort = elEsp32Port ? elEsp32Port.value.trim() : ""
-  let port = parseInt(rawPort, 10)
+  const host = elEsp32Host ? elEsp32Host.value.trim() : "";
+  const rawPort = elEsp32Port ? elEsp32Port.value.trim() : "";
+  let port = parseInt(rawPort, 10);
   if (!Number.isFinite(port) || port <= 0) {
-    port = 80
+    port = 80;
   }
-  const enabled = elEsp32Enabled ? elEsp32Enabled.checked : false
+  const enabled = elEsp32Enabled ? elEsp32Enabled.checked : false;
 
   const payload = {
     host,
     port,
     enabled,
-  }
+  };
 
   try {
     const res = await fetch("/esp32/config", {
@@ -4996,16 +2542,16 @@ async function handleEsp32ConfigSubmit(event) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-    })
-    const data = await res.json()
+    });
+    const data = await res.json();
 
     if (!res.ok || data?.error) {
-      const errorText = data?.error || `HTTP ${res.status}`
-      toast(`Configuration ESP32: ${errorText}`, true)
-      return
+      const errorText = data?.error || `HTTP ${res.status}`;
+      toast(`Configuration ESP32: ${errorText}`, true);
+      return;
     }
 
-    toast("Configuration ESP32 mise a jour")
+    toast("Configuration ESP32 mise a jour");
 
     esp32Config = {
       host: typeof data.host === "string" ? data.host.trim() : "",
@@ -5018,219 +2564,156 @@ async function handleEsp32ConfigSubmit(event) {
         typeof data.buttonCount === "number" && data.buttonCount > 0
           ? data.buttonCount
           : ESP32_DEFAULT_BUTTON_COUNT,
-    }
+    };
 
     if (elEsp32Host) {
-      elEsp32Host.value = esp32Config.host || ""
+      elEsp32Host.value = esp32Config.host || "";
     }
     if (elEsp32Port) {
-      elEsp32Port.value = String(esp32Config.port || 80)
+      elEsp32Port.value = String(esp32Config.port || 80);
     }
     if (elEsp32Enabled) {
-      elEsp32Enabled.checked = esp32Config.enabled
+      elEsp32Enabled.checked = esp32Config.enabled;
     }
 
-    rebuildEsp32Buttons(esp32Config.buttonCount)
+    rebuildEsp32Buttons(esp32Config.buttonCount);
 
     if (esp32Config.enabled) {
-      setEsp32ControlAvailability(true)
-      await refreshEsp32Status({ silent: true })
-      await fetchEsp32Buttons({ silent: true })
+      setEsp32ControlAvailability(true);
+      await refreshEsp32Status({ silent: true });
+      await fetchEsp32Buttons({ silent: true });
     } else {
-      setEsp32ControlAvailability(false)
-      setEsp32Reachability(null, "Inactif (desactive)")
-      resetEsp32StatusView()
+      setEsp32ControlAvailability(false);
+      setEsp32Reachability(null, "Inactif (desactive)");
+      resetEsp32StatusView();
     }
 
-    scheduleEsp32StatusPolling()
+    scheduleEsp32StatusPolling();
   } catch (err) {
-    console.error("ESP32 config update error:", err)
-    toast("Erreur lors de la sauvegarde ESP32", true)
+    console.error("ESP32 config update error:", err);
+    toast("Erreur lors de la sauvegarde ESP32", true);
   } finally {
-    esp32Busy.config = false
+    esp32Busy.config = false;
     if (submitBtn) {
-      submitBtn.disabled = false
+      submitBtn.disabled = false;
     }
   }
 }
 
 function initEsp32Section() {
   if (!elEsp32Card) {
-    return
+    return;
   }
 
   if (elEsp32ConfigForm) {
-    elEsp32ConfigForm.addEventListener("submit", handleEsp32ConfigSubmit)
+    elEsp32ConfigForm.addEventListener("submit", handleEsp32ConfigSubmit);
   }
 
   if (elEsp32StatusRefresh) {
     elEsp32StatusRefresh.addEventListener("click", () => {
       if (!esp32Config.enabled) {
-        toast("Activer l'ESP32 avant de tester la connexion", true)
-        return
+        toast("Activer l'ESP32 avant de tester la connexion", true);
+        return;
       }
-      refreshEsp32Status()
-    })
+      refreshEsp32Status();
+    });
   }
 
   if (elEsp32RelayOn) {
-    elEsp32RelayOn.addEventListener("click", () => setEsp32Relay(true))
+    elEsp32RelayOn.addEventListener("click", () => setEsp32Relay(true));
   }
 
   if (elEsp32RelayOff) {
-    elEsp32RelayOff.addEventListener("click", () => setEsp32Relay(false))
+    elEsp32RelayOff.addEventListener("click", () => setEsp32Relay(false));
   }
 
   if (elEsp32AutoRelayToggle) {
-    elEsp32AutoRelayToggle.addEventListener("click", toggleEsp32AutoRelay)
+    elEsp32AutoRelayToggle.addEventListener("click", toggleEsp32AutoRelay);
   }
 
   if (elEsp32Restart) {
-    elEsp32Restart.addEventListener("click", requestEsp32Restart)
+    elEsp32Restart.addEventListener("click", requestEsp32Restart);
   }
 
   if (elEsp32ButtonsRefresh) {
     elEsp32ButtonsRefresh.addEventListener("click", () => {
-      fetchEsp32Buttons()
-    })
+      fetchEsp32Buttons();
+    });
   }
 
   if (elEsp32ButtonsContainer) {
     elEsp32ButtonsContainer.addEventListener("click", (event) => {
-      const target = event.target
+      const target = event.target;
       if (
         target &&
         target.classList &&
         target.classList.contains("esp32-button-save")
       ) {
-        const idx = parseInt(target.dataset.esp32Button, 10)
+        const idx = parseInt(target.dataset.esp32Button, 10);
         if (Number.isInteger(idx)) {
-          handleEsp32ButtonSave(idx)
+          handleEsp32ButtonSave(idx);
         }
       }
-    })
+    });
 
     elEsp32ButtonsContainer.addEventListener("change", (event) => {
-      const target = event.target
+      const target = event.target;
       if (
         target &&
         target.classList &&
         target.classList.contains("esp32-button-select")
       ) {
-        const idx = parseInt(target.dataset.esp32Button, 10)
+        const idx = parseInt(target.dataset.esp32Button, 10);
         if (Number.isInteger(idx)) {
-          esp32ButtonAssignments[idx] = target.value || ""
+          esp32ButtonAssignments[idx] = target.value || "";
         }
       }
-    })
+    });
   }
 
-  setEsp32Reachability(null, "Inactif (desactive)")
-  setEsp32ControlAvailability(false)
-  resetEsp32StatusView()
-  rebuildEsp32Buttons(ESP32_DEFAULT_BUTTON_COUNT)
-  fetchEsp32Config()
+  setEsp32Reachability(null, "Inactif (desactive)");
+  setEsp32ControlAvailability(false);
+  resetEsp32StatusView();
+  rebuildEsp32Buttons(ESP32_DEFAULT_BUTTON_COUNT);
+  fetchEsp32Config();
 }
 
 // Boot
 
-
-
 window.addEventListener("load", () => {
-
-
-
   initEsp32Section();
-
-
 
   fetchSessions();
 
-
-
   fetchRandomModeState();
-
-
 
   updateStatus();
 
-
-
   fetchChannels();
-
-
 
   fetchPitch(); // AJOUTER CETTE LIGNE
 
-
-
   setInterval(updateStatus, 1500);
-
-
 
   updatePitchDisplay(); // AJOUTER CETTE LIGNE
 
-
-
   refreshPlaylist(true);
 
-
-
-
-
-
-
   if (elVolumeButtons && elVolumeButtons.length) {
-
-
-
     elVolumeButtons.forEach((btn) => {
-
-
-
       btn.addEventListener("click", () => {
-
-
-
         const action = btn.dataset.volumeAction;
 
-
-
         sendVolumeAction(action);
-
-
-
       });
-
-
-
     });
-
-
-
   }
-
-
 
   if (elShuffleAllBtn) {
-
-
-
     elShuffleAllBtn.addEventListener("click", () => {
-
-
-
       triggerShuffleAll();
-
-
-
     });
-
-
-
   }
-
-
 
   if (elRestartServiceBtn) {
     elRestartServiceBtn.addEventListener("click", () => {
@@ -5242,24 +2725,15 @@ window.addEventListener("load", () => {
     });
   }
 
+  if (elRestartBluetoothBtn) {
+    elRestartBluetoothBtn.addEventListener("click", () => {
+      if (restartBluetoothBusy) return;
+      const confirmMessage = "Redémarrer le service Bluetooth ?";
+      if (window.confirm(confirmMessage)) {
+        triggerBluetoothRestart();
+      }
+    });
+  }
+
   updatePills();
-
-
-
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -83,11 +83,20 @@ _DEFAULT_RESTART_CMD = "sudo systemctl restart servo-sync.service"
 _SERVICE_RESTART_RAW = os.environ.get(
     "PLAYLIST_SERVICE_RESTART_CMD", _DEFAULT_RESTART_CMD
 ).strip()
-SERVICE_RESTART_CMD = (
-    shlex.split(_SERVICE_RESTART_RAW) if _SERVICE_RESTART_RAW else []
-)
+SERVICE_RESTART_CMD = shlex.split(_SERVICE_RESTART_RAW) if _SERVICE_RESTART_RAW else []
 SERVICE_RESTART_TIMEOUT = float(
     os.environ.get("PLAYLIST_SERVICE_RESTART_TIMEOUT", "15")
+)
+
+_DEFAULT_BLUETOOTH_RESTART_CMD = "sudo systemctl restart bluetooth.service"
+_BLUETOOTH_RESTART_RAW = os.environ.get(
+    "PLAYLIST_BLUETOOTH_RESTART_CMD", _DEFAULT_BLUETOOTH_RESTART_CMD
+).strip()
+BLUETOOTH_RESTART_CMD = (
+    shlex.split(_BLUETOOTH_RESTART_RAW) if _BLUETOOTH_RESTART_RAW else []
+)
+BLUETOOTH_RESTART_TIMEOUT = float(
+    os.environ.get("PLAYLIST_BLUETOOTH_RESTART_TIMEOUT", "15")
 )
 
 
@@ -565,6 +574,7 @@ def _resolve_existing_session_dir(session_name: str) -> Path:
         raise FileNotFoundError(session_name)
     return candidate
 
+
 def _ensure_session_exists(session_name: str) -> Path:
     try:
         session_dir = _resolve_existing_session_dir(session_name)
@@ -578,6 +588,7 @@ def _ensure_session_exists(session_name: str) -> Path:
     if not mp3_files:
         raise ValueError("Fichier MP3 introuvable dans la session")
     return session_dir
+
 
 def _start_session(
     session_name: str, source: str, item_id: Optional[int] = None
@@ -1249,8 +1260,6 @@ def sessions():
         return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
 
 
-
-
 @app.route("/sessions/<session_name>", methods=["DELETE"])
 def delete_session(session_name: str):
     """Supprime complètement une session et son répertoire."""
@@ -1267,9 +1276,7 @@ def delete_session(session_name: str):
     current = _get_current_entry()
     stop_triggered = False
     if current and current.get("session") == session_dir.name:
-        servo_logger.logger.info(
-            "SESSION_DELETE_STOP | session=%s", session_dir.name
-        )
+        servo_logger.logger.info("SESSION_DELETE_STOP | session=%s", session_dir.name)
         try:
             status_info = player.status()
         except Exception:
@@ -1319,6 +1326,7 @@ def delete_session(session_name: str):
             "stopped": stop_triggered,
         }
     )
+
 
 @app.route("/play", methods=["POST"])
 def play():
@@ -1388,9 +1396,7 @@ def play():
             )
 
         if not _start_session(selected_session, "manual"):
-            servo_logger.logger.error(
-                f"PLAY_START_FAILED | session={selected_session}"
-            )
+            servo_logger.logger.error(f"PLAY_START_FAILED | session={selected_session}")
             _ensure_playback_running()
             return jsonify({"error": "Impossible de demarrer la lecture"}), 500
 
@@ -1657,7 +1663,9 @@ def service_restart():
         return jsonify({"error": "Commande restart non configurée"}), 500
 
     try:
-        servo_logger.logger.info("SERVICE_RESTART_REQUEST | cmd=%s", SERVICE_RESTART_CMD[0])
+        servo_logger.logger.info(
+            "SERVICE_RESTART_REQUEST | cmd=%s", SERVICE_RESTART_CMD[0]
+        )
         proc = subprocess.run(
             SERVICE_RESTART_CMD,
             check=False,
@@ -1666,7 +1674,9 @@ def service_restart():
             timeout=SERVICE_RESTART_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        servo_logger.logger.error("SERVICE_RESTART_TIMEOUT | timeout=%s", SERVICE_RESTART_TIMEOUT)
+        servo_logger.logger.error(
+            "SERVICE_RESTART_TIMEOUT | timeout=%s", SERVICE_RESTART_TIMEOUT
+        )
         return jsonify({"error": "Redémarrage service timeout"}), 504
     except Exception:
         servo_logger.logger.exception("SERVICE_RESTART_ERROR")
@@ -1675,13 +1685,79 @@ def service_restart():
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()
     if proc.returncode != 0:
-        servo_logger.logger.error("SERVICE_RESTART_FAILED | code=%s | stderr=%s", proc.returncode, stderr[:400])
-        return jsonify({"error": "Échec redémarrage service", "code": proc.returncode, "stderr": stderr}), 500
+        servo_logger.logger.error(
+            "SERVICE_RESTART_FAILED | code=%s | stderr=%s",
+            proc.returncode,
+            stderr[:400],
+        )
+        return (
+            jsonify(
+                {
+                    "error": "Échec redémarrage service",
+                    "code": proc.returncode,
+                    "stderr": stderr,
+                }
+            ),
+            500,
+        )
 
     if stdout:
         servo_logger.logger.info("SERVICE_RESTART_STDOUT | %s", stdout[:400])
     if stderr:
         servo_logger.logger.info("SERVICE_RESTART_STDERR | %s", stderr[:400])
+
+    return jsonify({"status": "restarted"})
+
+
+@app.route("/bluetooth/restart", methods=["POST"])
+def bluetooth_restart():
+    """Restart the bluetooth systemd service from the web UI."""
+    if not BLUETOOTH_RESTART_CMD:
+        return jsonify({"error": "Commande restart Bluetooth non configurée"}), 500
+
+    try:
+        servo_logger.logger.info(
+            "BLUETOOTH_RESTART_REQUEST | cmd=%s", BLUETOOTH_RESTART_CMD[0]
+        )
+        proc = subprocess.run(
+            BLUETOOTH_RESTART_CMD,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=BLUETOOTH_RESTART_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        servo_logger.logger.error(
+            "BLUETOOTH_RESTART_TIMEOUT | timeout=%s", BLUETOOTH_RESTART_TIMEOUT
+        )
+        return jsonify({"error": "Redémarrage Bluetooth timeout"}), 504
+    except Exception:
+        servo_logger.logger.exception("BLUETOOTH_RESTART_ERROR")
+        return jsonify({"error": "Redémarrage Bluetooth impossible"}), 500
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if proc.returncode != 0:
+        servo_logger.logger.error(
+            "BLUETOOTH_RESTART_FAILED | code=%s | stderr=%s",
+            proc.returncode,
+            stderr[:400],
+        )
+        return (
+            jsonify(
+                {
+                    "error": "Échec redémarrage Bluetooth",
+                    "code": proc.returncode,
+                    "stderr": stderr,
+                }
+            ),
+            500,
+        )
+
+    if stdout:
+        servo_logger.logger.info("BLUETOOTH_RESTART_STDOUT | %s", stdout[:400])
+    if stderr:
+        servo_logger.logger.info("BLUETOOTH_RESTART_STDERR | %s", stderr[:400])
 
     return jsonify({"status": "restarted"})
 

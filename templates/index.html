@@ -74,9 +74,12 @@
                     <div class="volume-box">
                         <h3 class="volume-title">Volume (bluetoothctl)</h3>
                         <div class="volume-controls" role="group" aria-label="Contrôle du volume">
-                            <button type="button" class="volume-btn" data-volume-action="down" aria-label="Baisser le volume">-</button>
-                            <button type="button" class="volume-btn volume-btn-mute" data-volume-action="mute" aria-label="Couper le son">Mute</button>
-                            <button type="button" class="volume-btn" data-volume-action="up" aria-label="Augmenter le volume">+</button>
+                            <button type="button" class="volume-btn" data-volume-action="down"
+                                aria-label="Baisser le volume">-</button>
+                            <button type="button" class="volume-btn volume-btn-mute" data-volume-action="mute"
+                                aria-label="Couper le son">Mute</button>
+                            <button type="button" class="volume-btn" data-volume-action="up"
+                                aria-label="Augmenter le volume">+</button>
                         </div>
                         <p class="hint volume-hint">Les commandes partent via bluetoothctl (menu transport).</p>
                         <div class="bt-status" id="bluetoothStatus" role="status" aria-live="polite">
@@ -84,9 +87,16 @@
                             <span class="bt-text" id="bluetoothStatusText">Bluetooth : inconnu</span>
                         </div>
                         <div class="service-box">
-                            <button type="button" class="btn warning" id="restartServiceBtn">Red&eacute;marrer le service</button>
+                            <button type="button" class="btn warning" id="restartBluetoothBtn">Redémarrer
+                                Bluetooth</button>
+                            <p class="hint">Exécute <code>sudo systemctl restart bluetooth.service</code>.</p>
+                        </div>
+                        <div class="service-box">
+                            <button type="button" class="btn warning" id="restartServiceBtn">Red&eacute;marrer le
+                                service</button>
                             <p class="hint">Ex&eacute;cute <code>sudo systemctl restart servo-sync.service</code>.</p>
                         </div>
+
                     </div>
 
                     <!-- Status en accordéon -->
@@ -223,7 +233,8 @@
                             <span id="esp32StatusText" class="esp32-status-text">Inactif (desactive)</span>
                         </div>
                         <div class="esp32-header-actions">
-                            <button type="button" class="btn secondary" id="esp32StatusRefreshBtn">Tester la connexion</button>
+                            <button type="button" class="btn secondary" id="esp32StatusRefreshBtn">Tester la
+                                connexion</button>
                         </div>
                     </div>
                     <form id="esp32ConfigForm" class="esp32-config" autocomplete="off">
@@ -248,7 +259,8 @@
                         <div class="esp32-buttons-group" role="group" aria-label="Commandes ESP32">
                             <button type="button" class="btn success" id="esp32RelayOnBtn">Relais ON</button>
                             <button type="button" class="btn secondary" id="esp32RelayOffBtn">Relais OFF</button>
-                            <button type="button" class="btn info" id="esp32AutoRelayToggle" aria-pressed="false">Auto-relay</button>
+                            <button type="button" class="btn info" id="esp32AutoRelayToggle"
+                                aria-pressed="false">Auto-relay</button>
                             <button type="button" class="btn warning" id="esp32RestartBtn">Redemarrer l'ESP32</button>
                         </div>
                     </div>
@@ -279,9 +291,11 @@
                             <h3 class="esp32-subtitle">Boutons physiques</h3>
                             <button type="button" class="btn secondary" id="esp32ButtonsRefreshBtn">Actualiser</button>
                         </div>
-                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group" aria-label="Association boutons ESP32">
+                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group"
+                            aria-label="Association boutons ESP32">
                         </div>
-                        <p class="hint">Choisissez une session pour chaque bouton. Selectionnez "-- Aucun --" pour vider l'association.</p>
+                        <p class="hint">Choisissez une session pour chaque bouton. Selectionnez "-- Aucun --" pour vider
+                            l'association.</p>
                     </div>
                 </section>
             </div>
@@ -306,20 +320,22 @@
                 </section>
             </aside>
         </div>
-    <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteSessionTitle">
-        <div class="modal-box">
-            <button type="button" class="modal-close" id="deleteSessionClose" aria-label="Fermer"><span aria-hidden="true">&times;</span></button>
-            <div class="modal-graphic" aria-hidden="true">🎃</div>
-            <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
-            <p class="modal-lead">Veux-tu vraiment bannir <strong id="deleteSessionName"></strong> ?</p>
-            <p class="modal-subtext">Le dossier de la session sera définitivement supprimé du RPi.</p>
-            <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
-            <div class="modal-actions">
-                <button type="button" class="btn secondary" id="deleteSessionCancel">Annuler</button>
-                <button type="button" class="btn danger" id="deleteSessionConfirm">Oui, supprimer</button>
+        <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true"
+            aria-labelledby="deleteSessionTitle">
+            <div class="modal-box">
+                <button type="button" class="modal-close" id="deleteSessionClose" aria-label="Fermer"><span
+                        aria-hidden="true">&times;</span></button>
+                <div class="modal-graphic" aria-hidden="true">🎃</div>
+                <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
+                <p class="modal-lead">Veux-tu vraiment bannir <strong id="deleteSessionName"></strong> ?</p>
+                <p class="modal-subtext">Le dossier de la session sera définitivement supprimé du RPi.</p>
+                <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary" id="deleteSessionCancel">Annuler</button>
+                    <button type="button" class="btn danger" id="deleteSessionConfirm">Oui, supprimer</button>
+                </div>
             </div>
         </div>
-    </div>
 
     </main>
 
