@@ -31,7 +31,7 @@ HEADER_IMAGE_CLASS = "fixed-header-image"
 HEADER_IMAGE_STYLE = (
     "<style>"
     ".fixed-header-image{position:fixed;top:0;left:50%;transform:translateX(-50%);"
-    "z-index:1000;pointer-events:none;max-width:100%;height:auto;}"
+    "z-index:1000;pointer-events:none;max-width:100%;height:auto;opacity: 0.3;}"
     "</style>"
 )
 _BODY_TAG_RE = re.compile(r"<body([^>]*)>", re.IGNORECASE)
@@ -151,8 +151,8 @@ def _inject_header_image(html: str) -> str:
         start, end = match.span()
         body_tag = match.group(0)
         injection = (
-            f"{body_tag}<img src=\"{HEADER_IMAGE_SRC}\" alt=\"Page overlay\" "
-            f"class=\"{HEADER_IMAGE_CLASS}\">"
+            f'{body_tag}<img src="{HEADER_IMAGE_SRC}" alt="Page overlay" '
+            f'class="{HEADER_IMAGE_CLASS}">'
         )
         updated = updated[:start] + injection + updated[end:]
     return updated
@@ -238,6 +238,7 @@ def api_volume() -> Response:
 
     return _json(payload, status=upstream.status_code)
 
+
 @app.route("/api/enqueue", methods=["POST"])
 def api_enqueue() -> Response:
     client_id, created = _resolve_client()
@@ -276,7 +277,8 @@ def api_enqueue() -> Response:
 
     try:
         upstream = requests.post(
-            f"{_backend_base_url()}/play", json={"session": session},
+            f"{_backend_base_url()}/play",
+            json={"session": session},
             timeout=FORWARD_TIMEOUT,
         )
     except requests.RequestException as exc:
