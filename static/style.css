@@ -1314,3 +1314,118 @@ body.modal-open {
     right: 12px;
     z-index: 2000;
 }
+
+/* =====================================================================
+   === Mobile-only UI (<= 720px) =======================================
+   ===================================================================== */
+@media (max-width: 720px) {
+
+    /* 1) Masquer ce qui n’est pas demandé sur mobile */
+    .site-header,
+    .logs-column,
+    .logs-card,
+    .status-accordion,
+    #playlistRefreshBtn,
+    .picker-row,
+    .workbench-card,
+    #btnUpload,
+    #refreshBtn,
+    #pauseBtn,
+    #resumeBtn,
+    [data-volume-action="mute"],
+    #randomModeHint,
+    .status-box.esp32-status-raw,
+    .esp32-buttons-config,
+    #esp32StatusRefreshBtn,
+    #esp32Host,
+    #esp32Port,
+    #esp32ConfigSaveBtn {
+        display: none !important;
+    }
+
+    /* 2) Garde les chips d’état (Skull/Bluetooth/ESP) et repositionne à gauche */
+    .connection-banner {
+        top: 8px;
+        right: auto;
+        left: 8px;
+        gap: 8px;
+    }
+
+    /* 3) Contrôles de session : STOP visible, volume + / -, random, restart BT/service */
+    .controls-grid {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    #stopBtn {
+        display: inline-flex !important;
+    }
+
+    .volume-controls {
+        justify-content: flex-start
+    }
+
+    .volume-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #restartBluetoothBtn,
+    #restartServiceBtn {
+        display: inline-flex !important;
+        min-height: 44px;
+        margin-top: 8px;
+    }
+
+    #randomModeToggle,
+    #shuffleAllBtn {
+        display: inline-flex !important;
+        min-height: 44px;
+        margin-top: 6px;
+    }
+
+    /* 4) Playlist : supprimer & passer au suivant, pas de up/down */
+    .playlist-btn[data-action="up"],
+    .playlist-btn[data-action="down"] {
+        display: none !important;
+    }
+
+    #playlistSkipBtn {
+        display: inline-flex !important;
+        min-height: 44px;
+    }
+
+    /* 5) ESP32 : pilotage (checkbox), relais ON/OFF, redémarrer */
+    .esp32-enabled {
+        display: inline-flex !important;
+    }
+
+    .esp32-buttons-group #esp32RelayOnBtn,
+    .esp32-buttons-group #esp32RelayOffBtn,
+    .esp32-buttons-group #esp32RestartBtn {
+        display: inline-flex !important;
+        min-height: 44px;
+        margin-top: 6px;
+    }
+
+    /* 6) Mise en page : une seule colonne, grosses cibles tactiles */
+    .layout {
+        grid-template-columns: 1fr !important;
+    }
+
+    .card {
+        padding: 16px
+    }
+
+    .btn {
+        padding: 12px 16px;
+        border-radius: 14px
+    }
+
+    .select,
+    .input {
+        padding: 12px 14px;
+        border-radius: 12px
+    }
+}
