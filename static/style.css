@@ -1429,3 +1429,47 @@ body.modal-open {
         border-radius: 12px
     }
 }
+
+@media (max-width: 720px) {
+
+    /* 1) Passer la grille en flex colonne pour pouvoir ordonner */
+    .layout {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 16px !important;
+    }
+
+    /* 2) Ordonner les sections : Sessions d’abord, ESP32 ensuite
+        (le reste suivra l’ordre du DOM, ex. Playlist) */
+    #sessions {
+        order: 1;
+        width: 100% !important;
+    }
+
+    #esp32Card {
+        order: 2;
+        width: 100% !important;
+    }
+
+    .playlist-card {
+        order: 3;
+        width: 100% !important;
+    }
+
+    /* 3) Garantir la pleine largeur et du confort tactile */
+    .container {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .card {
+        width: 100% !important;
+        margin: 0;
+    }
+
+    .btn,
+    .input,
+    .select {
+        min-height: 44px;
+    }
+}
