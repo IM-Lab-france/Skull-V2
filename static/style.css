@@ -1430,6 +1430,93 @@ body.modal-open {
     }
 }
 
+.category-manager {
+    margin-top: 24px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+}
+
+.category-title {
+    margin: 0 0 8px;
+    font-size: 1.1rem;
+}
+
+.category-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.category-label {
+    display: inline-block;
+    font-weight: 600;
+}
+
+.category-actions-controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.category-actions .input {
+    flex: 1 1 200px;
+    min-width: 180px;
+}
+
+.category-status {
+    min-height: 1.2em;
+}
+
+.category-status.is-error {
+    color: #ff8b8b;
+}
+
+.category-status.is-success {
+    color: #8fe1a0;
+}
+
+.category-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.category-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.category-row--busy {
+    opacity: 0.6;
+}
+
+.category-row-name {
+    font-weight: 600;
+    flex: 1 1 160px;
+}
+
+.category-row select {
+    min-width: 160px;
+}
+
+.category-empty {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    text-align: center;
+    font-style: italic;
+}
+
 @media (max-width: 720px) {
 
     /* 1) Passer la grille en flex colonne pour pouvoir ordonner */

@@ -66,6 +66,22 @@
                         </p>
                     </div>
 
+                    <div class="category-manager" id="categoryManager">
+                        <h3 class="category-title">Cat&eacute;gories des morceaux</h3>
+                        <p class="hint">Assignez une cat&eacute;gorie pour chaque session ou ajoutez-en une nouvelle.</p>
+                        <div class="category-actions" role="group" aria-label="Gestion des cat&eacute;gories">
+                            <label for="categoryAddInput" class="label category-label">Nouvelle cat&eacute;gorie</label>
+                            <div class="category-actions-controls">
+                                <input id="categoryAddInput" class="input" type="text" maxlength="64"
+                                    placeholder="Ex&nbsp;: Enfant" autocomplete="off" />
+                                <button type="button" class="btn info" id="categoryAddBtn">Ajouter</button>
+                            </div>
+                            <p id="categoryManagerStatus" class="hint category-status" role="status"
+                                aria-live="polite"></p>
+                        </div>
+                        <div id="categoryManagerList" class="category-list" role="list"></div>
+                    </div>
+
                     <div class="session-danger-zone" role="group" aria-label="Suppression de la session">
                         <button id="deleteSessionBtn" class="btn danger" type="button">Supprimer la session</button>
                         <p class="hint">Supprime définitivement le dossier de la session sur le RPi.</p>
@@ -294,8 +310,8 @@
                         <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group"
                             aria-label="Association boutons ESP32">
                         </div>
-                        <p class="hint">Choisissez une session pour chaque bouton. Selectionnez "-- Aucun --" pour vider
-                            l'association.</p>
+                        <p class="hint">Choisissez une cat&eacute;gorie pour chaque bouton (1 &agrave; 3). Selectionnez
+                            "-- Aucun --" pour vider l'association.</p>
                     </div>
                 </section>
             </div>

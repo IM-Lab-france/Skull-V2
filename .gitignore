@@ -1,4 +1,5 @@
 /.env
 /.vscode
 /__pycache__
-Ghostbusters_60Hz.json
+data/*
+config/*

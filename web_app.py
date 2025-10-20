@@ -53,6 +53,8 @@ CONFIG_DIR.mkdir(exist_ok=True)
 PITCH_CONFIG_PATH = CONFIG_DIR / "pitch_offsets.json"
 CHANNELS_CONFIG_PATH = CONFIG_DIR / "channels_state.json"
 ESP32_CONFIG_PATH = CONFIG_DIR / "esp32_settings.json"
+SESSION_CATEGORIES_PATH = CONFIG_DIR / "session_categories.json"
+ESP32_BUTTON_ASSIGNMENTS_PATH = CONFIG_DIR / "esp32_button_categories.json"
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -67,10 +69,18 @@ if not _VOLUME_CMD_BASE:
     _VOLUME_CMD_BASE = ["bluetoothctl"]
 
 ESP32_DEFAULT_CONFIG = {"host": "", "port": 80, "enabled": False}
-ESP32_BUTTON_COUNT = 5
+ESP32_BUTTON_COUNT = 3
 ESP32_HTTP_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
 
 VOLUME_ACTIONS = {"up", "down", "mute"}
+
+_SESSION_CATEGORY_DEFAULTS = {
+    "categories": ["enfant", "adulte"],
+    "sessions": {},
+}
+_session_categories_lock = threading.Lock()
+_session_categories_cache: Optional[dict[str, Any]] = None
+_esp32_button_assignments_lock = threading.Lock()
 
 _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
@@ -98,6 +108,32 @@ BLUETOOTH_RESTART_CMD = (
 BLUETOOTH_RESTART_TIMEOUT = float(
     os.environ.get("PLAYLIST_BLUETOOTH_RESTART_TIMEOUT", "15")
 )
+
+
+def _client_request_metadata() -> dict[str, str]:
+    """Extract request origin details for logging."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    primary_forward = (
+        forwarded_for.split(",")[0].strip() if forwarded_for else None
+    )
+    remote_addr = primary_forward or request.remote_addr or ""
+    user_agent = request.headers.get("User-Agent") or ""
+    return {
+        "client_ip": remote_addr or "-",
+        "forwarded_for": forwarded_for or "-",
+        "user_agent": user_agent or "-",
+    }
+
+
+def _format_log_payload(payload: Any, limit: int = 200) -> str:
+    """Serialize payload content for concise log output."""
+    try:
+        serialized = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+    except Exception:
+        serialized = str(payload)
+    if len(serialized) > limit:
+        return serialized[: limit - 3] + "..."
+    return serialized
 
 
 def _clean_bt_output(text: str) -> str:
@@ -706,6 +742,344 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
             pass
 
 
+def _load_session_categories_locked() -> dict[str, Any]:
+    global _session_categories_cache
+    if _session_categories_cache is None:
+        raw_data: dict[str, Any] = {}
+        should_write = False
+        if SESSION_CATEGORIES_PATH.exists():
+            try:
+                with open(SESSION_CATEGORIES_PATH, "r", encoding="utf-8") as handle:
+                    raw_data = json.load(handle) or {}
+            except Exception:
+                servo_logger.logger.exception("SESSION_CATEGORIES_LOAD_FAILED")
+                raw_data = {}
+                should_write = True
+        else:
+            should_write = True
+
+        raw_categories = raw_data.get("categories")
+        categories: list[str] = []
+        if isinstance(raw_categories, list):
+            for item in raw_categories:
+                text = str(item).strip()
+                if text and text not in categories:
+                    categories.append(text)
+        if not categories:
+            categories = list(_SESSION_CATEGORY_DEFAULTS["categories"])
+            should_write = True
+
+        raw_sessions = raw_data.get("sessions")
+        sessions: dict[str, str] = {}
+        if isinstance(raw_sessions, dict):
+            for key, value in raw_sessions.items():
+                session_name = str(key).strip()
+                category_name = str(value).strip()
+                if session_name and category_name:
+                    sessions[session_name] = category_name
+        else:
+            should_write = True
+
+        _session_categories_cache = {
+            "categories": categories,
+            "sessions": sessions,
+        }
+        if should_write:
+            try:
+                _write_json_atomic(SESSION_CATEGORIES_PATH, _session_categories_cache)
+            except Exception:
+                servo_logger.logger.exception("SESSION_CATEGORIES_WRITE_FAILED")
+    return _session_categories_cache
+
+
+def _save_session_categories_locked(
+    categories: Iterable[str], sessions: dict[str, str]
+) -> dict[str, Any]:
+    unique_categories: list[str] = []
+    for item in categories:
+        text = str(item).strip()
+        if text and text not in unique_categories:
+            unique_categories.append(text)
+
+    sanitized_sessions: dict[str, str] = {}
+    for key, value in sessions.items():
+        session_name = str(key).strip()
+        category_name = str(value).strip()
+        if session_name and category_name:
+            sanitized_sessions[session_name] = category_name
+
+    global _session_categories_cache
+    _session_categories_cache = {
+        "categories": unique_categories,
+        "sessions": sanitized_sessions,
+    }
+    _write_json_atomic(SESSION_CATEGORIES_PATH, _session_categories_cache)
+
+    return {
+        "categories": list(unique_categories),
+        "sessions": dict(sanitized_sessions),
+    }
+
+
+def _load_session_categories() -> dict[str, Any]:
+    with _session_categories_lock:
+        cached = _load_session_categories_locked()
+        return {
+            "categories": list(cached["categories"]),
+            "sessions": dict(cached["sessions"]),
+        }
+
+
+def _get_session_category(session_name: Optional[str]) -> Optional[str]:
+    if not session_name:
+        return None
+    data = _load_session_categories()
+    return data["sessions"].get(session_name)
+
+
+def _set_session_category(session_name: str, category: Optional[str]) -> dict[str, Any]:
+    normalized_session = (session_name or "").strip()
+    if not normalized_session:
+        raise ValueError("Nom de session invalide")
+    normalized_category = (category or "").strip()
+    with _session_categories_lock:
+        cached = _load_session_categories_locked()
+        categories = list(cached["categories"])
+        sessions = dict(cached["sessions"])
+        if normalized_category:
+            if normalized_category not in categories:
+                categories.append(normalized_category)
+            sessions[normalized_session] = normalized_category
+        else:
+            sessions.pop(normalized_session, None)
+        return _save_session_categories_locked(categories, sessions)
+
+
+def _add_category(category: str) -> tuple[dict[str, Any], bool]:
+    normalized = (category or "").strip()
+    if not normalized:
+        raise ValueError("Nom de categorie vide")
+    with _session_categories_lock:
+        cached = _load_session_categories_locked()
+        categories = list(cached["categories"])
+        sessions = dict(cached["sessions"])
+        if normalized not in categories:
+            categories.append(normalized)
+            saved = _save_session_categories_locked(categories, sessions)
+            return saved, True
+        return (
+            {
+                "categories": list(categories),
+                "sessions": dict(sessions),
+            },
+            False,
+        )
+
+
+def _enrich_entry_with_category(
+    entry: Optional[dict[str, Any]], mapping: Optional[dict[str, str]] = None
+) -> Optional[dict[str, Any]]:
+    if entry is None:
+        return None
+    result = entry.copy()
+    session_name = result.get("session")
+    lookup = mapping or _load_session_categories()["sessions"]
+    result["category"] = lookup.get(session_name) if session_name else None
+    return result
+
+
+def _enrich_queue_with_categories(
+    queue: Iterable[dict[str, Any]], mapping: Optional[dict[str, str]] = None
+) -> list[dict[str, Any]]:
+    lookup = mapping or _load_session_categories()["sessions"]
+    enriched: list[dict[str, Any]] = []
+    for item in queue:
+        if not isinstance(item, dict):
+            continue
+        enriched.append(_enrich_entry_with_category(item, lookup) or item)
+    return enriched
+
+
+def _default_button_assignments() -> list[str]:
+    return ["" for _ in range(ESP32_BUTTON_COUNT)]
+
+
+def _sanitize_button_assignments(raw: Any) -> list[str]:
+    assignments = _default_button_assignments()
+    if isinstance(raw, dict):
+        raw_values = raw.get("assignments", [])
+    elif isinstance(raw, (list, tuple)):
+        raw_values = raw
+    else:
+        raw_values = []
+
+    sanitized: list[str] = []
+    for idx in range(ESP32_BUTTON_COUNT):
+        value = ""
+        if idx < len(raw_values):
+            candidate = raw_values[idx]
+            if isinstance(candidate, str):
+                value = candidate.strip()
+        sanitized.append(value)
+
+    while len(sanitized) < ESP32_BUTTON_COUNT:
+        sanitized.append("")
+
+    return sanitized[:ESP32_BUTTON_COUNT]
+
+
+def _load_button_assignments_locked() -> list[str]:
+    if not ESP32_BUTTON_ASSIGNMENTS_PATH.exists():
+        assignments = _default_button_assignments()
+        try:
+            _write_json_atomic(
+                ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": assignments}
+            )
+        except Exception:
+            servo_logger.logger.exception("ESP32_BUTTON_ASSIGNMENTS_INIT_FAILED")
+        return assignments
+
+    try:
+        with open(ESP32_BUTTON_ASSIGNMENTS_PATH, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except Exception:
+        servo_logger.logger.exception("ESP32_BUTTON_ASSIGNMENTS_LOAD_FAILED")
+        return _default_button_assignments()
+
+    assignments = _sanitize_button_assignments(raw)
+    return assignments
+
+
+def _save_button_assignments_locked(assignments: Iterable[str]) -> list[str]:
+    sanitized = _sanitize_button_assignments(list(assignments))
+    try:
+        _write_json_atomic(
+            ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": sanitized}
+        )
+    except Exception:
+        servo_logger.logger.exception("ESP32_BUTTON_ASSIGNMENTS_SAVE_FAILED")
+    return sanitized
+
+
+def _load_button_assignments() -> list[str]:
+    with _esp32_button_assignments_lock:
+        return list(_load_button_assignments_locked())
+
+
+def _set_button_assignment(index: int, category: str) -> list[str]:
+    if index < 0 or index >= ESP32_BUTTON_COUNT:
+        raise IndexError("Index bouton hors limites")
+
+    normalized = (category or "").strip()
+    with _esp32_button_assignments_lock:
+        assignments = _load_button_assignments_locked()
+        assignments[index] = normalized
+        return _save_button_assignments_locked(assignments)
+
+
+def _sessions_for_category(category: str) -> list[str]:
+    if not category:
+        return []
+    data = _load_session_categories()
+    mapping = data["sessions"]
+    normalized = category.strip().lower()
+    sessions: list[str] = []
+    for name, cat in mapping.items():
+        if not name:
+            continue
+        if (cat or "").strip().lower() == normalized:
+            sessions.append(name)
+    valid_sessions: list[str] = []
+    for session_name in sessions:
+        try:
+            _ensure_session_exists(session_name)
+        except ValueError:
+            continue
+        valid_sessions.append(session_name)
+    return valid_sessions
+
+
+def _resolve_session_candidate(value: str) -> tuple[str, Optional[str]]:
+    candidate = (value or "").strip()
+    if not candidate:
+        raise ValueError("Session vide")
+    matching = _sessions_for_category(candidate)
+    if matching:
+        return random.choice(matching), candidate
+    return candidate, None
+
+
+def _enqueue_or_play_session(
+    session_name: str,
+    source: str,
+    requested_category: Optional[str] = None,
+    log_context: Optional[dict[str, Any]] = None,
+) -> tuple[dict[str, Any], int]:
+    try:
+        _ensure_session_exists(session_name)
+    except ValueError as exc:
+        return {"error": str(exc)}, 404
+
+    context = log_context or {}
+    context_bits = " | ".join(f"{k}={v}" for k, v in context.items() if v is not None)
+
+    try:
+        status_info = player.status()
+    except Exception:
+        status_info = {}
+    is_running = bool(status_info.get("running"))
+
+    if is_running:
+        item, position = playlist.add(session_name)
+        enriched_item = _enrich_entry_with_category(item)
+        category_label = requested_category or _get_session_category(session_name)
+        log_message = f"PLAYLIST_ENQUEUE | session={session_name} | source={source}"
+        if context_bits:
+            log_message += f" | {context_bits}"
+        servo_logger.logger.info(log_message)
+        payload = {
+            "status": "queued",
+            "session": session_name,
+            "position": position,
+            "item": enriched_item,
+            "category": category_label,
+            "source": source,
+        }
+        return payload, 202
+
+    if not _start_session(session_name, source):
+        log_message = f"PLAY_START_FAILED | session={session_name} | source={source}"
+        if context_bits:
+            log_message += f" | {context_bits}"
+        servo_logger.logger.error(log_message)
+        _ensure_playback_running()
+        return {"error": "Impossible de demarrer la lecture"}, 500
+
+    category_label = requested_category or _get_session_category(session_name)
+    payload = {
+        "status": "playing",
+        "session": session_name,
+        "category": category_label,
+        "source": source,
+    }
+    return payload, 200
+
+
+def _trigger_session_for_button(
+    session_name: str, button_index: int, category: Optional[str]
+) -> tuple[dict[str, Any], int]:
+    source = f"esp32_button_{button_index}"
+    payload, status = _enqueue_or_play_session(
+        session_name,
+        source,
+        requested_category=category,
+        log_context={"button": button_index, "requested_category": category},
+    )
+    payload.setdefault("button", button_index)
+    payload.setdefault("category", category or _get_session_category(session_name))
+    return payload, status
+
+
 class ESP32Error(Exception):
     """Base class for ESP32 gateway errors."""
 
@@ -1052,34 +1426,36 @@ def esp32_set_auto_relay():
 
 @app.route("/esp32/button-config", methods=["GET"])
 def esp32_button_config():
+    assignments = _load_button_assignments()
     try:
         payload = _esp32_request("/api/button-config", method="GET")
-        sessions = payload.get("sessions")
-        if not isinstance(sessions, list):
-            sessions = []
-        return jsonify(
-            {
-                "reachable": True,
-                "sessions": sessions,
-                "buttonCount": ESP32_BUTTON_COUNT,
-            }
-        )
+        states = payload.get("states")
+        if not isinstance(states, list):
+            states = payload.get("buttons")
+        response: Dict[str, Any] = {
+            "reachable": True,
+            "buttonCount": ESP32_BUTTON_COUNT,
+            "assignments": assignments,
+        }
+        response["sessions"] = assignments
+        response["categories"] = _load_session_categories()["categories"]
+        if isinstance(states, list):
+            response["states"] = states
+        return jsonify(response)
     except ESP32ConfigError as exc:
-        return jsonify(
-            {
-                **_esp32_response_error(str(exc), reason="config"),
-                "sessions": [],
-                "buttonCount": ESP32_BUTTON_COUNT,
-            }
-        )
+        error = _esp32_response_error(str(exc), reason="config")
+        error["assignments"] = assignments
+        error["buttonCount"] = ESP32_BUTTON_COUNT
+        error["sessions"] = assignments
+        error["categories"] = _load_session_categories()["categories"]
+        return jsonify(error)
     except ESP32CommunicationError as exc:
-        return jsonify(
-            {
-                **_esp32_response_error(str(exc), reason="network"),
-                "sessions": [],
-                "buttonCount": ESP32_BUTTON_COUNT,
-            }
-        )
+        error = _esp32_response_error(str(exc), reason="network")
+        error["assignments"] = assignments
+        error["buttonCount"] = ESP32_BUTTON_COUNT
+        error["sessions"] = assignments
+        error["categories"] = _load_session_categories()["categories"]
+        return jsonify(error)
 
 
 @app.route("/esp32/button-config", methods=["POST"])
@@ -1104,34 +1480,100 @@ def esp32_set_button_config():
             400,
         )
 
-    session = body.get("session", "")
-    if session is None:
-        session = ""
-    if not isinstance(session, str):
-        session = str(session)
+    raw_category = body.get("category")
+    if raw_category is None:
+        raw_category = body.get("session", "")
+    if raw_category is None:
+        raw_category = ""
+    if not isinstance(raw_category, str):
+        raw_category = str(raw_category)
+    category = raw_category.strip()
 
     try:
-        payload = _esp32_request(
+        updated_assignments = _set_button_assignment(button_index, category)
+    except IndexError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    servo_logger.logger.info(
+        "ESP32_BUTTON_CATEGORY_SET | button=%s | category=%s",
+        button_index,
+        category or "-",
+    )
+
+    reachable = False
+    remote_error: Optional[str] = None
+    remote_response: Dict[str, Any] = {}
+    try:
+        remote_response = _esp32_request(
             "/api/button-config",
             method="POST",
-            json_payload={"button": button_index, "session": session},
-        )
-        response_sessions = payload.get("sessions")
-        if not isinstance(response_sessions, list):
-            response_sessions = []
-        return jsonify(
-            {
-                "success": True,
-                "reachable": True,
-                "response": payload,
-                "sessions": response_sessions,
+            json_payload={
                 "button": button_index,
-            }
+                "category": category,
+                "session": category,
+            },
         )
     except ESP32ConfigError as exc:
-        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+        remote_error = str(exc)
     except ESP32CommunicationError as exc:
-        return jsonify({"success": False, "reachable": False, "error": str(exc)})
+        remote_error = str(exc)
+    else:
+        reachable = True
+
+    response_payload: Dict[str, Any] = {
+        "success": True,
+        "reachable": reachable,
+        "assignments": updated_assignments,
+        "button": button_index,
+        "category": category,
+        "categories": _load_session_categories()["categories"],
+    }
+    if remote_response:
+        response_payload["response"] = remote_response
+    if remote_error:
+        response_payload["error"] = remote_error
+    return jsonify(response_payload)
+
+
+@app.route("/esp32/button/<int:button_index>/play", methods=["POST"])
+def esp32_button_play(button_index: int):
+    if button_index < 0 or button_index >= ESP32_BUTTON_COUNT:
+        return (
+            jsonify(
+                {
+                    "error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1})."
+                }
+            ),
+            400,
+        )
+
+    assignments = _load_button_assignments()
+    try:
+        category = assignments[button_index]
+    except IndexError:
+        category = ""
+    category = (category or "").strip()
+    if not category:
+        return jsonify({"error": "Ce bouton n'est pas associe a une categorie."}), 400
+
+    sessions = _sessions_for_category(category)
+    if not sessions:
+        return jsonify(
+            {
+                "error": f"Aucune session disponible pour la categorie '{category}'.",
+                "category": category,
+            }
+        ), 404
+
+    chosen_session = random.choice(sessions)
+    payload, status_code = _trigger_session_for_button(
+        chosen_session, button_index, category
+    )
+    payload["category"] = category
+    payload["session"] = chosen_session
+    payload["button"] = button_index
+    payload["available_sessions"] = sessions
+    return jsonify(payload), status_code
 
 
 @app.route("/esp32/restart", methods=["POST"])
@@ -1255,9 +1697,100 @@ def upload():
 def sessions():
     try:
         sessions_list = _list_session_names()
-        return jsonify({"sessions": sessions_list})
+        categories_data = _load_session_categories()
+        mapping = categories_data["sessions"]
+        response_sessions = []
+        for name in sessions_list:
+            response_sessions.append({"name": name, "category": mapping.get(name)})
+        return jsonify(
+            {
+                "sessions": response_sessions,
+                "categories": categories_data["categories"],
+            }
+        )
     except Exception as e:
         return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
+
+
+@app.route("/api/sessions", methods=["GET"])
+def api_sessions():
+    categories_data = _load_session_categories()
+    mapping = categories_data["sessions"]
+    playlist_snapshot = {
+        "current": _enrich_entry_with_category(_get_current_entry(), mapping),
+        "queue": _enrich_queue_with_categories(playlist.snapshot(), mapping),
+    }
+    meta = _client_request_metadata()
+    current_entry = playlist_snapshot["current"]
+    current_session = (
+        current_entry.get("session")
+        if isinstance(current_entry, dict)
+        else None
+    )
+    queue_length = len(playlist_snapshot["queue"])
+    servo_logger.logger.info(
+        "ESP32_STATUS_POLL | remote=%s | forwarded=%s | ua=%s | current=%s | queue_len=%s",
+        meta["client_ip"],
+        meta["forwarded_for"],
+        meta["user_agent"],
+        current_session or "-",
+        queue_length,
+    )
+    return jsonify(
+        {
+            "playlist": playlist_snapshot,
+            "categories": categories_data["categories"],
+        }
+    )
+
+
+@app.route("/sessions/<session_name>/category", methods=["PUT"])
+def set_session_category(session_name: str):
+    try:
+        _ensure_session_exists(session_name)
+    except ValueError:
+        return jsonify({"error": "Session introuvable"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    category = payload.get("category")
+    try:
+        updated = _set_session_category(session_name, category)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(
+        {
+            "session": session_name,
+            "category": updated["sessions"].get(session_name),
+            "categories": updated["categories"],
+        }
+    )
+
+
+@app.route("/categories", methods=["GET", "POST"])
+def categories():
+    if request.method == "GET":
+        data = _load_session_categories()
+        return jsonify({"categories": data["categories"]})
+
+    payload = request.get_json(silent=True) or {}
+    category_name = payload.get("name")
+    sanitized_name = (category_name or "").strip()
+    try:
+        updated, created = _add_category(sanitized_name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    stored_name = sanitized_name
+    if created:
+        stored_name = updated["categories"][-1]
+    elif sanitized_name:
+        for existing in updated["categories"]:
+            if existing == sanitized_name:
+                stored_name = existing
+                break
+    return (
+        jsonify({"category": stored_name, "categories": updated["categories"]}),
+        201 if created else 200,
+    )
 
 
 @app.route("/sessions/<session_name>", methods=["DELETE"])
@@ -1312,6 +1845,13 @@ def delete_session(session_name: str):
     )
 
     try:
+        _set_session_category(session_dir.name, None)
+    except Exception:
+        servo_logger.logger.exception(
+            "SESSION_CATEGORY_REMOVE_FAILED | session=%s", session_dir.name
+        )
+
+    try:
         _ensure_playback_running()
     except Exception:
         servo_logger.logger.exception(
@@ -1332,90 +1872,132 @@ def delete_session(session_name: str):
 def play():
     try:
         body = request.get_json(silent=True) or {}
-        sid = body.get("session")
-        if not sid:
+        requested_value = body.get("session")
+        if not requested_value:
             return jsonify({"error": "Champ 'session' manquant"}), 400
 
         try:
-            _ensure_session_exists(sid)
+            initial_session, requested_category = _resolve_session_candidate(
+                requested_value
+            )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 404
-
-        status_info = player.status()
-        is_running = bool(status_info.get("running"))
+            return jsonify({"error": str(exc)}), 400
 
         random_mode_enabled = _is_random_mode_enabled()
         random_choice = None
         random_applied = False
-        selected_session = sid
+        selected_session = initial_session
 
         if random_mode_enabled:
-            random_choice = _pick_random_session([sid])
+            random_choice = _pick_random_session([initial_session])
             if random_choice:
                 selected_session = random_choice
-                random_applied = selected_session != sid
+                random_applied = selected_session != initial_session
                 if random_applied:
-                    _record_random_pick(selected_session, sid)
+                    _record_random_pick(selected_session, initial_session)
                     servo_logger.logger.info(
-                        "RANDOM_MODE_SELECT | requested=%s | selected=%s | running=%s",
-                        sid,
+                        "RANDOM_MODE_SELECT | requested=%s | selected=%s",
+                        requested_value,
                         selected_session,
-                        is_running,
                     )
             else:
                 servo_logger.logger.warning(
-                    "RANDOM_MODE_NO_ELIGIBLE | requested=%s", sid
+                    "RANDOM_MODE_NO_ELIGIBLE | requested=%s", requested_value
                 )
 
-        if is_running:
-            item, position = playlist.add(selected_session)
-            servo_logger.logger.info(
-                "PLAYLIST_ENQUEUE | session=%s | trigger=play_button | position=%s | requested=%s | random=%s",
-                selected_session,
-                position,
-                sid,
-                random_mode_enabled,
-            )
-            return (
-                jsonify(
-                    {
-                        "status": "queued",
-                        "session": selected_session,
-                        "position": position,
-                        "item": item,
-                        "random_mode": {
-                            "enabled": random_mode_enabled,
-                            "applied": random_applied,
-                            "requested": sid,
-                            "selected": selected_session,
-                            "available": random_choice is not None,
-                        },
-                    }
-                ),
-                202,
-            )
-
-        if not _start_session(selected_session, "manual"):
-            servo_logger.logger.error(f"PLAY_START_FAILED | session={selected_session}")
-            _ensure_playback_running()
-            return jsonify({"error": "Impossible de demarrer la lecture"}), 500
-
-        response_payload = {
-            "status": "playing",
-            "session": selected_session,
-            "random_mode": {
-                "enabled": random_mode_enabled,
-                "applied": random_applied,
-                "requested": sid,
-                "selected": selected_session,
-                "available": random_choice is not None,
+        category_hint = None if random_applied else requested_category
+        payload, status_code = _enqueue_or_play_session(
+            selected_session,
+            "manual",
+            requested_category=category_hint,
+            log_context={
+                "requested": requested_value,
+                "requested_category": requested_category,
+                "random_mode": random_mode_enabled,
             },
-        }
-        return jsonify(response_payload)
+        )
 
+        if status_code >= 400:
+            return jsonify(payload), status_code
+
+        payload["random_mode"] = {
+            "enabled": random_mode_enabled,
+            "applied": random_applied,
+            "requested": requested_value,
+            "selected": selected_session,
+            "available": random_choice is not None,
+        }
+        return jsonify(payload), status_code
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Impossible de demarrer la lecture: {e}"}), 400
+
+
+@app.route("/api/enqueue", methods=["POST"])
+def api_enqueue():
+    body = request.get_json(silent=True) or {}
+    meta = _client_request_metadata()
+    body_log = _format_log_payload(body)
+    servo_logger.logger.info(
+        "ESP32_ENQUEUE_REQUEST | remote=%s | forwarded=%s | ua=%s | body=%s",
+        meta["client_ip"],
+        meta["forwarded_for"],
+        meta["user_agent"],
+        body_log,
+    )
+
+    requested_value = body.get("session")
+    if not requested_value:
+        servo_logger.logger.warning(
+            "ESP32_ENQUEUE_REJECTED | remote=%s | reason=missing_session | body=%s",
+            meta["client_ip"],
+            body_log,
+        )
+        return jsonify({"success": False, "error": "Champ 'session' manquant"}), 400
+
+    try:
+        session_name, requested_category = _resolve_session_candidate(requested_value)
+    except ValueError as exc:
+        servo_logger.logger.warning(
+            "ESP32_ENQUEUE_REJECTED | remote=%s | reason=invalid_session | error=%s | body=%s",
+            meta["client_ip"],
+            exc,
+            body_log,
+        )
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    payload, status_code = _enqueue_or_play_session(
+        session_name,
+        "esp32_api",
+        requested_category=requested_category,
+        log_context={"requested": requested_value},
+    )
+
+    response_log = _format_log_payload(payload)
+    if status_code >= 400:
+        payload["success"] = False
+        logger_fn = servo_logger.logger.error if status_code >= 500 else servo_logger.logger.warning
+        logger_fn(
+            "ESP32_ENQUEUE_RESPONSE | remote=%s | status=%s | session=%s | error=%s | payload=%s",
+            meta["client_ip"],
+            status_code,
+            payload.get("session") or session_name,
+            payload.get("error") or "-",
+            response_log,
+        )
+        return jsonify(payload), status_code
+
+    payload["success"] = True
+    payload["requested"] = requested_value
+    servo_logger.logger.info(
+        "ESP32_ENQUEUE_RESPONSE | remote=%s | status=%s | session=%s | state=%s | payload=%s",
+        meta["client_ip"],
+        status_code,
+        payload.get("session") or session_name,
+        payload.get("status") or "-",
+        response_log,
+    )
+    return jsonify(payload), status_code
 
 
 @app.route("/pause", methods=["POST"])
@@ -1453,7 +2035,7 @@ def status():
         st = player.status()
         st["channels"] = dict(player_channels)
         st["playlist_size"] = playlist.size()
-        st["current_playlist"] = _get_current_entry()
+        st["current_playlist"] = _enrich_entry_with_category(_get_current_entry())
         random_snapshot = _random_mode_snapshot()
         random_snapshot["eligible_count"] = len(_eligible_random_sessions())
         random_snapshot["excluded"] = sorted(_RANDOM_EXCLUDED_NAMES)
@@ -1522,10 +2104,16 @@ def volume():
 def playlist_api():
     try:
         if request.method == "GET":
+            categories_data = _load_session_categories()
+            mapping = categories_data["sessions"]
             return jsonify(
                 {
-                    "current": _get_current_entry(),
-                    "queue": playlist.snapshot(),
+                    "current": _enrich_entry_with_category(
+                        _get_current_entry(), mapping
+                    ),
+                    "queue": _enrich_queue_with_categories(
+                        playlist.snapshot(), mapping
+                    ),
                 }
             )
 
@@ -1549,17 +2137,19 @@ def playlist_api():
         current = _get_current_entry()
         status = "queued"
         http_code = 201
-        if current and current.get("id") == item["id"]:
+        enriched_current = _enrich_entry_with_category(current)
+        if enriched_current and enriched_current.get("id") == item["id"]:
             status = "playing"
             http_code = 200
 
+        enriched_item = _enrich_entry_with_category(item)
         return (
             jsonify(
                 {
                     "status": status,
-                    "item": item,
+                    "item": enriched_item,
                     "position": position,
-                    "current": current,
+                    "current": enriched_current,
                 }
             ),
             http_code,
@@ -1597,12 +2187,16 @@ def playlist_shuffle():
 
     _ensure_playback_running()
 
+    categories_data = _load_session_categories()
+    mapping = categories_data["sessions"]
     return jsonify(
         {
             "status": "shuffled",
             "count": len(sessions),
             "sessions": sessions,
-            "playlist": playlist.snapshot(),
+            "playlist": _enrich_queue_with_categories(
+                playlist.snapshot(), mapping
+            ),
         }
     )
 
@@ -1615,7 +2209,8 @@ def playlist_delete(item_id: int):
     servo_logger.logger.info(
         f"PLAYLIST_REMOVE | id={item_id} | session={removed['session']}"
     )
-    return jsonify({"status": "removed", "item": removed})
+    enriched = _enrich_entry_with_category(removed)
+    return jsonify({"status": "removed", "item": enriched})
 
 
 @app.route("/playlist/<int:item_id>/move", methods=["POST"])
@@ -1649,7 +2244,12 @@ def playlist_skip():
         _ensure_playback_running()
         current = _get_current_entry()
         if current:
-            return jsonify({"status": "playing", "current": current})
+            return jsonify(
+                {
+                    "status": "playing",
+                    "current": _enrich_entry_with_category(current),
+                }
+            )
         return jsonify({"status": "idle"})
     except Exception as e:
         traceback.print_exc()

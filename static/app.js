@@ -68,6 +68,16 @@ const elPlaylistSkip = $("#playlistSkipBtn");
 
 const elPlaylistRefresh = $("#playlistRefreshBtn");
 
+const elCategoryManager = document.getElementById("categoryManager");
+
+const elCategoryList = document.getElementById("categoryManagerList");
+
+const elCategoryAddInput = document.getElementById("categoryAddInput");
+
+const elCategoryAddBtn = document.getElementById("categoryAddBtn");
+
+const elCategoryStatus = document.getElementById("categoryManagerStatus");
+
 const elDeleteSession = $("#deleteSessionBtn");
 
 const elDeleteModal = $("#deleteSessionModal");
@@ -174,6 +184,14 @@ let playlistCurrentData = null;
 
 let playlistQueueData = [];
 
+let sessionCategories = new Map();
+
+let availableCategories = [];
+
+let categoryAddBusy = false;
+
+let cachedSessionNames = [];
+
 let playlistFetchInFlight = false;
 
 let lastPlaylistFetch = 0;
@@ -198,7 +216,18 @@ let randomModeState = {
 
 const ESP32_STATUS_INTERVAL = 5000;
 
-const ESP32_DEFAULT_BUTTON_COUNT = 5;
+const ESP32_DEFAULT_BUTTON_COUNT = 3;
+
+function normalizeEsp32ButtonCount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) {
+    return ESP32_DEFAULT_BUTTON_COUNT;
+  }
+  return Math.min(
+    ESP32_DEFAULT_BUTTON_COUNT,
+    Math.max(1, Math.floor(num))
+  );
+}
 
 let esp32Config = {
   host: "",
@@ -211,8 +240,6 @@ let esp32Config = {
 };
 
 let esp32StatusTimerId = null;
-
-let esp32AvailableSessions = [];
 
 let esp32StatusSnapshot = null;
 
@@ -673,6 +700,462 @@ function closeDeleteModal() {
   setDeleteModalBusy(false, "");
 }
 
+function sanitizeCategoryList(rawCategories) {
+  if (!Array.isArray(rawCategories)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const result = [];
+
+  rawCategories.forEach((item) => {
+    if (typeof item !== "string") {
+      return;
+    }
+
+    const value = item.trim();
+    if (!value) {
+      return;
+    }
+
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    result.push(value);
+  });
+
+  return result;
+}
+
+function setCategoryStatus(message = "", isError = false) {
+  if (!elCategoryStatus) {
+    return;
+  }
+
+  elCategoryStatus.textContent = message || "";
+  elCategoryStatus.classList.remove("is-error", "is-success");
+
+  if (!message) {
+    return;
+  }
+
+  elCategoryStatus.classList.add(isError ? "is-error" : "is-success");
+}
+
+function getCategoryForSession(sessionName, fallbackCategory = null) {
+  if (!sessionName) {
+    return fallbackCategory || null;
+  }
+
+  if (sessionCategories && sessionCategories.has(sessionName)) {
+    const stored = sessionCategories.get(sessionName);
+    if (typeof stored === "string" && stored.trim()) {
+      return stored;
+    }
+    return null;
+  }
+
+  if (typeof fallbackCategory === "string" && fallbackCategory.trim()) {
+    return fallbackCategory;
+  }
+
+  return null;
+}
+
+function formatSessionLabel(sessionName, fallbackCategory = null) {
+  const displayName = prettifySessionName(sessionName) || sessionName || "";
+  const category = getCategoryForSession(sessionName, fallbackCategory);
+  if (category) {
+    return `[${category}] ${displayName}`;
+  }
+  return displayName;
+}
+
+function rebuildSessionSelect(sessionNames, preferredValue, previousValue) {
+  if (!elSelect) {
+    return;
+  }
+
+  elSelect.innerHTML = "";
+
+  if (!Array.isArray(sessionNames) || !sessionNames.length) {
+    return;
+  }
+
+  const grouped = new Map();
+
+  sessionNames.forEach((name) => {
+    const key = getCategoryForSession(name) || "";
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key).push(name);
+  });
+
+  const categoryOrder = [];
+
+  availableCategories.forEach((category) => {
+    if (grouped.has(category)) {
+      categoryOrder.push(category);
+    }
+  });
+
+  if (grouped.has("")) {
+    categoryOrder.push("");
+  }
+
+  grouped.forEach((_, key) => {
+    if (!categoryOrder.includes(key)) {
+      categoryOrder.push(key);
+    }
+  });
+
+  const useGrouping = categoryOrder.length > 1;
+  const targetValue = preferredValue ?? previousValue ?? null;
+
+  const sortSessions = (items) =>
+    items.slice().sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+
+  categoryOrder.forEach((categoryKey) => {
+    const names = sortSessions(grouped.get(categoryKey) || []);
+
+    if (useGrouping) {
+      const optgroup = document.createElement("optgroup");
+      optgroup.label = categoryKey || "Sans cat\u00E9gorie";
+
+      names.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = formatSessionLabel(name);
+        optgroup.appendChild(option);
+      });
+
+      elSelect.appendChild(optgroup);
+    } else {
+      names.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = formatSessionLabel(name);
+        elSelect.appendChild(option);
+      });
+    }
+  });
+
+  if (!elSelect.options.length) {
+    return;
+  }
+
+  if (targetValue) {
+    const match = Array.from(elSelect.options).find(
+      (opt) => opt.value === targetValue
+    );
+    if (match) {
+      match.selected = true;
+      return;
+    }
+  }
+
+  elSelect.selectedIndex = 0;
+}
+
+function populateCategorySelect(select, selectedValue) {
+  if (!select) {
+    return;
+  }
+
+  const normalized = typeof selectedValue === "string" ? selectedValue : "";
+
+  select.innerHTML = "";
+
+  const optionNone = document.createElement("option");
+  optionNone.value = "";
+  optionNone.textContent = "-- Aucun --";
+  select.appendChild(optionNone);
+
+  const values = [...availableCategories];
+  if (normalized && !values.some((item) => item === normalized)) {
+    values.push(normalized);
+  }
+
+  values.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category;
+    option.textContent = category;
+    select.appendChild(option);
+  });
+
+  select.value = normalized;
+  select.dataset.currentCategory = normalized;
+}
+
+function renderCategoryManager(sessionNames) {
+  if (!elCategoryList) {
+    return;
+  }
+
+  elCategoryList.innerHTML = "";
+
+  if (!Array.isArray(sessionNames) || !sessionNames.length) {
+    const empty = document.createElement("p");
+    empty.className = "category-empty";
+    empty.textContent = "Aucune session disponible pour le moment.";
+    elCategoryList.appendChild(empty);
+    return;
+  }
+
+  const sorted = sessionNames
+    .slice()
+    .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+
+  sorted.forEach((session) => {
+    const row = document.createElement("div");
+    row.className = "category-row";
+    row.dataset.session = session;
+
+    const label = document.createElement("span");
+    label.className = "category-row-name";
+    label.textContent = prettifySessionName(session) || session;
+    row.appendChild(label);
+
+    const select = document.createElement("select");
+    select.className = "select category-row-select";
+    select.dataset.session = session;
+    populateCategorySelect(select, getCategoryForSession(session));
+    row.appendChild(select);
+
+    elCategoryList.appendChild(row);
+  });
+}
+
+function setCategoryRowBusy(row, busy) {
+  if (!row) {
+    return;
+  }
+
+  row.classList.toggle("category-row--busy", Boolean(busy));
+}
+
+function refreshAllCategorySelectOptions() {
+  if (!elCategoryList) {
+    return;
+  }
+
+  Array.from(elCategoryList.querySelectorAll(".category-row-select")).forEach(
+    (select) => {
+      const session = select.dataset.session;
+      populateCategorySelect(select, getCategoryForSession(session));
+    }
+  );
+  populateEsp32ButtonOptions();
+}
+
+function updateEntryCategory(entry, session, category) {
+  if (!entry || entry.session !== session) {
+    return entry;
+  }
+
+  return {
+    ...entry,
+    category: category || null,
+  };
+}
+
+function updateCachedPlaylistCategories(session, category) {
+  if (playlistCurrentData) {
+    playlistCurrentData = updateEntryCategory(playlistCurrentData, session, category);
+  }
+
+  if (Array.isArray(playlistQueueData) && playlistQueueData.length) {
+    playlistQueueData = playlistQueueData.map((item) =>
+      updateEntryCategory(item, session, category)
+    );
+  }
+
+  if (elPlaylistCurrent || elPlaylistList) {
+    renderPlaylist({
+      current: playlistCurrentData,
+      queue: playlistQueueData,
+    });
+  }
+}
+
+async function handleCategoryAdd() {
+  if (!elCategoryAddInput) {
+    return;
+  }
+
+  const rawName = elCategoryAddInput.value.trim();
+  if (!rawName) {
+    toast("Nom de cat\u00E9gorie vide", true);
+    setCategoryStatus("Nom de cat\u00E9gorie vide", true);
+    elCategoryAddInput.focus();
+    return;
+  }
+
+  if (categoryAddBusy) {
+    return;
+  }
+
+  categoryAddBusy = true;
+  setCategoryStatus(`Ajout de "${rawName}"...`);
+
+  if (elCategoryAddBtn) {
+    elCategoryAddBtn.disabled = true;
+  }
+
+  try {
+    const res = await fetch("/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: rawName }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message =
+        (payload && (payload.error || payload.message)) ||
+        `Erreur ${res.status}`;
+      throw new Error(message);
+    }
+
+    const created = res.status === 201;
+
+    availableCategories = sanitizeCategoryList(payload.categories);
+    const storedName =
+      typeof payload.category === "string" && payload.category.trim()
+        ? payload.category.trim()
+        : rawName;
+
+    refreshAllCategorySelectOptions();
+
+    if (created) {
+      setCategoryStatus(`Cat\u00E9gorie "${storedName}" ajout\u00E9e`);
+    } else {
+      setCategoryStatus(`Cat\u00E9gorie "${storedName}" d\u00E9j\u00E0 disponible`);
+    }
+
+    elCategoryAddInput.value = "";
+    elCategoryAddInput.focus();
+  } catch (error) {
+    const message =
+      error && error.message
+        ? error.message
+        : "Erreur lors de l'ajout de la cat\u00E9gorie";
+    toast(message, true);
+    setCategoryStatus(message, true);
+  } finally {
+    categoryAddBusy = false;
+    if (elCategoryAddBtn) {
+      elCategoryAddBtn.disabled = false;
+    }
+  }
+}
+
+async function persistSessionCategory(select, session, nextValue, previousValue) {
+  if (!select || !session) {
+    return;
+  }
+
+  const normalized =
+    typeof nextValue === "string" && nextValue.trim() ? nextValue.trim() : "";
+
+  const row = select.closest(".category-row");
+
+  setCategoryRowBusy(row, true);
+  select.disabled = true;
+  setCategoryStatus(
+    `Mise \u00E0 jour de "${prettifySessionName(session) || session}"...`
+  );
+
+  try {
+    const res = await fetch(
+      `/sessions/${encodeURIComponent(session)}/category`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: normalized || null }),
+      }
+    );
+
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message =
+        (payload && (payload.error || payload.message)) ||
+        `Erreur ${res.status}`;
+      throw new Error(message);
+    }
+
+    const storedCategory =
+      typeof payload.category === "string" && payload.category.trim()
+        ? payload.category.trim()
+        : null;
+
+    availableCategories = sanitizeCategoryList(payload.categories);
+    sessionCategories.set(session, storedCategory);
+
+    populateCategorySelect(select, storedCategory);
+    refreshAllCategorySelectOptions();
+
+    const currentValue = elSelect ? elSelect.value : null;
+    rebuildSessionSelect(cachedSessionNames, currentValue, currentValue);
+
+    updateCachedPlaylistCategories(session, storedCategory);
+
+    const prettyName = prettifySessionName(session) || session;
+    if (storedCategory) {
+      setCategoryStatus(
+        `Cat\u00E9gorie "${storedCategory}" appliqu\u00E9e \u00E0 ${prettyName}`
+      );
+    } else {
+      setCategoryStatus(`Cat\u00E9gorie supprim\u00E9e pour ${prettyName}`);
+    }
+
+    select.focus();
+  } catch (error) {
+    const message =
+      error && error.message
+        ? error.message
+        : "Erreur lors de la mise \u00E0 jour de la cat\u00E9gorie";
+    toast(message, true);
+    setCategoryStatus(message, true);
+    populateCategorySelect(select, previousValue || "");
+  } finally {
+    select.disabled = false;
+    setCategoryRowBusy(row, false);
+  }
+}
+
+function handleCategorySelectChange(event) {
+  const target = event.target;
+
+  if (!target || !(target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  if (!target.classList.contains("category-row-select")) {
+    return;
+  }
+
+  const session = target.dataset.session;
+  if (!session) {
+    return;
+  }
+
+  const previousValue = target.dataset.currentCategory || "";
+  const nextValue = target.value || "";
+
+  if (previousValue === nextValue) {
+    return;
+  }
+
+  persistSessionCategory(target, session, nextValue, previousValue);
+}
+
 async function fetchSessions(options = {}) {
   if (!elSelect) {
     syncDeleteSessionState();
@@ -684,64 +1167,94 @@ async function fetchSessions(options = {}) {
 
   const previousValue = keepCurrent ? elSelect.value : null;
 
+  setCategoryStatus("");
+
   try {
     const res = await fetch("/sessions");
 
     const data = await res.json();
 
-    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
+    const sessionNames = [];
+    const categoriesMap = new Map();
+    const seen = new Set();
 
-    elSelect.innerHTML = "";
+    rawSessions.forEach((entry) => {
+      if (entry && typeof entry === "object") {
+        const name =
+          typeof entry.name === "string"
+            ? entry.name
+            : typeof entry.session === "string"
+            ? entry.session
+            : null;
+        if (!name || seen.has(name)) {
+          return;
+        }
+        seen.add(name);
+        sessionNames.push(name);
+        const category =
+          typeof entry.category === "string" && entry.category.trim()
+            ? entry.category.trim()
+            : null;
+        categoriesMap.set(name, category);
+        return;
+      }
 
-    sessions.forEach((s) => {
-      const opt = document.createElement("option");
-
-      opt.value = s;
-
-      opt.textContent = s;
-
-      elSelect.appendChild(opt);
+      if (typeof entry === "string" && !seen.has(entry)) {
+        seen.add(entry);
+        sessionNames.push(entry);
+        categoriesMap.set(entry, null);
+      }
     });
 
-    esp32AvailableSessions = sessions;
+    cachedSessionNames = sessionNames.slice();
+    sessionCategories = categoriesMap;
+    availableCategories = sanitizeCategoryList(data.categories);
+
+    rebuildSessionSelect(sessionNames, preferred ?? previousValue, previousValue);
 
     populateEsp32ButtonOptions();
 
-    if (elSelect.options.length) {
-      const target = preferred ?? previousValue;
-
-      if (target) {
-        const match = Array.from(elSelect.options).find(
-          (opt) => opt.value === target
-        );
-
-        if (match) {
-          match.selected = true;
-        } else {
-          elSelect.selectedIndex = 0;
-        }
-      } else {
-        elSelect.selectedIndex = 0;
-      }
-    }
+    renderCategoryManager(sessionNames);
 
     syncDeleteSessionState();
 
-    return sessions;
+    return sessionNames;
   } catch (e) {
     console.error("Erreur lors du chargement des sessions:", e);
 
-    elSelect.innerHTML = "";
+    if (elSelect) {
+      elSelect.innerHTML = "";
+    }
 
-    esp32AvailableSessions = [];
+    sessionCategories = new Map();
+    availableCategories = [];
+    cachedSessionNames = [];
 
     populateEsp32ButtonOptions();
 
+    renderCategoryManager([]);
+
     syncDeleteSessionState();
+
+    setCategoryStatus("Impossible de charger les sessions", true);
 
     return [];
   }
 }
+
+elCategoryAddBtn?.addEventListener("click", () => {
+  handleCategoryAdd();
+});
+
+elCategoryAddInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    handleCategoryAdd();
+  }
+});
+
+elCategoryList?.addEventListener("change", handleCategorySelectChange);
 
 syncDeleteSessionState();
 
@@ -882,6 +1395,25 @@ function renderPlaylist(payload) {
     ? payload.queue
     : [];
 
+  if (
+    playlistCurrentData &&
+    playlistCurrentData.session &&
+    typeof playlistCurrentData.category === "string"
+  ) {
+    sessionCategories.set(
+      playlistCurrentData.session,
+      playlistCurrentData.category
+    );
+  }
+
+  if (Array.isArray(playlistQueueData) && playlistQueueData.length) {
+    playlistQueueData.forEach((item) => {
+      if (item && item.session && typeof item.category === "string") {
+        sessionCategories.set(item.session, item.category);
+      }
+    });
+  }
+
   if (elPlaylistCurrent) {
     elPlaylistCurrent.innerHTML = "";
 
@@ -892,7 +1424,12 @@ function renderPlaylist(payload) {
 
       const span = document.createElement("span");
 
-      span.textContent = " " + prettifySessionName(playlistCurrentData.session);
+      span.textContent =
+        " " +
+        formatSessionLabel(
+          playlistCurrentData.session,
+          playlistCurrentData.category
+        );
 
       elPlaylistCurrent.appendChild(strong);
 
@@ -929,7 +1466,10 @@ function renderPlaylist(payload) {
 
         name.className = "playlist-name";
 
-        name.textContent = `${index + 1}. ${prettifySessionName(item.session)}`;
+        name.textContent = `${index + 1}. ${formatSessionLabel(
+          item.session,
+          item.category
+        )}`;
 
         const controls = document.createElement("div");
 
@@ -1961,10 +2501,7 @@ function rebuildEsp32Buttons(count) {
     return;
   }
 
-  const total =
-    typeof count === "number" && Number.isFinite(count) && count > 0
-      ? Math.min(count, 12)
-      : ESP32_DEFAULT_BUTTON_COUNT;
+  const total = normalizeEsp32ButtonCount(count);
 
   esp32ButtonComponents.clear();
   elEsp32ButtonsContainer.innerHTML = "";
@@ -2022,9 +2559,38 @@ function rebuildEsp32Buttons(count) {
 }
 
 function populateEsp32ButtonOptions() {
-  const sessions = Array.isArray(esp32AvailableSessions)
-    ? esp32AvailableSessions
+  const seen = new Set();
+  const categoriesList = [];
+
+  const baseCategories = Array.isArray(availableCategories)
+    ? availableCategories
     : [];
+
+  baseCategories.forEach((category) => {
+    if (typeof category !== "string") {
+      return;
+    }
+    const value = category.trim();
+    if (!value || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    categoriesList.push(value);
+  });
+
+  (Array.isArray(esp32ButtonAssignments) ? esp32ButtonAssignments : []).forEach(
+    (category) => {
+      if (typeof category !== "string") {
+        return;
+      }
+      const value = category.trim();
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      categoriesList.push(value);
+    }
+  );
 
   esp32ButtonComponents.forEach(({ select }, index) => {
     if (!select) {
@@ -2041,35 +2607,50 @@ function populateEsp32ButtonOptions() {
     emptyOption.textContent = "-- Aucun --";
     select.append(emptyOption);
 
-    sessions.forEach((session) => {
+    categoriesList.forEach((category) => {
       const opt = document.createElement("option");
-      opt.value = session;
-      opt.textContent = session;
+      opt.value = category;
+      opt.textContent = category;
       select.append(opt);
     });
 
-    const target = assigned || previousValue || "";
+    const target = (assigned || previousValue || "").trim();
     if (target) {
-      if (!sessions.includes(target)) {
-        const missing = document.createElement("option");
-        missing.value = target;
-        missing.textContent = `${target} (absent)`;
-        missing.dataset.missing = "true";
-        select.append(missing);
+      if (!seen.has(target)) {
+        const opt = document.createElement("option");
+        opt.value = target;
+        opt.textContent = target;
+        opt.dataset.missing = "true";
+        select.append(opt);
       }
       select.value = target;
     } else {
       select.value = "";
     }
+
+    select.dataset.currentCategory = select.value || "";
   });
 }
 
 function applyEsp32ButtonAssignments(assignments) {
+  const total =
+    (esp32Config && Number.isFinite(esp32Config.buttonCount)
+      ? esp32Config.buttonCount
+      : ESP32_DEFAULT_BUTTON_COUNT) || ESP32_DEFAULT_BUTTON_COUNT;
+
+  const sanitized = [];
   if (Array.isArray(assignments)) {
-    esp32ButtonAssignments = assignments.slice();
+    for (let idx = 0; idx < total; idx += 1) {
+      const value = assignments[idx];
+      sanitized.push(typeof value === "string" ? value.trim() : "");
+    }
   } else {
-    esp32ButtonAssignments = [];
+    for (let idx = 0; idx < total; idx += 1) {
+      sanitized.push("");
+    }
   }
+
+  esp32ButtonAssignments = sanitized;
   populateEsp32ButtonOptions();
 }
 
@@ -2207,13 +2788,37 @@ async function fetchEsp32Buttons(options = {}) {
     const res = await fetch("/esp32/button-config");
     const data = await res.json();
 
-    if (res.ok && data && data.reachable) {
-      applyEsp32ButtonAssignments(
-        Array.isArray(data.sessions) ? data.sessions : []
-      );
-    } else {
+    if (Array.isArray(data?.categories)) {
+      availableCategories = sanitizeCategoryList(data.categories);
+    }
+
+    const assignments = Array.isArray(data?.assignments)
+      ? data.assignments
+      : Array.isArray(data?.sessions)
+      ? data.sessions
+      : [];
+    applyEsp32ButtonAssignments(assignments);
+
+    const states = Array.isArray(data?.states)
+      ? data.states
+      : Array.isArray(data?.buttons)
+      ? data.buttons
+      : null;
+    if (states) {
+      updateEsp32ButtonStates(states);
+    }
+
+    if (!res.ok) {
       const errorText =
-        data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
+        data?.error || `HTTP ${res.status}`;
+      if (!silent) {
+        toast(`ESP32 boutons: ${errorText}`, true);
+      }
+      return;
+    }
+
+    if (data && data.reachable === false) {
+      const errorText = data.error || "Injoignable";
       if (!silent) {
         toast(`ESP32 boutons: ${errorText}`, true);
       }
@@ -2393,7 +2998,9 @@ async function handleEsp32ButtonSave(buttonIndex) {
   }
 
   const { select, saveBtn } = entry;
-  const sessionValue = select ? select.value : "";
+  const categoryValue = select && typeof select.value === "string"
+    ? select.value.trim()
+    : "";
 
   esp32Busy.buttons = true;
 
@@ -2410,20 +3017,37 @@ async function handleEsp32ButtonSave(buttonIndex) {
       },
       body: JSON.stringify({
         button: buttonIndex,
-        session: sessionValue || "",
+        category: categoryValue,
       }),
     });
     const data = await res.json();
 
     if (res.ok && data && data.success !== false) {
-      if (Array.isArray(data.sessions)) {
+      if (Array.isArray(data.categories)) {
+        availableCategories = sanitizeCategoryList(data.categories);
+      }
+      if (Array.isArray(data.assignments)) {
+        applyEsp32ButtonAssignments(data.assignments);
+      } else if (Array.isArray(data.sessions)) {
         applyEsp32ButtonAssignments(data.sessions);
       } else {
-        esp32ButtonAssignments[buttonIndex] = sessionValue || "";
+        esp32ButtonAssignments[buttonIndex] = categoryValue;
         populateEsp32ButtonOptions();
       }
-      toast(`Bouton ${buttonIndex + 1} mis a jour`);
-      await refreshEsp32Status({ silent: true });
+      if (select) {
+        select.dataset.currentCategory = categoryValue;
+      }
+      const label = categoryValue ? ` -> ${categoryValue}` : "";
+      toast(`Bouton ${buttonIndex + 1} mis a jour${label}`);
+
+      if (data && data.reachable === false && data.error) {
+        toast(
+          `ESP32 bouton ${buttonIndex + 1}: ${data.error} (non applique sur l'ESP32)`,
+          true
+        );
+      } else {
+        await refreshEsp32Status({ silent: true });
+      }
     } else {
       const errorText =
         data?.error || (res.ok ? "Injoignable" : `HTTP ${res.status}`);
@@ -2469,10 +3093,7 @@ async function fetchEsp32Config() {
           ? data.port
           : parseInt(data.port, 10) || 80,
       enabled: Boolean(data.enabled),
-      buttonCount:
-        typeof data.buttonCount === "number" && data.buttonCount > 0
-          ? data.buttonCount
-          : ESP32_DEFAULT_BUTTON_COUNT,
+      buttonCount: normalizeEsp32ButtonCount(data.buttonCount),
     };
 
     if (elEsp32Host) {
@@ -2560,10 +3181,7 @@ async function handleEsp32ConfigSubmit(event) {
           ? data.port
           : parseInt(data.port, 10) || 80,
       enabled: Boolean(data.enabled),
-      buttonCount:
-        typeof data.buttonCount === "number" && data.buttonCount > 0
-          ? data.buttonCount
-          : ESP32_DEFAULT_BUTTON_COUNT,
+      buttonCount: normalizeEsp32ButtonCount(data.buttonCount),
     };
 
     if (elEsp32Host) {
@@ -2665,7 +3283,12 @@ function initEsp32Section() {
       ) {
         const idx = parseInt(target.dataset.esp32Button, 10);
         if (Number.isInteger(idx)) {
-          esp32ButtonAssignments[idx] = target.value || "";
+          const value =
+            target && typeof target.value === "string"
+              ? target.value.trim()
+              : "";
+          esp32ButtonAssignments[idx] = value;
+          target.dataset.currentCategory = value;
         }
       }
     });
