@@ -14,10 +14,24 @@
         <div class="site-header-main">
             <div class="site-title">
                 <h1>Skull Player</h1>
-                <p class="subtitle">Faites jouer votre Skull avec un MP3 et un fichier <code>facial_motors.json</code>
+                <p class="subtitle">Donnez vie à votre Skull
                 </p>
             </div>
             <div class="connection-banner" aria-live="polite">
+                <div class="header-volume connection-chip connection-chip--secondary" role="group"
+                    aria-label="Volume Bluetooth">
+                    <button class="header-mute-btn" type="button" data-volume-action="mute" aria-label="Couper le son">
+                        <span class="header-mute-icon" aria-hidden="true">&#128263;</span>
+                        <span class="header-mute-label">Mute</span>
+                    </button>
+                    <div class="header-volume-slider">
+                        <label class="sr-only" for="volumeSlider">Niveau Bluetooth</label>
+                        <input id="volumeSlider" class="volume-slider-input" type="range" min="0" max="127" value="0"
+                            step="1" />
+                        <span id="volumeSliderValue" class="volume-slider-value header-volume-value"
+                            aria-live="polite">0</span>
+                    </div>
+                </div>
                 <div id="connectionStatus" class="connection-chip offline" role="status">
                     <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
                     <span id="connectionStatusText" class="connection-label">Skull : inconnu</span>
@@ -99,21 +113,54 @@
                 </div>
             </section>
 
-            <section class="card volume-card">
+            <section class="card upload-card">
                 <header class="card-header">
-                    <h2>Volume &amp; Services</h2>
+                    <h2>Uploader une session</h2>
                 </header>
-                <div class="volume-controls" role="group" aria-label="Contrôles volume Bluetooth">
-                    <button class="btn secondary" type="button" data-volume-action="down">− Volume</button>
-                    <button class="btn secondary" type="button" data-volume-action="mute">🔇 Mute</button>
-                    <button class="btn secondary" type="button" data-volume-action="up">+ Volume</button>
-                </div>
-                <div class="bluetooth-status-block">
-                    <div id="bluetoothStatus" class="bt-status is-unknown" role="status" aria-live="polite">
-                        <span id="bluetoothStatusDot" class="bt-dot" aria-hidden="true"></span>
-                        <span id="bluetoothStatusText" class="bt-label">Bluetooth : inconnu</span>
+                <details class="accordion-item" open>
+                    <summary>Formulaire d&apos;upload</summary>
+                    <div class="accordion-content">
+                        <form id="uploadForm" class="upload-form" autocomplete="off">
+                            <label class="label" for="sceneName">Nom de la sc&egrave;ne</label>
+                            <input id="sceneName" class="input" type="text" maxlength="50"
+                                placeholder="Nom de la sc&egrave;ne" autocomplete="off" />
+
+                            <div class="picker-row">
+                                <button id="btnPickJson" class="btn secondary" type="button">Choisir JSON</button>
+                                <button id="btnPickMp3" class="btn secondary" type="button">Choisir MP3</button>
+                            </div>
+
+                            <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de d&eacute;p&ocirc;t">
+                                <div class="dropzone-inner">
+                                    <div class="dz-icon">&uarr;</div>
+                                    <div class="dz-text">
+                                        D&eacute;posez ici votre <strong>JSON</strong> et votre
+                                        <strong>MP3</strong><br />
+                                        <span class="dz-sub">ou cliquez pour parcourir...</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input id="fileJson" type="file" name="json" accept=".json" hidden />
+                            <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
+
+                            <div class="file-list" id="fileList">
+                                <div class="file-pill" id="pillJson">
+                                    JSON : <span class="file-name" data-empty>aucun</span>
+                                </div>
+                                <div class="file-pill" id="pillMp3">
+                                    MP3 : <span class="file-name" data-empty>aucun</span>
+                                </div>
+                            </div>
+
+                            <button id="btnUpload" class="btn primary" type="submit">Charger l&apos;animation</button>
+
+                            <div id="uploadProgress" class="progress" hidden>
+                                <div id="uploadBar" class="bar"></div>
+                            </div>
+                        </form>
                     </div>
-                </div>
+                </details>
             </section>
 
             <section class="card esp32-card" id="esp32Card">
@@ -225,54 +272,6 @@
                 </details>
             </section>
 
-            <section class="card upload-card">
-                <header class="card-header">
-                    <h2>Uploader une session</h2>
-                </header>
-                <details class="accordion-item" open>
-                    <summary>Formulaire d&apos;upload</summary>
-                    <div class="accordion-content">
-                        <form id="uploadForm" class="upload-form" autocomplete="off">
-                            <label class="label" for="sceneName">Nom de la scène</label>
-                            <input id="sceneName" class="input" type="text" maxlength="50" placeholder="Nom de la scène"
-                                autocomplete="off" />
-
-                            <div class="picker-row">
-                                <button id="btnPickJson" class="btn secondary" type="button">Choisir JSON</button>
-                                <button id="btnPickMp3" class="btn secondary" type="button">Choisir MP3</button>
-                            </div>
-
-                            <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de dépôt">
-                                <div class="dropzone-inner">
-                                    <div class="dz-icon">🕸</div>
-                                    <div class="dz-text">
-                                        Déposez ici votre <strong>JSON</strong> et votre <strong>MP3</strong><br />
-                                        <span class="dz-sub">ou cliquez pour parcourir…</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <input id="fileJson" type="file" name="json" accept=".json" hidden />
-                            <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
-
-                            <div class="file-list" id="fileList">
-                                <div class="file-pill" id="pillJson">
-                                    JSON : <span class="file-name" data-empty>aucun</span>
-                                </div>
-                                <div class="file-pill" id="pillMp3">
-                                    MP3 : <span class="file-name" data-empty>aucun</span>
-                                </div>
-                            </div>
-
-                            <button id="btnUpload" class="btn primary" type="submit">Charger l&apos;animation</button>
-
-                            <div id="uploadProgress" class="progress" hidden>
-                                <div id="uploadBar" class="bar"></div>
-                            </div>
-                        </form>
-                    </div>
-                </details>
-            </section>
 
         </div>
 

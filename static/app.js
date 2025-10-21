@@ -93,6 +93,8 @@ const elDeleteModalCancel = $("#deleteSessionCancel");
 const elDeleteModalClose = $("#deleteSessionClose");
 
 const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
+const elVolumeSlider = document.getElementById("volumeSlider");
+const elVolumeSliderValue = document.getElementById("volumeSliderValue");
 
 const elBtStatus = document.getElementById("bluetoothStatus");
 
@@ -197,6 +199,9 @@ let playlistFetchInFlight = false;
 let lastPlaylistFetch = 0;
 
 let volumeBusy = false;
+let volumePendingValue = null;
+let volumeSliderActive = false;
+let volumeSliderDebounce = null;
 
 let shuffleBusy = false;
 
@@ -1915,11 +1920,60 @@ async function updateStatus() {
 }
 
 function setVolumeButtonsDisabled(disabled) {
-  if (!elVolumeButtons || !elVolumeButtons.length) return;
+  if (elVolumeButtons && elVolumeButtons.length) {
+    elVolumeButtons.forEach((btn) => {
+      if (btn) btn.disabled = disabled;
+    });
+  }
 
-  elVolumeButtons.forEach((btn) => {
-    if (btn) btn.disabled = disabled;
-  });
+  if (elVolumeSlider) {
+    if (disabled) {
+      elVolumeSlider.setAttribute("disabled", "disabled");
+    } else {
+      elVolumeSlider.removeAttribute("disabled");
+    }
+  }
+}
+
+function clampVolumeSliderValue(value) {
+  if (!elVolumeSlider) return 0;
+  const minRaw = Number(elVolumeSlider.min);
+  const maxRaw = Number(elVolumeSlider.max);
+  const min = Number.isFinite(minRaw) ? minRaw : 0;
+  const max = Number.isFinite(maxRaw) ? maxRaw : 127;
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return min;
+  return Math.min(max, Math.max(min, Math.round(raw)));
+}
+
+function setVolumeSliderValue(value, force = false) {
+  if (!elVolumeSlider) return;
+  if (!force && volumeSliderActive) return;
+  const clamped = clampVolumeSliderValue(value);
+  elVolumeSlider.value = String(clamped);
+  if (elVolumeSliderValue) {
+    elVolumeSliderValue.textContent = String(clamped);
+  }
+}
+
+function scheduleVolumeSet(value) {
+  if (!elVolumeSlider) return;
+  const clamped = clampVolumeSliderValue(value);
+  volumePendingValue = clamped;
+  if (volumeSliderDebounce) {
+    clearTimeout(volumeSliderDebounce);
+  }
+  volumeSliderDebounce = setTimeout(() => {
+    volumeSliderDebounce = null;
+    triggerPendingVolumeSet();
+  }, 150);
+}
+
+function triggerPendingVolumeSet() {
+  if (volumeBusy || volumePendingValue === null) return;
+  const value = volumePendingValue;
+  volumePendingValue = null;
+  sendVolumeAction("set", value);
 }
 
 function setRestartServiceDisabled(disabled) {
@@ -1939,6 +1993,8 @@ function applyBluetoothStatus(info) {
 
   let topState = "unknown";
 
+  let sliderTarget = null;
+
   if (info && typeof info === "object") {
     if (info.connected === true) {
       statusClass += " is-connected";
@@ -1952,6 +2008,7 @@ function applyBluetoothStatus(info) {
       ) {
         const pct = Math.max(0, Math.min(100, Math.round(info.volume_percent)));
         volumeSuffix = ` (${pct}%)`;
+        sliderTarget = info.volume_percent;
       }
 
       text = "Bluetooth : connecte" + volumeSuffix;
@@ -1963,6 +2020,7 @@ function applyBluetoothStatus(info) {
       text = "Bluetooth : deconnecte";
 
       topState = "offline";
+      sliderTarget = 0;
     } else {
       statusClass += " is-unknown";
 
@@ -2007,6 +2065,10 @@ function applyBluetoothStatus(info) {
 
   if (elBtTopStatusText) {
     elBtTopStatusText.textContent = text;
+  }
+
+  if (sliderTarget !== null) {
+    setVolumeSliderValue(sliderTarget);
   }
 }
 
@@ -2128,20 +2190,36 @@ async function triggerShuffleAll() {
   }
 }
 
-async function sendVolumeAction(action) {
-  if (!action || volumeBusy) return;
+async function sendVolumeAction(action, value) {
+  if (!action) return;
+
+  let targetValue = null;
+  if (action === "set") {
+    targetValue = clampVolumeSliderValue(value);
+    if (volumeBusy) {
+      volumePendingValue = targetValue;
+      return;
+    }
+  } else if (volumeBusy) {
+    return;
+  }
 
   volumeBusy = true;
 
   setVolumeButtonsDisabled(true);
 
   try {
+    const body = { action };
+    if (action === "set") {
+      body.value = targetValue;
+    }
+
     const response = await fetch("/volume", {
       method: "POST",
 
       headers: { "Content-Type": "application/json" },
 
-      body: JSON.stringify({ action }),
+      body: JSON.stringify(body),
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -2151,22 +2229,40 @@ async function sendVolumeAction(action) {
     if (!ok) {
       const message =
         (payload && (payload.error || payload.message)) ||
-        `Commande volume Ã©chouÃ©e (${response.status})`;
+        `Commande volume echouee (${response.status})`;
 
       toast(message, true);
     } else {
-      const message =
-        (payload && payload.message) ||
-        (action === "mute" ? "Volume coupÃ©" : "Volume ajustÃ©");
+      const reportedVolume =
+        payload && typeof payload.volume === "number"
+          ? payload.volume
+          : null;
 
-      toast(message);
+      if (action === "mute") {
+        setVolumeSliderValue(0, true);
+      } else if (action === "set") {
+        const applied = reportedVolume !== null ? reportedVolume : targetValue;
+        setVolumeSliderValue(applied, true);
+      } else if (reportedVolume !== null) {
+        setVolumeSliderValue(reportedVolume, true);
+      }
+
+      if (action !== "set") {
+        const message =
+          (payload && payload.message) ||
+          (action === "mute" ? "Volume coupe" : "Volume ajuste");
+
+        toast(message);
+      }
     }
   } catch (error) {
-    toast("Erreur rÃ©seau /volume", true);
+    toast("Erreur reseau /volume", true);
   } finally {
     setVolumeButtonsDisabled(false);
 
     volumeBusy = false;
+
+    triggerPendingVolumeSet();
   }
 }
 
@@ -3337,10 +3433,57 @@ window.addEventListener("load", () => {
     elVolumeButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
         const action = btn.dataset.volumeAction;
+        if (!action) return;
+
+        if (action === "mute") {
+          if (volumeSliderDebounce) {
+            clearTimeout(volumeSliderDebounce);
+            volumeSliderDebounce = null;
+          }
+          volumePendingValue = null;
+          setVolumeSliderValue(0, true);
+        }
 
         sendVolumeAction(action);
       });
     });
+  }
+
+  if (elVolumeSlider) {
+    const initialValue =
+      typeof elVolumeSlider.value === "string" && elVolumeSlider.value !== ""
+        ? Number(elVolumeSlider.value)
+        : clampVolumeSliderValue(elVolumeSlider.min || 0);
+    setVolumeSliderValue(initialValue, true);
+
+    const endSliderInteraction = () => {
+      volumeSliderActive = false;
+    };
+
+    elVolumeSlider.addEventListener("input", (event) => {
+      volumeSliderActive = true;
+      const value = clampVolumeSliderValue(event.target.value);
+      setVolumeSliderValue(value, true);
+      scheduleVolumeSet(value);
+    });
+
+    elVolumeSlider.addEventListener("change", (event) => {
+      const value = clampVolumeSliderValue(event.target.value);
+      setVolumeSliderValue(value, true);
+      if (volumeSliderDebounce) {
+        clearTimeout(volumeSliderDebounce);
+        volumeSliderDebounce = null;
+      }
+      volumePendingValue = value;
+      triggerPendingVolumeSet();
+      endSliderInteraction();
+    });
+
+    ["pointerup", "pointercancel", "mouseup", "touchend", "blur"].forEach(
+      (evt) => {
+        elVolumeSlider.addEventListener(evt, endSliderInteraction);
+      }
+    );
   }
 
   if (elShuffleAllBtn) {

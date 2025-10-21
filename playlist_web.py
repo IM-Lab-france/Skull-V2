@@ -23,8 +23,9 @@ LIBRARY_ROOT = (
 COOLDOWN_SECONDS = int(os.environ.get("PLAYLIST_COOLDOWN", DEFAULT_COOLDOWN_SECONDS))
 FORWARD_TIMEOUT = float(os.environ.get("PLAYLIST_FORWARD_TIMEOUT", "10"))
 STATUS_TIMEOUT = float(os.environ.get("PLAYLIST_STATUS_TIMEOUT", "6"))
+VOLUME_MAX = int(os.environ.get("PLAYLIST_VOLUME_MAX", "127"))
 
-VOLUME_ACTIONS = {"up", "down", "mute"}
+VOLUME_ACTIONS = {"up", "down", "mute", "set"}
 
 HEADER_IMAGE_SRC = "/static/web.png"
 HEADER_IMAGE_CLASS = "fixed-header-image"
@@ -209,10 +210,21 @@ def api_volume() -> Response:
     if action not in VOLUME_ACTIONS:
         return _json({"error": "Action volume inconnue"}, status=400)
 
+    payload = {"action": action}
+    if action == "set":
+        if "value" not in data:
+            return _json({"error": "Valeur volume manquante"}, status=400)
+        try:
+            value = int(float(data.get("value")))
+        except (TypeError, ValueError):
+            return _json({"error": "Valeur volume invalide"}, status=400)
+        value = max(0, min(VOLUME_MAX, value))
+        payload["value"] = value
+
     try:
         upstream = requests.post(
             f"{_backend_base_url()}/volume",
-            json={"action": action},
+            json=payload,
             timeout=FORWARD_TIMEOUT,
         )
     except requests.RequestException as exc:

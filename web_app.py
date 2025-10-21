@@ -72,7 +72,7 @@ ESP32_DEFAULT_CONFIG = {"host": "", "port": 80, "enabled": False}
 ESP32_BUTTON_COUNT = 3
 ESP32_HTTP_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
 
-VOLUME_ACTIONS = {"up", "down", "mute"}
+VOLUME_ACTIONS = {"up", "down", "mute", "set"}
 
 _SESSION_CATEGORY_DEFAULTS = {
     "categories": ["enfant", "adulte"],
@@ -304,16 +304,16 @@ def _set_transport_volume(
     return True, volume, proc
 
 
-def _run_volume_action(action: str) -> tuple[bool, str]:
+def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bool, str, int | None]:
     try:
         transport, list_proc = _pick_transport_path()
     except FileNotFoundError as exc:
-        return False, f"bluetoothctl introuvable: {exc}"
+        return False, f"bluetoothctl introuvable: {exc}", None
     except subprocess.TimeoutExpired:
-        return False, "Commande bluetoothctl expirée"
+        return False, "Commande bluetoothctl expiree", None
     except Exception:
         servo_logger.logger.exception("VOLUME_TRANSPORT_LIST_FAILURE")
-        return False, "Erreur bluetoothctl (voir logs)"
+        return False, "Erreur bluetoothctl (voir logs)", None
 
     if not transport:
         detail = ((list_proc.stdout or "") + (list_proc.stderr or "")).strip()
@@ -323,15 +323,15 @@ def _run_volume_action(action: str) -> tuple[bool, str]:
         if not transport:
             if detail:
                 servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
-            return False, "Aucun transport bluetooth actif (périphérique connecté ?)"
+            return False, "Aucun transport bluetooth actif (peripherique connecte ?)", None
 
     try:
         current, history = _get_transport_volume(transport)
     except subprocess.TimeoutExpired:
-        return False, "Lecture du volume bluetooth expirée"
+        return False, "Lecture du volume bluetooth expiree", None
     except Exception:
         servo_logger.logger.exception("VOLUME_READ_ERROR")
-        return False, "Lecture du volume bluetooth impossible"
+        return False, "Lecture du volume bluetooth impossible", None
 
     if current is None:
         for idx, proc in enumerate(history):
@@ -342,9 +342,26 @@ def _run_volume_action(action: str) -> tuple[bool, str]:
                 (proc.stdout or "").strip(),
                 (proc.stderr or "").strip(),
             )
-        return False, "Impossible de lire le volume bluetooth"
+        return False, "Impossible de lire le volume bluetooth", None
 
-    if current == 0 and action in ("up", "down"):
+    if not isinstance(current, (int, float)):
+        return False, "Impossible de lire le volume bluetooth", None
+
+    current_value = int(round(current))
+
+    resume_needed = False
+    if current_value == 0:
+        if action in ("up", "down"):
+            resume_needed = True
+        elif action == "set" and target_value is not None:
+            try:
+                resume_target = int(float(target_value))
+            except (TypeError, ValueError):
+                resume_target = 0
+            if resume_target > 0:
+                resume_needed = True
+
+    if resume_needed:
         resume_proc = _bluetoothctl_script("menu player", "play")
         resume_stdout = (resume_proc.stdout or "").strip()
         resume_stderr = (resume_proc.stderr or "").strip()
@@ -355,58 +372,72 @@ def _run_volume_action(action: str) -> tuple[bool, str]:
             resume_stderr,
         )
         if resume_proc.returncode != 0:
-            return False, "Impossible de réactiver le transport bluetooth"
+            return False, "Impossible de reactiver le transport bluetooth", None
         try:
             current, history = _get_transport_volume(transport)
         except subprocess.TimeoutExpired:
-            return False, "Lecture du volume bluetooth expirée"
+            return False, "Lecture du volume bluetooth expiree", None
         except Exception:
             servo_logger.logger.exception("VOLUME_READ_ERROR_POST_RESUME")
-            return False, "Lecture du volume bluetooth impossible"
-        if current is None:
-            return False, "Impossible de lire le volume bluetooth"
-    target = current
+            return False, "Lecture du volume bluetooth impossible", None
+        if current is None or not isinstance(current, (int, float)):
+            return False, "Impossible de lire le volume bluetooth", None
+        current_value = int(round(current))
+
+    target = current_value
     if action == "up":
-        target = min(VOLUME_MAX, current + VOLUME_STEP)
-        if target == current:
-            return True, f"Volume déjà au maximum ({current})"
+        target = min(VOLUME_MAX, current_value + VOLUME_STEP)
+        if target == current_value:
+            return True, f"Volume deja au maximum ({current_value})", current_value
     elif action == "down":
-        target = max(0, current - VOLUME_STEP)
-        if target == current:
-            return True, f"Volume déjà au minimum ({current})"
+        target = max(0, current_value - VOLUME_STEP)
+        if target == current_value:
+            return True, f"Volume deja au minimum ({current_value})", current_value
     elif action == "mute":
-        if current == 0:
-            return True, "Volume déjà à 0"
+        if current_value == 0:
+            return True, "Volume deja a 0", 0
         target = 0
+    elif action == "set":
+        if target_value is None:
+            return False, "Valeur volume manquante", None
+        try:
+            target_int = int(float(target_value))
+        except (TypeError, ValueError):
+            return False, "Valeur volume invalide", None
+        target_int = max(0, min(VOLUME_MAX, target_int))
+        target = target_int
+        if target_int == current_value:
+            return True, f"Volume deja a {target_int}", target_int
     else:
-        return False, "Unknown volume action"
+        return False, "Unknown volume action", None
 
     try:
-        success, applied, proc = _set_transport_volume(transport, target)
+        success, applied, proc = _set_transport_volume(transport, int(target))
     except subprocess.TimeoutExpired:
-        return False, "Réglage du volume bluetooth expiré"
+        return False, "Reglage du volume bluetooth expire", None
     except Exception:
         servo_logger.logger.exception("VOLUME_WRITE_ERROR")
-        return False, "Réglage du volume bluetooth impossible"
+        return False, "Reglage du volume bluetooth impossible", None
 
     if not success:
         detail = ((proc.stderr or "") or (proc.stdout or "")).strip()
         servo_logger.logger.warning(
             "VOLUME_SET_FAILED | code=%s | output=%s", proc.returncode, detail
         )
-        return False, detail or "Commande volume bluetoothctl refusée"
+        return False, detail or "Commande volume bluetoothctl refusee", None
 
-    applied_value = applied if applied is not None else target
+    applied_source = applied if isinstance(applied, (int, float)) else target
+    applied_value = int(round(applied_source))
     servo_logger.logger.debug(
         "VOLUME_SET | action=%s | transport=%s | from=%s | to=%s",
         action,
         transport,
-        current,
+        current_value,
         applied_value,
     )
     if action == "mute":
-        return True, "Volume coupé"
-    return True, f"Volume réglé à {applied_value}"
+        return True, "Volume coupe", applied_value
+    return True, f"Volume regle a {applied_value}", applied_value
 
 
 # --- Channels (default: all enabled)
@@ -2109,10 +2140,22 @@ def volume():
     if action not in VOLUME_ACTIONS:
         return jsonify({"error": "Unknown volume action"}), 400
 
-    ok, message = _run_volume_action(action)
+    target_value: int | None = None
+    if action == "set":
+        if "value" not in payload:
+            return jsonify({"error": "Valeur volume manquante"}), 400
+        try:
+            target_value = int(float(payload.get("value")))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return jsonify({"error": "Valeur volume invalide"}), 400
+        target_value = max(0, min(VOLUME_MAX, target_value))
+
+    ok, message, applied = _run_volume_action(action, target_value)
     response = {"action": action, "ok": ok}
     if message:
         response["message"] = message
+    if applied is not None:
+        response["volume"] = int(applied)
     status = 200 if ok else 500
     return jsonify(response), status
 
