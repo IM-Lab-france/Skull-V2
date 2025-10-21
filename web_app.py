@@ -531,6 +531,14 @@ _current_entry_lock = threading.Lock()
 _current_entry: Optional[dict[str, Any]] = None
 
 
+# Keep ESP32 relay active for a brief window while the next track loads
+TRANSITION_HOLD_SECONDS = float(os.environ.get("PLAYLIST_TRANSITION_HOLD", "4.0"))
+_TRANSITION_HOLD_REASONS = {"completed", "skip"}
+_transition_state_lock = threading.Lock()
+_last_finish_ts: float = 0.0
+_last_finish_reason: Optional[str] = None
+
+
 def _set_current_entry(entry: Optional[dict[str, Any]]) -> None:
     global _current_entry
     with _current_entry_lock:
@@ -743,6 +751,11 @@ def _handle_track_finished(
     if error:
         log_bits.append(f"error={error}")
     servo_logger.logger.info("PLAYLIST_FINISHED | " + " | ".join(log_bits))
+
+    global _last_finish_ts, _last_finish_reason
+    with _transition_state_lock:
+        _last_finish_ts = time.time()
+        _last_finish_reason = reason
 
     if reason != "replace":
         _set_current_entry(None)
@@ -1578,6 +1591,27 @@ def esp32_button_play(button_index: int):
             400,
         )
 
+    try:
+        status_info = player.status()
+    except Exception:
+        status_info = {}
+
+    running = bool(status_info.get("running"))
+    has_queue = playlist.has_items()
+    has_current = _get_current_entry() is not None
+    if running or has_queue or has_current:
+        return (
+            jsonify(
+                {
+                    "error": "Lecture en cours. Attendre la fin avant de relancer via l'ESP32.",
+                    "status": "busy",
+                    "running": running,
+                    "queue_size": playlist.size(),
+                }
+            ),
+            409,
+        )
+
     assignments = _load_button_assignments()
     try:
         category = assignments[button_index]
@@ -1747,10 +1781,42 @@ def sessions():
 def api_sessions():
     categories_data = _load_session_categories()
     mapping = categories_data["sessions"]
+
+    current_raw = _get_current_entry()
+    queue_raw = playlist.snapshot()
+    enriched_current = _enrich_entry_with_category(current_raw, mapping)
+    enriched_queue = _enrich_queue_with_categories(queue_raw, mapping)
+
     playlist_snapshot = {
-        "current": _enrich_entry_with_category(_get_current_entry(), mapping),
-        "queue": _enrich_queue_with_categories(playlist.snapshot(), mapping),
+        "current": enriched_current,
+        "queue": enriched_queue,
     }
+
+    original_queue_length = len(enriched_queue)
+    now = time.time()
+    with _transition_state_lock:
+        last_finish_ts = _last_finish_ts
+        last_finish_reason = _last_finish_reason
+
+    hold_active = (
+        enriched_current is None
+        and enriched_queue
+        and last_finish_reason in _TRANSITION_HOLD_REASONS
+        and last_finish_ts > 0.0
+        and (now - last_finish_ts) <= TRANSITION_HOLD_SECONDS
+    )
+
+    if hold_active:
+        placeholder_entry = enriched_queue[0].copy()
+        placeholder_entry["pending"] = True
+        placeholder_entry["transitioning"] = True
+        placeholder_entry["transition_reason"] = last_finish_reason
+        placeholder_entry["transition_started_at"] = last_finish_ts
+        playlist_snapshot["current"] = placeholder_entry
+        playlist_snapshot["queue"] = enriched_queue[1:]
+    else:
+        playlist_snapshot["queue"] = enriched_queue
+
     meta = _client_request_metadata()
     current_entry = playlist_snapshot["current"]
     current_session = (
@@ -1758,14 +1824,16 @@ def api_sessions():
         if isinstance(current_entry, dict)
         else None
     )
-    queue_length = len(playlist_snapshot["queue"])
+    queue_length = original_queue_length
+    transition_state = "pending" if hold_active else "steady"
     servo_logger.logger.info(
-        "ESP32_STATUS_POLL | remote=%s | forwarded=%s | ua=%s | current=%s | queue_len=%s",
+        "ESP32_STATUS_POLL | remote=%s | forwarded=%s | ua=%s | current=%s | queue_len=%s | transition=%s",
         meta["client_ip"],
         meta["forwarded_for"],
         meta["user_agent"],
         current_session or "-",
         queue_length,
+        transition_state,
     )
     return jsonify(
         {
