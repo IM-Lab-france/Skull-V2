@@ -1482,27 +1482,36 @@ function renderPlaylist(payload) {
 
         const btnUp = document.createElement("button");
 
-        btnUp.className = "playlist-btn";
+        btnUp.className = "playlist-btn icon-only";
 
         btnUp.dataset.action = "up";
 
-        btnUp.textContent = "Monter";
+        btnUp.setAttribute("aria-label", "Monter");
+
+        btnUp.innerHTML =
+          '<span aria-hidden="true" class="playlist-icon playlist-icon--up">&#9650;</span>';
 
         const btnDown = document.createElement("button");
 
-        btnDown.className = "playlist-btn";
+        btnDown.className = "playlist-btn icon-only";
 
         btnDown.dataset.action = "down";
 
-        btnDown.textContent = "Descendre";
+        btnDown.setAttribute("aria-label", "Descendre");
+
+        btnDown.innerHTML =
+          '<span aria-hidden="true" class="playlist-icon playlist-icon--down">&#9660;</span>';
 
         const btnDelete = document.createElement("button");
 
-        btnDelete.className = "playlist-btn danger";
+        btnDelete.className = "playlist-btn danger icon-only";
 
         btnDelete.dataset.action = "delete";
 
-        btnDelete.textContent = "Supprimer";
+        btnDelete.setAttribute("aria-label", "Supprimer");
+
+        btnDelete.innerHTML =
+          '<span aria-hidden="true" class="playlist-icon playlist-icon--delete">&#128465;</span>';
 
         controls.appendChild(btnUp);
 

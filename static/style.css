@@ -173,7 +173,7 @@ body.theme-halloween::after {
 /* ========= Layout principal ========= */
 .layout {
     display: grid;
-    gap: 24px;
+    gap: 10px;
     align-items: start;
     grid-template-columns: 1fr;
 }
@@ -321,6 +321,24 @@ body.theme-halloween::after {
 
 .playlist-btn.danger {
     border-color: rgba(220, 53, 69, .6);
+    color: var(--danger);
+}
+
+.playlist-btn.icon-only {
+    padding: 4px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.playlist-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.playlist-icon--delete {
     color: var(--danger);
 }
 
