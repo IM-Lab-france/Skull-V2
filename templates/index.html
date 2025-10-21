@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 
 <head>
@@ -6,360 +6,491 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Skull Player</title>
     <link rel="stylesheet" href="/static/style.css" />
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='SkullPlayer.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='SkullPlayer.png') }}" />
 </head>
 
 <body class="theme-halloween">
-    <div class="connection-banner" aria-live="polite">
-        <div id="connectionStatus" class="connection-chip offline" role="status">
-            <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
-            <span id="connectionStatusText" class="connection-label">Skull : inconnu</span>
-        </div>
-        <div id="bluetoothTopStatus" class="connection-chip connection-chip--secondary unknown" role="status">
-            <span id="bluetoothTopStatusDot" class="connection-dot" aria-hidden="true"></span>
-            <span id="bluetoothTopStatusText" class="connection-label">Bluetooth : inconnu</span>
-        </div>
-        <div id="esp32TopStatus" class="connection-chip connection-chip--secondary disabled" role="status">
-            <span id="esp32TopStatusDot" class="connection-dot" aria-hidden="true"></span>
-            <span id="esp32TopStatusText" class="connection-label">ESP32 : inactif</span>
-        </div>
-    </div>
-
     <header class="site-header">
-        <h1>Skull Player</h1>
-        <p class="subtitle">Faites jouer votre Skull avec un MP3 et un fichier <code>facial_motors.json</code></p>
-    </header>
-
-    <main class="container">
-        <div class="layout layout-5050">
-            <!-- Colonne gauche -->
-            <div class="main-column">
-                <!-- Lancement des sessions -->
-                <section class="card session-card" id="sessions">
-                    <h2>Lancement des sessions</h2>
-
-                    <div class="row">
-                        <label for="sessionSelect" class="label">Sessions disponibles</label>
-                        <div class="row-inline">
-                            <select id="sessionSelect" class="select"></select>
-                            <button class="btn secondary" id="refreshBtn" title="Rafraîchir">↻</button>
-                        </div>
-                    </div>
-
-                    <!-- Boutons alignés -->
-                    <div class="controls controls-grid">
-                        <button id="playBtn" class="btn success">Play</button>
-                        <button id="pauseBtn" class="btn warning">Pause</button>
-                        <button id="resumeBtn" class="btn info">Resume</button>
-                        <button id="stopBtn" class="btn danger">Stop</button>
-                    </div>
-
-                    <div class="random-mode" id="randomModeContainer">
-                        <button id="randomModeToggle" class="btn secondary" type="button" aria-pressed="false">
-                            Mode aleatoire : OFF
-                        </button>
-                        <button id="shuffleAllBtn" class="btn info" type="button">
-                            Lecture aleatoire continue
-                        </button>
-                        <p id="randomModeHint" class="hint">
-                            Ignorer la selection et choisir un morceau aleatoire (hors Accueil).
-                        </p>
-                    </div>
-
-                    <div class="category-manager" id="categoryManager">
-                        <h3 class="category-title">Cat&eacute;gories des morceaux</h3>
-                        <p class="hint">Assignez une cat&eacute;gorie pour chaque session ou ajoutez-en une nouvelle.</p>
-                        <div class="category-actions" role="group" aria-label="Gestion des cat&eacute;gories">
-                            <label for="categoryAddInput" class="label category-label">Nouvelle cat&eacute;gorie</label>
-                            <div class="category-actions-controls">
-                                <input id="categoryAddInput" class="input" type="text" maxlength="64"
-                                    placeholder="Ex&nbsp;: Enfant" autocomplete="off" />
-                                <button type="button" class="btn info" id="categoryAddBtn">Ajouter</button>
-                            </div>
-                            <p id="categoryManagerStatus" class="hint category-status" role="status"
-                                aria-live="polite"></p>
-                        </div>
-                        <div id="categoryManagerList" class="category-list" role="list"></div>
-                    </div>
-
-                    <div class="session-danger-zone" role="group" aria-label="Suppression de la session">
-                        <button id="deleteSessionBtn" class="btn danger" type="button">Supprimer la session</button>
-                        <p class="hint">Supprime définitivement le dossier de la session sur le RPi.</p>
-                    </div>
-
-                    <div class="volume-box">
-                        <h3 class="volume-title">Volume (bluetoothctl)</h3>
-                        <div class="volume-controls" role="group" aria-label="Contrôle du volume">
-                            <button type="button" class="volume-btn" data-volume-action="down"
-                                aria-label="Baisser le volume">-</button>
-                            <button type="button" class="volume-btn volume-btn-mute" data-volume-action="mute"
-                                aria-label="Couper le son">Mute</button>
-                            <button type="button" class="volume-btn" data-volume-action="up"
-                                aria-label="Augmenter le volume">+</button>
-                        </div>
-                        <p class="hint volume-hint">Les commandes partent via bluetoothctl (menu transport).</p>
-                        <div class="bt-status" id="bluetoothStatus" role="status" aria-live="polite">
-                            <span class="bt-dot" id="bluetoothStatusDot" aria-hidden="true"></span>
-                            <span class="bt-text" id="bluetoothStatusText">Bluetooth : inconnu</span>
-                        </div>
-                        <div class="service-box">
-                            <button type="button" class="btn warning" id="restartBluetoothBtn">Redémarrer
-                                Bluetooth</button>
-                            <p class="hint">Exécute <code>sudo systemctl restart bluetooth.service</code>.</p>
-                        </div>
-                        <div class="service-box">
-                            <button type="button" class="btn warning" id="restartServiceBtn">Red&eacute;marrer le
-                                service</button>
-                            <p class="hint">Ex&eacute;cute <code>sudo systemctl restart servo-sync.service</code>.</p>
-                        </div>
-
-                    </div>
-
-                    <!-- Status en accordéon -->
-                    <details class="accordion-item slim status-accordion" open>
-                        <summary>
-                            <span>Statut lecture</span>
-                            <span id="badgeState" class="badge">—</span>
-                        </summary>
-                        <div class="accordion-content">
-                            <pre id="statusBox" class="status-box" aria-live="polite"></pre>
-                        </div>
-                    </details>
-                </section>
-
-                <!-- Préparation & réglages -->
-                <section class="card workbench-card">
-                    <h2>Préparation & réglages</h2>
-                    <div class="accordion">
-                        <details class="accordion-item" open>
-                            <summary><span>Uploader une session</span></summary>
-                            <div id="upload" class="accordion-content">
-                                <div class="row">
-                                    <label for="sceneName" class="label">Nom de la scène</label>
-                                    <input type="text" id="sceneName" class="input" placeholder="Ex : This is Halloween"
-                                        maxlength="50" />
-                                    <small class="hint">Le nom permet de créer le dossier et de renommer les
-                                        fichiers.</small>
-                                </div>
-
-                                <p class="hint">Glissez-déposez vos deux fichiers ci-dessous, ou cliquez pour
-                                    sélectionner.<br><small>(Un <strong>.json</strong> + un <strong>.mp3</strong>
-                                        requis)</small></p>
-
-                                <form id="uploadForm" class="upload-form" autocomplete="off">
-                                    <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de dépôt">
-                                        <div class="dropzone-inner">
-                                            <div class="dz-icon">⬆</div>
-                                            <div class="dz-text">
-                                                Déposez ici votre <strong>JSON</strong> et votre
-                                                <strong>MP3</strong><br />
-                                                <span class="dz-sub">ou cliquez pour parcourir...</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <input id="fileJson" type="file" name="json" accept=".json" hidden />
-                                    <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
-
-                                    <div class="file-list" id="fileList">
-                                        <div class="file-pill" id="pillJson">JSON : <span class="file-name"
-                                                data-empty>aucun</span></div>
-                                        <div class="file-pill" id="pillMp3">MP3 : <span class="file-name"
-                                                data-empty>aucun</span></div>
-                                    </div>
-
-                                    <div class="actions">
-                                        <div class="picker-row">
-                                            <button type="button" id="btnPickJson" class="btn secondary">Choisir
-                                                JSON</button>
-                                            <button type="button" id="btnPickMp3" class="btn secondary">Choisir
-                                                MP3</button>
-                                        </div>
-
-                                        <button type="submit" class="btn primary" id="btnUpload" disabled>
-                                            Charger l'animation
-                                        </button>
-                                    </div>
-
-                                    <div class="progress" id="uploadProgress" hidden>
-                                        <div class="bar" id="uploadBar"></div>
-                                    </div>
-                                </form>
-                            </div>
-                        </details>
-
-                        <details class="accordion-item">
-                            <summary><span>Canaux actifs</span></summary>
-                            <div id="channels" class="accordion-content">
-                                <div class="toggle-group">
-                                    <label class="toggle"><input type="checkbox" id="cbEyeLeft" checked><span>Œil
-                                            gauche</span></label>
-                                    <label class="toggle"><input type="checkbox" id="cbEyeRight" checked><span>Œil
-                                            droit</span></label>
-                                    <label class="toggle"><input type="checkbox" id="cbNeck"
-                                            checked><span>Cou</span></label>
-                                    <label class="toggle"><input type="checkbox" id="cbJaw"
-                                            checked><span>Mâchoire</span></label>
-                                </div>
-                                <p class="hint">Décochez pour geler un servo. Il conserve alors sa dernière position.
-                                </p>
-                            </div>
-                        </details>
-
-                        <details class="accordion-item">
-                            <summary><span>Ajustements pitch</span></summary>
-                            <div id="pitch" class="accordion-content">
-                                <div class="pitch-controls">
-                                    <div class="pitch-item">
-                                        <label for="pitchJaw" class="label">Mâchoire (°)</label>
-                                        <input type="range" id="pitchJaw" min="-45" max="45" value="0"
-                                            class="pitch-slider">
-                                        <span class="pitch-value">0°</span>
-                                    </div>
-                                    <div class="pitch-item">
-                                        <label for="pitchEyeLeft" class="label">Œil gauche (°)</label>
-                                        <input type="range" id="pitchEyeLeft" min="-45" max="45" value="0"
-                                            class="pitch-slider">
-                                        <span class="pitch-value">0°</span>
-                                    </div>
-                                    <div class="pitch-item">
-                                        <label for="pitchEyeRight" class="label">Œil droit (°)</label>
-                                        <input type="range" id="pitchEyeRight" min="-45" max="45" value="0"
-                                            class="pitch-slider">
-                                        <span class="pitch-value">0°</span>
-                                    </div>
-                                    <div class="pitch-item">
-                                        <label for="pitchNeck" class="label">Cou (°)</label>
-                                        <input type="range" id="pitchNeck" min="-45" max="45" value="0"
-                                            class="pitch-slider">
-                                        <span class="pitch-value">0°</span>
-                                    </div>
-                                </div>
-                                <p class="hint">Ajustez les décalages permanents pour compenser l'assemblage mécanique.
-                                </p>
-                            </div>
-                        </details>
-                    </div>
-                </section>
-                <section class="card esp32-card" id="esp32Card">
-                    <h2>Pilotage ESP32</h2>
-                    <div class="esp32-header">
-                        <div class="esp32-connection" role="status" aria-live="polite">
-                            <span class="esp32-dot" id="esp32StatusDot" aria-hidden="true"></span>
-                            <span id="esp32StatusText" class="esp32-status-text">Inactif (desactive)</span>
-                        </div>
-                        <div class="esp32-header-actions">
-                            <button type="button" class="btn secondary" id="esp32StatusRefreshBtn">Tester la
-                                connexion</button>
-                        </div>
-                    </div>
-                    <form id="esp32ConfigForm" class="esp32-config" autocomplete="off">
-                        <div class="row">
-                            <label for="esp32Host" class="label">Adresse IP ou mDNS</label>
-                            <input type="text" id="esp32Host" class="input" placeholder="SkullHard.local">
-                        </div>
-                        <div class="esp32-config-row">
-                            <div class="esp32-field">
-                                <label for="esp32Port" class="label">Port</label>
-                                <input type="number" id="esp32Port" class="input" min="1" max="65535" value="80">
-                            </div>
-                            <label class="checkbox esp32-enabled">
-                                <input type="checkbox" id="esp32Enabled">
-                                <span>Activer le pilotage</span>
-                            </label>
-                            <button type="submit" class="btn primary" id="esp32ConfigSaveBtn">Enregistrer</button>
-                        </div>
-                        <p class="hint">Sauvegarde dans <code>config/esp32_settings.json</code>.</p>
-                    </form>
-                    <div class="esp32-actions">
-                        <div class="esp32-buttons-group" role="group" aria-label="Commandes ESP32">
-                            <button type="button" class="btn success" id="esp32RelayOnBtn">Relais ON</button>
-                            <button type="button" class="btn secondary" id="esp32RelayOffBtn">Relais OFF</button>
-                            <button type="button" class="btn info" id="esp32AutoRelayToggle"
-                                aria-pressed="false">Auto-relay</button>
-                            <button type="button" class="btn warning" id="esp32RestartBtn">Redemarrer l'ESP32</button>
-                        </div>
-                    </div>
-                    <div class="esp32-status-panel">
-                        <h3 class="esp32-subtitle">Etat courant</h3>
-                        <div class="esp32-status-grid">
-                            <div>
-                                <span class="label">Relais</span>
-                                <span class="badge" id="esp32RelayState">-</span>
-                            </div>
-                            <div>
-                                <span class="label">Mode auto</span>
-                                <span class="badge" id="esp32AutoRelayState">-</span>
-                            </div>
-                            <div>
-                                <span class="label">Session actuelle</span>
-                                <span id="esp32CurrentSession">-</span>
-                            </div>
-                            <div>
-                                <span class="label">Wi-Fi</span>
-                                <span id="esp32WifiInfo">-</span>
-                            </div>
-                        </div>
-                        <pre id="esp32StatusRaw" class="status-box esp32-status-raw" aria-live="polite"></pre>
-                    </div>
-                    <div class="esp32-buttons-config">
-                        <div class="esp32-buttons-header">
-                            <h3 class="esp32-subtitle">Boutons physiques</h3>
-                            <button type="button" class="btn secondary" id="esp32ButtonsRefreshBtn">Actualiser</button>
-                        </div>
-                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group"
-                            aria-label="Association boutons ESP32">
-                        </div>
-                        <p class="hint">Choisissez une cat&eacute;gorie pour chaque bouton (1 &agrave; 3). Selectionnez
-                            "-- Aucun --" pour vider l'association.</p>
-                    </div>
-                </section>
+        <div class="site-header-main">
+            <div class="site-title">
+                <h1>Skull Player</h1>
+                <p class="subtitle">Faites jouer votre Skull avec un MP3 et un fichier <code>facial_motors.json</code>
+                </p>
             </div>
-
-            <!-- Colonne droite -->
-            <aside class="logs-column">
-                <section class="card playlist-card">
-                    <h2>Playlist</h2>
-                    <div id="playlistCurrent" class="playlist-current" aria-live="polite">
-                        Playlist vide
-                    </div>
-                    <ul id="playlistList" class="playlist-list" aria-label="Morceaux dans la playlist"></ul>
-                    <div class="playlist-actions">
-                        <button class="btn secondary" id="playlistRefreshBtn">Actualiser</button>
-                        <button class="btn danger" id="playlistSkipBtn" disabled>Passer</button>
-                    </div>
-                </section>
-
-                <section class="card logs-card">
-                    <h2>Logs en direct</h2>
-                    <iframe src="/static/logs.html" title="Logs servo" class="logs-frame"></iframe>
-                </section>
-            </aside>
-        </div>
-        <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true"
-            aria-labelledby="deleteSessionTitle">
-            <div class="modal-box">
-                <button type="button" class="modal-close" id="deleteSessionClose" aria-label="Fermer"><span
-                        aria-hidden="true">&times;</span></button>
-                <div class="modal-graphic" aria-hidden="true">🎃</div>
-                <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
-                <p class="modal-lead">Veux-tu vraiment bannir <strong id="deleteSessionName"></strong> ?</p>
-                <p class="modal-subtext">Le dossier de la session sera définitivement supprimé du RPi.</p>
-                <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
-                <div class="modal-actions">
-                    <button type="button" class="btn secondary" id="deleteSessionCancel">Annuler</button>
-                    <button type="button" class="btn danger" id="deleteSessionConfirm">Oui, supprimer</button>
+            <div class="connection-banner" aria-live="polite">
+                <div id="connectionStatus" class="connection-chip offline" role="status">
+                    <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
+                    <span id="connectionStatusText" class="connection-label">Skull : inconnu</span>
+                </div>
+                <div id="bluetoothTopStatus" class="connection-chip connection-chip--secondary unknown" role="status">
+                    <span id="bluetoothTopStatusDot" class="connection-dot" aria-hidden="true"></span>
+                    <span id="bluetoothTopStatusText" class="connection-label">Bluetooth : inconnu</span>
+                </div>
+                <div id="esp32TopStatus" class="connection-chip connection-chip--secondary disabled" role="status">
+                    <span id="esp32TopStatusDot" class="connection-dot" aria-hidden="true"></span>
+                    <span id="esp32TopStatusText" class="connection-label">ESP32 : inactif</span>
                 </div>
             </div>
         </div>
+    </header>
 
+    <main class="container">
+        <div class="layout">
+            <section class="card playback-card" id="sessions">
+                <header class="card-header">
+                    <h2>Contrôles de lecture</h2>
+                </header>
+
+                <div class="playback-select">
+                    <label class="label" for="sessionSelect">Sessions disponibles</label>
+                    <div class="session-select-row">
+                        <select id="sessionSelect" class="select"></select>
+                        <button id="refreshBtn" class="btn secondary icon-only" type="button"
+                            title="Actualiser les sessions" aria-label="Actualiser les sessions">&#8635;</button>
+                    </div>
+                </div>
+
+                <div class="controls-inline" role="group" aria-label="Contrôles de lecture">
+                    <button id="playBtn" class="btn success" type="button">▶ Play</button>
+                    <button id="pauseBtn" class="btn warning" type="button">⏸ Pause</button>
+                    <button id="resumeBtn" class="btn info" type="button">▶ Resume</button>
+                    <button id="stopBtn" class="btn danger" type="button">⏹ Stop</button>
+                </div>
+
+                <div class="random-mode">
+                    <div class="random-mode-actions">
+                        <button id="randomModeToggle" class="btn secondary" type="button" aria-pressed="false">
+                            Mode aléatoire : OFF
+                        </button>
+                        <button id="shuffleAllBtn" class="btn info" type="button">
+                            Lecture aléatoire continue
+                        </button>
+                    </div>
+                    <p id="randomModeHint" class="hint" aria-live="polite">
+                        Ignorer la sélection et choisir un morceau aléatoire (hors Accueil).
+                    </p>
+                </div>
+
+                <div class="session-danger-zone playback-danger-zone" role="group"
+                    aria-label="Suppression de la session sélectionnée">
+                    <button id="deleteSessionBtn" class="btn danger" type="button">
+                        Supprimer la session sélectionnée
+                    </button>
+                    <p class="hint">Supprime définitivement le dossier de la session sur le RPi.</p>
+                </div>
+
+                <div class="playback-status" role="status" aria-live="polite">
+                    <span class="label">Statut lecture</span>
+                    <span id="badgeState" class="badge is-idle">IDLE</span>
+                </div>
+            </section>
+
+            <section class="card playlist-card">
+                <header class="card-header">
+                    <h2>Playlist</h2>
+                </header>
+                <div id="playlistCurrent" class="playlist-current" aria-live="polite">
+                    Playlist vide
+                </div>
+                <ul id="playlistList" class="playlist-list" aria-label="Morceaux dans la playlist"></ul>
+                <div class="playlist-actions">
+                    <button id="playlistRefreshBtn" class="btn secondary" type="button">Actualiser</button>
+                    <button id="playlistSkipBtn" class="btn danger" type="button" disabled>Passer</button>
+                </div>
+            </section>
+
+            <section class="card volume-card">
+                <header class="card-header">
+                    <h2>Volume &amp; Services</h2>
+                </header>
+                <div class="volume-controls" role="group" aria-label="Contrôles volume Bluetooth">
+                    <button class="btn secondary" type="button" data-volume-action="down">− Volume</button>
+                    <button class="btn secondary" type="button" data-volume-action="mute">🔇 Mute</button>
+                    <button class="btn secondary" type="button" data-volume-action="up">+ Volume</button>
+                </div>
+                <div class="bluetooth-status-block">
+                    <div id="bluetoothStatus" class="bt-status is-unknown" role="status" aria-live="polite">
+                        <span id="bluetoothStatusDot" class="bt-dot" aria-hidden="true"></span>
+                        <span id="bluetoothStatusText" class="bt-label">Bluetooth : inconnu</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card esp32-card" id="esp32Card">
+                <header class="card-header">
+                    <h2>Pilotage ESP32</h2>
+                </header>
+                <div class="esp32-connection">
+                    <div class="esp32-status-chip">
+                        <span id="esp32StatusDot" class="connection-dot" aria-hidden="true"></span>
+                        <span id="esp32StatusText" class="connection-label">Inactif (désactivé)</span>
+                    </div>
+                    <button id="esp32StatusRefreshBtn" class="btn secondary" type="button">
+                        Tester la connexion
+                    </button>
+                </div>
+
+                <form id="esp32ConfigForm" class="esp32-form" autocomplete="off">
+                    <div class="esp32-form-grid">
+                        <label>
+                            <span>Hôte</span>
+                            <input id="esp32Host" class="input" type="text" placeholder="SkullHard.local" />
+                        </label>
+                        <label>
+                            <span>Port</span>
+                            <input id="esp32Port" class="input" type="number" min="1" step="1" value="80" />
+                        </label>
+                        <label class="esp32-toggle">
+                            <input id="esp32Enabled" type="checkbox" />
+                            <span>Activer le pilotage</span>
+                        </label>
+                    </div>
+                    <button id="esp32ConfigSaveBtn" class="btn primary" type="submit">Enregistrer</button>
+                </form>
+
+                <div class="esp32-buttons-group" role="group" aria-label="Commandes ESP32">
+                    <button id="esp32RelayOnBtn" class="btn success" type="button">Relais ON</button>
+                    <button id="esp32RelayOffBtn" class="btn secondary" type="button">Relais OFF</button>
+                    <button id="esp32AutoRelayToggle" class="btn info" type="button" aria-pressed="false">
+                        Auto-relay
+                    </button>
+                </div>
+
+                <div class="esp32-status-panel">
+                    <h3 class="esp32-subtitle">État courant</h3>
+                    <div class="esp32-status-grid">
+                        <div>
+                            <span class="label">Relais</span>
+                            <span id="esp32RelayState" class="badge">-</span>
+                        </div>
+                        <div>
+                            <span class="label">Mode auto</span>
+                            <span id="esp32AutoRelayState" class="badge">-</span>
+                        </div>
+                        <div>
+                            <span class="label">Session</span>
+                            <span id="esp32CurrentSession">-</span>
+                        </div>
+                        <div>
+                            <span class="label">Wi-Fi</span>
+                            <span id="esp32WifiInfo">-</span>
+                        </div>
+                    </div>
+                    <pre id="esp32StatusRaw" class="status-box esp32-status-raw" aria-live="polite"></pre>
+                </div>
+            </section>
+
+            <section class="card session-management-card">
+                <header class="card-header">
+                    <h2>Gestion des boutons</h2>
+                </header>
+                <details class="accordion-item">
+                    <summary>Boutons physiques ESP32</summary>
+                    <div class="accordion-content">
+                        <div class="esp32-buttons-header">
+                            <span class="esp32-subtitle">Associer les catégories</span>
+                            <button id="esp32ButtonsRefreshBtn" class="btn secondary" type="button">
+                                Actualiser
+                            </button>
+                        </div>
+                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group"
+                            aria-label="Association boutons ESP32"></div>
+                        <p class="hint">
+                            Choisissez une catégorie pour chaque bouton (1 à 3). Sélectionnez
+                            &laquo;&nbsp;-- Aucun --&nbsp;&raquo; pour vider l'association.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="accordion-item" open>
+                    <summary>Catégories des morceaux</summary>
+                    <div class="accordion-content">
+                        <div id="categoryManager" class="category-manager">
+                            <p class="hint">
+                                Assignez une catégorie à chaque session ou ajoutez-en une nouvelle.
+                            </p>
+                            <div class="category-actions" role="group" aria-label="Gestion des catégories">
+                                <label class="label category-label" for="categoryAddInput">Nouvelle catégorie</label>
+                                <div class="category-actions-controls">
+                                    <input id="categoryAddInput" class="input" type="text" maxlength="64"
+                                        placeholder="Ex&nbsp;: Enfant" autocomplete="off" />
+                                    <button id="categoryAddBtn" class="btn info" type="button">Ajouter</button>
+                                </div>
+                                <p id="categoryManagerStatus" class="hint category-status" role="status"
+                                    aria-live="polite"></p>
+                            </div>
+                            <div id="categoryManagerList" class="category-list" role="list"></div>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <section class="card upload-card">
+                <header class="card-header">
+                    <h2>Uploader une session</h2>
+                </header>
+                <details class="accordion-item" open>
+                    <summary>Formulaire d&apos;upload</summary>
+                    <div class="accordion-content">
+                        <form id="uploadForm" class="upload-form" autocomplete="off">
+                            <label class="label" for="sceneName">Nom de la scène</label>
+                            <input id="sceneName" class="input" type="text" maxlength="50" placeholder="Nom de la scène"
+                                autocomplete="off" />
+
+                            <div class="picker-row">
+                                <button id="btnPickJson" class="btn secondary" type="button">Choisir JSON</button>
+                                <button id="btnPickMp3" class="btn secondary" type="button">Choisir MP3</button>
+                            </div>
+
+                            <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de dépôt">
+                                <div class="dropzone-inner">
+                                    <div class="dz-icon">🕸</div>
+                                    <div class="dz-text">
+                                        Déposez ici votre <strong>JSON</strong> et votre <strong>MP3</strong><br />
+                                        <span class="dz-sub">ou cliquez pour parcourir…</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input id="fileJson" type="file" name="json" accept=".json" hidden />
+                            <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
+
+                            <div class="file-list" id="fileList">
+                                <div class="file-pill" id="pillJson">
+                                    JSON : <span class="file-name" data-empty>aucun</span>
+                                </div>
+                                <div class="file-pill" id="pillMp3">
+                                    MP3 : <span class="file-name" data-empty>aucun</span>
+                                </div>
+                            </div>
+
+                            <button id="btnUpload" class="btn primary" type="submit">Charger l&apos;animation</button>
+
+                            <div id="uploadProgress" class="progress" hidden>
+                                <div id="uploadBar" class="bar"></div>
+                            </div>
+                        </form>
+                    </div>
+                </details>
+            </section>
+
+        </div>
+
+        <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true"
+            aria-labelledby="deleteSessionTitle">
+            <div class="modal-box">
+                <button id="deleteSessionClose" class="modal-close" type="button" aria-label="Fermer">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <div class="modal-graphic" aria-hidden="true">🎃</div>
+                <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
+                <p class="modal-lead">
+                    Veux-tu vraiment bannir <strong id="deleteSessionName"></strong>&nbsp;?
+                </p>
+                <p class="modal-subtext">
+                    Le dossier de la session sera définitivement supprimé du RPi.
+                </p>
+                <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
+                <div class="modal-actions">
+                    <button id="deleteSessionCancel" class="btn secondary" type="button">Annuler</button>
+                    <button id="deleteSessionConfirm" class="btn danger" type="button">Oui, supprimer</button>
+                </div>
+            </div>
+        </div>
     </main>
 
     <footer class="site-footer">
-        <small>RPi4 · PCA9685 · Aucun mode simulation · UI par FozzY</small>
+        <small>RPi4 &times; PCA9685 &times; Aucun mode simulation &times; UI par FozzY</small>
     </footer>
 
+    <div id="leftPanel" class="left-panel" aria-hidden="true">
+        <div class="left-panel-content">
+            <h2>Redémarrages</h2>
+            <section class="panel-section">
+                <h3>Services</h3>
+                <div class="maintenance-actions">
+                    <button id="restartBluetoothBtn" class="btn warning" type="button">
+                        Redémarrer Bluetooth
+                    </button>
+                    <button id="restartServiceBtn" class="btn warning" type="button">
+                        Redémarrer service servo-sync
+                    </button>
+                    <button id="esp32RestartBtn" class="btn warning" type="button">
+                        Redémarrer ESP32
+                    </button>
+                </div>
+            </section>
+
+            <section class="panel-section advanced-settings-panel">
+                <h3>Réglages avancés</h3>
+                <details class="accordion-item" open>
+                    <summary>Canaux actifs</summary>
+                    <div class="accordion-content">
+                        <div class="toggle-group">
+                            <label class="toggle">
+                                <input id="cbEyeLeft" type="checkbox" checked />
+                                <span>Œil gauche</span>
+                            </label>
+                            <label class="toggle">
+                                <input id="cbEyeRight" type="checkbox" checked />
+                                <span>Œil droit</span>
+                            </label>
+                            <label class="toggle">
+                                <input id="cbNeck" type="checkbox" checked />
+                                <span>Cou</span>
+                            </label>
+                            <label class="toggle">
+                                <input id="cbJaw" type="checkbox" checked />
+                                <span>Mâchoire</span>
+                            </label>
+                        </div>
+                        <p class="hint">
+                            Décochez pour geler un servo. Il conservera alors sa dernière position.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="accordion-item" open>
+                    <summary>Ajustements pitch</summary>
+                    <div class="accordion-content">
+                        <div class="pitch-controls">
+                            <div class="pitch-item">
+                                <label for="pitchJaw">Mâchoire (°)</label>
+                                <input id="pitchJaw" type="range" min="-45" max="45" value="0" />
+                                <span class="pitch-value">0°</span>
+                            </div>
+                            <div class="pitch-item">
+                                <label for="pitchEyeLeft">Œil gauche (°)</label>
+                                <input id="pitchEyeLeft" type="range" min="-45" max="45" value="0" />
+                                <span class="pitch-value">0°</span>
+                            </div>
+                            <div class="pitch-item">
+                                <label for="pitchEyeRight">Œil droit (°)</label>
+                                <input id="pitchEyeRight" type="range" min="-45" max="45" value="0" />
+                                <span class="pitch-value">0°</span>
+                            </div>
+                            <div class="pitch-item">
+                                <label for="pitchNeck">Cou (°)</label>
+                                <input id="pitchNeck" type="range" min="-45" max="45" value="0" />
+                                <span class="pitch-value">0°</span>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </section>
+        </div>
+    </div>
+    <button id="leftPanelToggle" class="panel-toggle left-panel-toggle" type="button"
+        aria-label="Ouvrir les commandes de redémarrage">
+        <span class="toggle-icon">☰</span>
+    </button>
+
+    <div id="sidePanel" class="side-panel" aria-hidden="true">
+        <div class="side-panel-content">
+            <h2>Logs &amp; Status</h2>
+
+            <section class="panel-section">
+                <h3>Statut technique</h3>
+                <details class="accordion-item slim" open>
+                    <summary>
+                        <span>État lecture</span>
+                        <span id="badgeStatePanel" class="badge">—</span>
+                    </summary>
+                    <div class="accordion-content">
+                        <pre id="statusBox" class="status-box"></pre>
+                    </div>
+                </details>
+            </section>
+
+            <section class="panel-section">
+                <h3>Logs en direct</h3>
+                <iframe src="/static/logs.html" title="Logs servo" class="logs-frame panel-logs-frame"></iframe>
+            </section>
+        </div>
+    </div>
+    <button id="sidePanelToggle" class="panel-toggle side-panel-toggle" type="button" aria-label="Ouvrir les logs">
+        <span class="toggle-icon">☰</span>
+    </button>
+
     <script src="/static/app.js"></script>
+    <script>
+        (function () {
+            const sidePanel = document.getElementById("sidePanel");
+            const sideToggle = document.getElementById("sidePanelToggle");
+            const leftPanel = document.getElementById("leftPanel");
+            const leftToggle = document.getElementById("leftPanelToggle");
+
+            const setupPanel = (panelEl, toggleEl) => {
+                if (!panelEl || !toggleEl) {
+                    return () => { };
+                }
+
+                const iconEl = toggleEl.querySelector(".toggle-icon");
+                const setState = (isOpen) => {
+                    panelEl.classList.toggle("is-open", isOpen);
+                    panelEl.setAttribute("aria-hidden", isOpen ? "false" : "true");
+                    if (iconEl) {
+                        iconEl.textContent = isOpen ? "×" : "☰";
+                    }
+                };
+
+                setState(false);
+
+                toggleEl.addEventListener("click", () => {
+                    const nextState = !panelEl.classList.contains("is-open");
+                    setState(nextState);
+                });
+
+                return () => setState(false);
+            };
+
+            const closeSidePanel = setupPanel(sidePanel, sideToggle);
+            const closeLeftPanel = setupPanel(leftPanel, leftToggle);
+
+            document.addEventListener("keydown", (event) => {
+                if (event.key !== "Escape") {
+                    return;
+                }
+
+                let handled = false;
+
+                if (leftPanel && leftPanel.classList.contains("is-open")) {
+                    closeLeftPanel();
+                    handled = true;
+                }
+
+                if (sidePanel && sidePanel.classList.contains("is-open")) {
+                    closeSidePanel();
+                    handled = true;
+                }
+
+                if (handled) {
+                    event.preventDefault();
+                }
+            });
+
+            const primaryBadge = document.getElementById("badgeState");
+            const panelBadge = document.getElementById("badgeStatePanel");
+
+            if (primaryBadge && panelBadge) {
+                const syncBadge = () => {
+                    panelBadge.textContent = primaryBadge.textContent || "—";
+                    panelBadge.className = primaryBadge.className;
+                };
+
+                const observer = new MutationObserver(syncBadge);
+                observer.observe(primaryBadge, {
+                    characterData: true,
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ["class"]
+                });
+
+                syncBadge();
+            }
+        })();
+    </script>
 </body>
 
 </html>

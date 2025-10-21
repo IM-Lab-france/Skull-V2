@@ -2043,10 +2043,27 @@ def status():
         st["random_mode"] = random_snapshot
         if BT_DEVICE_ADDR:
             info = _bluetooth_info(BT_DEVICE_ADDR)
+            volume_percent: int | None = None
+            if info and info.get("connected") is True:
+                try:
+                    transport, _ = _pick_transport_path()
+                    if transport:
+                        current, _ = _get_transport_volume(transport)
+                        if isinstance(current, (int, float)):
+                            volume_percent = int(round(current))
+                except FileNotFoundError:
+                    volume_percent = None
+                except subprocess.TimeoutExpired:
+                    volume_percent = None
+                except Exception:  # pragma: no cover - defensive logging
+                    servo_logger.logger.exception("STATUS_VOLUME_READ_ERROR")
+                    volume_percent = None
             st["bluetooth"] = {
                 "address": BT_DEVICE_ADDR,
                 "connected": info.get("connected") if info else None,
             }
+            if volume_percent is not None:
+                st["bluetooth"]["volume_percent"] = volume_percent
         return jsonify(st)
     except Exception as e:
         return jsonify({"error": f"Erreur status: {e}"}), 500

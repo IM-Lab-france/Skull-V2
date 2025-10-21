@@ -1943,7 +1943,18 @@ function applyBluetoothStatus(info) {
     if (info.connected === true) {
       statusClass += " is-connected";
 
-      text = "Bluetooth : connecte";
+      let volumeSuffix = "";
+      if (
+        info &&
+        Object.prototype.hasOwnProperty.call(info, "volume_percent") &&
+        typeof info.volume_percent === "number" &&
+        Number.isFinite(info.volume_percent)
+      ) {
+        const pct = Math.max(0, Math.min(100, Math.round(info.volume_percent)));
+        volumeSuffix = ` (${pct}%)`;
+      }
+
+      text = "Bluetooth : connecte" + volumeSuffix;
 
       topState = "online";
     } else if (info.connected === false) {

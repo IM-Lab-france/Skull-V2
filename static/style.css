@@ -111,14 +111,35 @@ body.theme-halloween::after {
 .container {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 24px
+    padding: 121px 24px;
+    margin-top: 0px;
 }
 
 /* ========= Header & Footer ========= */
 .site-header {
-    text-align: center;
-    padding: 24px 12px;
-    border-bottom: 1px solid var(--border)
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+    background: rgba(11, 15, 22, 0.95);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+}
+
+.site-header-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 32px;
+}
+
+.site-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .site-header h1 {
@@ -137,23 +158,28 @@ body.theme-halloween::after {
     color: var(--muted)
 }
 
-/* ========= Layout 50/50 + responsive ========= */
+/* ========= Layout principal ========= */
 .layout {
     display: grid;
     gap: 24px;
-    align-items: start
+    align-items: start;
+    grid-template-columns: 1fr;
 }
 
-.layout-5050 {
-    grid-template-columns: 1fr 1fr
+.layout .full-width {
+    grid-column: 1 / -1;
 }
 
-@media (max-width:1100px) {
-    .layout-5050 {
-        grid-template-columns: 1fr
+@media (min-width: 900px) and (max-width: 1399px) {
+    .layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
 
-    /* logs en dessous */
+@media (min-width: 1400px) {
+    .layout {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 /* ========= Cards ========= */
@@ -189,31 +215,33 @@ body.theme-halloween::after {
 }
 
 /* ========= Colonne logs ========= */
-.logs-column {
-    position: sticky;
-    top: 96px;
-    align-self: start
-}
-
-.logs-card {
-    height: calc(100vh - 140px);
-    display: flex;
-    flex-direction: column
-}
-
-.logs-frame {
-    flex: 1;
-    width: 100%;
-    border: none;
-    border-radius: 12px;
-    background: #060914;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06)
-}
-
 .playlist-card {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.logs-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.logs-frame {
+    width: 100%;
+    min-height: 500px;
+    border: none;
+    border-radius: 12px;
+    background: #060914;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05);
+}
+
+.panel-logs-frame {
+    min-height: 600px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    background: #070b16;
 }
 
 .playlist-current {
@@ -299,18 +327,370 @@ body.theme-halloween::after {
     justify-content: flex-end;
 }
 
-@media (max-width:1100px) {
-    .logs-column {
-        position: static
-    }
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
 
-    .logs-card {
-        height: auto
-    }
+.card-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
 
-    .logs-frame {
-        min-height: 320px
-    }
+.playback-select {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.session-select-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.session-select-row .select {
+    flex: 1 1 auto;
+}
+
+.icon-only {
+    padding: 0 14px;
+    min-width: 48px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.controls-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.controls-inline .btn {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.random-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.random-mode-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.playback-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .04);
+    margin-top: auto;
+}
+
+.playback-status .label {
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.playlist-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.volume-card {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.volume-controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.volume-controls .btn {
+    min-width: 140px;
+}
+
+.bluetooth-status-block {
+    display: flex;
+    justify-content: center;
+}
+
+.bt-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, .04);
+    font-size: 0.95rem;
+}
+
+.bt-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .25);
+}
+
+.bt-status.is-connected .bt-dot {
+    background: var(--green);
+}
+
+.bt-status.is-disconnected .bt-dot {
+    background: var(--danger);
+}
+
+.bt-status.is-unknown .bt-dot {
+    background: rgba(255, 255, 255, .3);
+}
+
+.maintenance-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.maintenance-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.maintenance-actions .btn {
+    flex: 1 1 220px;
+    min-width: 200px;
+}
+
+.session-management-card details+details {
+    margin-top: 12px;
+}
+
+.upload-card .accordion-item {
+    margin: 0;
+}
+
+.picker-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.picker-row .btn {
+    flex: 1 1 160px;
+}
+
+.dropzone {
+    margin-bottom: 16px;
+}
+
+.esp32-card {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.esp32-connection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.esp32-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.esp32-status-chip .connection-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .25);
+}
+
+.esp32-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.esp32-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.esp32-form-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+}
+
+.esp32-toggle {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+}
+
+.esp32-buttons-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+}
+
+.esp32-buttons-group .btn {
+    flex: 1 1 150px;
+    min-width: 140px;
+}
+
+.esp32-status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.esp32-status-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.esp32-status-grid .label {
+    display: block;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.esp32-buttons-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.esp32-buttons-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.esp32-button-item {
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .03);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.esp32-button-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.esp32-button-select {
+    width: 100%;
+}
+
+.esp32-button-save {
+    align-self: flex-end;
+}
+
+.esp32-button-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.advanced-settings-card details+details {
+    margin-top: 12px;
+}
+
+.advanced-settings-panel details+details {
+    margin-top: 12px;
+}
+
+.left-panel-content .accordion-item {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.left-panel-content .accordion-item[open] {
+    background: rgba(255, 122, 24, 0.08);
+}
+
+.toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    background: rgba(255, 255, 255, .03);
+}
+
+.toggle input {
+    width: 18px;
+    height: 18px;
+}
+
+.pitch-controls {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.pitch-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pitch-item label {
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.pitch-value {
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: 0.95rem;
 }
 
 /* ========= Accordéon ========= */
@@ -422,13 +802,11 @@ body.theme-halloween::after {
 
 /* ========= Statuts de connexion (cluster haut droit) ========= */
 .connection-banner {
-    position: fixed;
-    top: 12px;
-    right: 12px;
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    z-index: 2000;
+    align-items: center;
+    margin-left: auto;
 }
 
 .connection-chip {
@@ -621,6 +999,10 @@ body.theme-halloween::after {
 
 .random-mode .hint {
     margin: 0;
+}
+
+.playback-danger-zone {
+    margin-top: 8px;
 }
 
 .btn.toggle-active {
@@ -856,17 +1238,6 @@ body.modal-open {
 
 .bt-status .bt-text {
     flex: 1;
-}
-
-.service-box {
-    margin-top: 14px;
-    padding: 12px 16px;
-    border: 1px dashed var(--border);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .02);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
 }
 
 /* ========= Zone upload ========= */
@@ -1156,12 +1527,6 @@ body.modal-open {
     font-size: 1rem
 }
 
-.esp32-status-grid {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))
-}
-
 .esp32-status-grid .badge {
     display: inline-flex;
     align-items: center;
@@ -1193,370 +1558,157 @@ body.modal-open {
     background: rgba(0, 0, 0, .35)
 }
 
-.esp32-buttons-config {
+.panel-section {
     display: flex;
     flex-direction: column;
-    gap: 12px
-}
-
-.esp32-buttons-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap
-}
-
-.esp32-buttons-grid {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))
-}
-
-.esp32-button-item {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, .02)
-}
-
-.esp32-button-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    font-weight: 600
-}
-
-.esp32-button-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap
-}
-
-.esp32-button-item .select {
-    width: 100%
-}
-
-
-/* ==========================================================================
-   AJOUT : MISE EN PAGE EN TROIS COLONNES PLEIN ÉCRAN - VERSION COLLÉE
-   ========================================================================== */
-
-/* 1) Conteneur pleine largeur */
-.container {
-    max-width: 100%;
-    width: 100%;
-    padding-left: 24px;
-    padding-right: 24px;
-}
-
-/* 2) Grille fluide en 3 colonnes continues */
-.layout {
-    display: grid;
-    align-items: start;
-    /* Espacement horizontal uniquement */
-    column-gap: 24px;
-    /* Espacement vertical minimal dans chaque colonne */
-    row-gap: 20px;
-    /* Permet un flux continu des cartes dans les colonnes */
-    grid-template-columns: repeat(3, minmax(280px, 1fr));
-    grid-auto-flow: column;
-}
-
-/* 3) On “aplatit” les conteneurs intermédiaires */
-.main-column,
-.logs-column {
-    display: contents;
-}
-
-/* 4) On retire les contraintes de hauteur ou de positionnement de la colonne logs */
-.logs-card {
-    height: auto;
-    display: none;
-}
-
-.logs-column {
-    position: static;
-    top: auto;
-    align-self: stretch;
-}
-
-/* 5) Chaque carte remplit sa colonne */
-.card {
-    width: 100%;
-    margin: 0;
-    /* supprime tout espace vertical supplémentaire */
-}
-
-/* 6) Responsiveness :
-      - <1400px : 2 colonnes
-      - <900px : 1 colonne */
-@media (max-width: 1400px) {
-    .layout {
-        grid-template-columns: repeat(2, minmax(260px, 1fr));
-    }
-}
-
-@media (max-width: 900px) {
-    .layout {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* 7) Les chips d’état restent fixés en haut à droite */
-.connection-banner {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 2000;
-}
-
-/* =====================================================================
-   === Mobile-only UI (<= 720px) =======================================
-   ===================================================================== */
-@media (max-width: 720px) {
-
-    /* 1) Masquer ce qui n’est pas demandé sur mobile */
-    .site-header,
-    .logs-column,
-    .logs-card,
-    .status-accordion,
-    #playlistRefreshBtn,
-    .picker-row,
-    .workbench-card,
-    #btnUpload,
-    #refreshBtn,
-    #pauseBtn,
-    #resumeBtn,
-    [data-volume-action="mute"],
-    #randomModeHint,
-    .status-box.esp32-status-raw,
-    .esp32-buttons-config,
-    #esp32StatusRefreshBtn,
-    #esp32Host,
-    #esp32Port,
-    #esp32ConfigSaveBtn {
-        display: none !important;
-    }
-
-    /* 2) Garde les chips d’état (Skull/Bluetooth/ESP) et repositionne à gauche */
-    .connection-banner {
-        top: 8px;
-        right: auto;
-        left: 8px;
-        gap: 8px;
-    }
-
-    /* 3) Contrôles de session : STOP visible, volume + / -, random, restart BT/service */
-    .controls-grid {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    #stopBtn {
-        display: inline-flex !important;
-    }
-
-    .volume-controls {
-        justify-content: flex-start
-    }
-
-    .volume-btn {
-        min-width: 44px;
-        min-height: 44px;
-    }
-
-    #restartBluetoothBtn,
-    #restartServiceBtn {
-        display: inline-flex !important;
-        min-height: 44px;
-        margin-top: 8px;
-    }
-
-    #randomModeToggle,
-    #shuffleAllBtn {
-        display: inline-flex !important;
-        min-height: 44px;
-        margin-top: 6px;
-    }
-
-    /* 4) Playlist : supprimer & passer au suivant, pas de up/down */
-    .playlist-btn[data-action="up"],
-    .playlist-btn[data-action="down"] {
-        display: none !important;
-    }
-
-    #playlistSkipBtn {
-        display: inline-flex !important;
-        min-height: 44px;
-    }
-
-    /* 5) ESP32 : pilotage (checkbox), relais ON/OFF, redémarrer */
-    .esp32-enabled {
-        display: inline-flex !important;
-    }
-
-    .esp32-buttons-group #esp32RelayOnBtn,
-    .esp32-buttons-group #esp32RelayOffBtn,
-    .esp32-buttons-group #esp32RestartBtn {
-        display: inline-flex !important;
-        min-height: 44px;
-        margin-top: 6px;
-    }
-
-    /* 6) Mise en page : une seule colonne, grosses cibles tactiles */
-    .layout {
-        grid-template-columns: 1fr !important;
-    }
-
-    .card {
-        padding: 16px
-    }
-
-    .btn {
-        padding: 12px 16px;
-        border-radius: 14px
-    }
-
-    .select,
-    .input {
-        padding: 12px 14px;
-        border-radius: 12px
-    }
-}
-
-.category-manager {
-    margin-top: 24px;
-    padding: 16px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-}
-
-.category-title {
-    margin: 0 0 8px;
-    font-size: 1.1rem;
-}
-
-.category-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.category-label {
-    display: inline-block;
-    font-weight: 600;
-}
-
-.category-actions-controls {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.category-actions .input {
-    flex: 1 1 200px;
-    min-width: 180px;
-}
-
-.category-status {
-    min-height: 1.2em;
-}
-
-.category-status.is-error {
-    color: #ff8b8b;
-}
-
-.category-status.is-success {
-    color: #8fe1a0;
-}
-
-.category-list {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.category-row {
-    display: flex;
-    align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.category-row--busy {
-    opacity: 0.6;
+.panel-section+.panel-section {
+    margin-top: 24px;
 }
 
-.category-row-name {
-    font-weight: 600;
-    flex: 1 1 160px;
+.panel-section h3 {
+    margin: 0 0 12px;
 }
 
-.category-row select {
-    min-width: 160px;
+.side-panel,
+.left-panel {
+    position: fixed;
+    top: 0;
+    width: 520px;
+    height: 100vh;
+    background: rgba(11, 15, 22, 0.96);
+    backdrop-filter: blur(14px);
+    transition: transform 0.3s ease;
+    z-index: 1600;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.category-empty {
-    padding: 12px;
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.2);
-    text-align: center;
-    font-style: italic;
+.side-panel {
+    right: 0;
+    border-left-width: 0;
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.55);
+    transform: translateX(100%);
+}
+
+.left-panel {
+    left: 0;
+    border-right-width: 0;
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.55);
+    transform: translateX(-100%);
+}
+
+.side-panel.is-open,
+.left-panel.is-open {
+    transform: translateX(0);
+}
+
+.side-panel-content,
+.left-panel-content {
+    padding: 32px;
+    padding-top: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.side-panel-content h2,
+.left-panel-content h2 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.panel-toggle {
+    position: fixed;
+    top: 96px;
+    z-index: 2500;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s, right 0.3s, left 0.3s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.45rem;
+}
+
+.panel-toggle:hover {
+    transform: scale(1.08);
+}
+
+.side-panel-toggle {
+    right: 16px;
+    background: var(--orange);
+    color: #000;
+}
+
+.left-panel-toggle {
+    left: 16px;
+    background: var(--danger);
+    color: #fff;
+}
+
+.side-panel.is-open+.side-panel-toggle {
+    right: 544px;
+}
+
+.left-panel.is-open+.left-panel-toggle {
+    left: 544px;
 }
 
 @media (max-width: 720px) {
-
-    /* 1) Passer la grille en flex colonne pour pouvoir ordonner */
-    .layout {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 16px !important;
-    }
-
-    /* 2) Ordonner les sections : Sessions d’abord, ESP32 ensuite
-        (le reste suivra l’ordre du DOM, ex. Playlist) */
-    #sessions {
-        order: 1;
-        width: 100% !important;
-    }
-
-    #esp32Card {
-        order: 2;
-        width: 100% !important;
-    }
-
-    .playlist-card {
-        order: 3;
-        width: 100% !important;
-    }
-
-    /* 3) Garantir la pleine largeur et du confort tactile */
     .container {
         padding-left: 12px;
         padding-right: 12px;
     }
 
-    .card {
-        width: 100% !important;
-        margin: 0;
+    .site-header {
+        padding: 16px;
     }
 
-    .btn,
-    .input,
-    .select {
+    .site-header-main {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .panel-toggle {
+        top: 92px;
+    }
+
+    .controls-inline .btn,
+    .volume-controls .btn,
+    .maintenance-actions .btn,
+    .picker-row .btn,
+    .esp32-buttons-group .btn {
         min-height: 44px;
+    }
+
+    .playback-status {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .volume-controls {
+        justify-content: space-between;
+    }
+
+    .side-panel,
+    .left-panel {
+        width: 100%;
+    }
+
+    .side-panel.is-open+.side-panel-toggle {
+        right: 12px;
+    }
+
+    .left-panel.is-open+.left-panel-toggle {
+        left: 12px;
     }
 }
