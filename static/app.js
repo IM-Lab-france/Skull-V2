@@ -265,6 +265,8 @@ let esp32Busy = {
 
   buttons: false,
 };
+
+let statusFetchInFlight = false;
 function renderRandomModeState() {
   if (elRandomToggle) {
     elRandomToggle.classList.toggle("toggle-active", randomModeState.enabled);
@@ -1817,9 +1819,15 @@ elStop?.addEventListener("click", async () => {
 async function updateStatus() {
   const now = Date.now();
 
+  if (statusFetchInFlight) {
+    return;
+  }
+
   if (!serverReachable && now < nextStatusAttempt) {
     return;
   }
+
+  statusFetchInFlight = true;
 
   try {
     const res = await fetch("/status");
@@ -1925,6 +1933,8 @@ async function updateStatus() {
     if (elConnectionDot) {
       elConnectionDot.setAttribute("aria-label", "hors ligne");
     }
+  } finally {
+    statusFetchInFlight = false;
   }
 }
 
