@@ -83,6 +83,8 @@ _session_categories_lock = threading.Lock()
 _session_categories_cache: Optional[dict[str, Any]] = None
 _esp32_button_assignments_lock = threading.Lock()
 
+_bt_last_reconnect_attempt: float = 0.0
+
 _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 _TRANSPORT_RE = re.compile(r"^Transport\s+(/[^\s]+)", re.MULTILINE)
@@ -90,6 +92,9 @@ _VOLUME_RE = re.compile(r"\s*Volume:\s*(?:0x[0-9A-Fa-f]+\s*)?(?:\((\d+)\)|(\d+))
 _BT_CONNECTED_RE = re.compile(r"\bConnected:\s*(yes|no)\b", re.IGNORECASE)
 
 BT_DEVICE_ADDR = os.environ.get("PLAYLIST_BT_DEVICE_ADDR", "").strip().upper()
+BT_RECONNECT_INTERVAL = max(
+    0.0, float(os.environ.get("PLAYLIST_BT_RECONNECT_INTERVAL", "10"))
+)
 _DEFAULT_RESTART_CMD = "sudo systemctl restart servo-sync.service"
 _SERVICE_RESTART_RAW = os.environ.get(
     "PLAYLIST_SERVICE_RESTART_CMD", _DEFAULT_RESTART_CMD
@@ -2169,7 +2174,23 @@ def status():
         st["random_mode"] = random_snapshot
         if BT_DEVICE_ADDR:
             info = _bluetooth_info(BT_DEVICE_ADDR)
+            connected = info.get("connected") if info else None
             volume_percent: int | None = None
+
+            if connected is not True and BT_RECONNECT_INTERVAL > 0:
+                global _bt_last_reconnect_attempt
+                now = time.time()
+                if now - _bt_last_reconnect_attempt >= BT_RECONNECT_INTERVAL:
+                    _bt_last_reconnect_attempt = now
+                    if _ensure_bt_connection(BT_DEVICE_ADDR):
+                        info = _bluetooth_info(BT_DEVICE_ADDR)
+                        connected = info.get("connected") if info else True
+                    else:
+                        servo_logger.logger.warning(
+                            "BTCTL_STATUS_RETRY_FAILED | address=%s",
+                            BT_DEVICE_ADDR,
+                        )
+
             if info and info.get("connected") is True:
                 try:
                     transport, _ = _pick_transport_path()
@@ -2186,7 +2207,9 @@ def status():
                     volume_percent = None
             st["bluetooth"] = {
                 "address": BT_DEVICE_ADDR,
-                "connected": info.get("connected") if info else None,
+                "connected": connected,
+                "last_attempt_ts": _bt_last_reconnect_attempt or None,
+                "retry_interval": BT_RECONNECT_INTERVAL,
             }
             if volume_percent is not None:
                 st["bluetooth"]["volume_percent"] = volume_percent
