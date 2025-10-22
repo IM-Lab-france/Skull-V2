@@ -74,6 +74,7 @@ ESP32_HTTP_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
 
 VOLUME_ACTIONS = {"up", "down", "mute", "set"}
 
+ALL_SESSIONS_BUTTON_CATEGORY = "Tous"
 _SESSION_CATEGORY_DEFAULTS = {
     "categories": ["enfant", "adulte"],
     "sessions": {},
@@ -1027,12 +1028,15 @@ def _sessions_for_category(category: str) -> list[str]:
     data = _load_session_categories()
     mapping = data["sessions"]
     normalized = category.strip().lower()
-    sessions: list[str] = []
-    for name, cat in mapping.items():
-        if not name:
-            continue
-        if (cat or "").strip().lower() == normalized:
-            sessions.append(name)
+    if normalized == ALL_SESSIONS_BUTTON_CATEGORY.strip().lower():
+        sessions = _eligible_random_sessions()
+    else:
+        sessions = []
+        for name, cat in mapping.items():
+            if not name:
+                continue
+            if (cat or "").strip().lower() == normalized:
+                sessions.append(name)
     valid_sessions: list[str] = []
     for session_name in sessions:
         try:
@@ -1041,6 +1045,28 @@ def _sessions_for_category(category: str) -> list[str]:
             continue
         valid_sessions.append(session_name)
     return valid_sessions
+
+
+def _button_category_options() -> list[str]:
+    data = _load_session_categories()
+    categories = data["categories"]
+    result: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: str) -> None:
+        label = (value or "").strip()
+        if not label:
+            return
+        key = label.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        result.append(label)
+
+    _add(ALL_SESSIONS_BUTTON_CATEGORY)
+    for item in categories:
+        _add(item)
+    return result
 
 
 def _resolve_session_candidate(value: str) -> tuple[str, Optional[str]]:
@@ -1471,6 +1497,7 @@ def esp32_set_auto_relay():
 @app.route("/esp32/button-config", methods=["GET"])
 def esp32_button_config():
     assignments = _load_button_assignments()
+    categories = _button_category_options()
     try:
         payload = _esp32_request("/api/button-config", method="GET")
         states = payload.get("states")
@@ -1482,7 +1509,7 @@ def esp32_button_config():
             "assignments": assignments,
         }
         response["sessions"] = assignments
-        response["categories"] = _load_session_categories()["categories"]
+        response["categories"] = categories
         if isinstance(states, list):
             response["states"] = states
         return jsonify(response)
@@ -1491,14 +1518,14 @@ def esp32_button_config():
         error["assignments"] = assignments
         error["buttonCount"] = ESP32_BUTTON_COUNT
         error["sessions"] = assignments
-        error["categories"] = _load_session_categories()["categories"]
+        error["categories"] = categories
         return jsonify(error)
     except ESP32CommunicationError as exc:
         error = _esp32_response_error(str(exc), reason="network")
         error["assignments"] = assignments
         error["buttonCount"] = ESP32_BUTTON_COUNT
         error["sessions"] = assignments
-        error["categories"] = _load_session_categories()["categories"]
+        error["categories"] = categories
         return jsonify(error)
 
 

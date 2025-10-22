@@ -222,6 +222,7 @@ let randomModeState = {
 const ESP32_STATUS_INTERVAL = 5000;
 
 const ESP32_DEFAULT_BUTTON_COUNT = 3;
+const ESP32_ALL_CATEGORY = "Tous";
 
 function normalizeEsp32ButtonCount(value) {
   const num = Number(value);
@@ -2688,34 +2689,32 @@ function populateEsp32ButtonOptions() {
   const seen = new Set();
   const categoriesList = [];
 
-  const baseCategories = Array.isArray(availableCategories)
-    ? availableCategories
-    : [];
-
-  baseCategories.forEach((category) => {
+  const pushCategory = (category) => {
     if (typeof category !== "string") {
       return;
     }
     const value = category.trim();
-    if (!value || seen.has(value)) {
+    if (!value) {
       return;
     }
-    seen.add(value);
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
     categoriesList.push(value);
-  });
+  };
+
+  pushCategory(ESP32_ALL_CATEGORY);
+
+  const baseCategories = Array.isArray(availableCategories)
+    ? availableCategories
+    : [];
+
+  baseCategories.forEach(pushCategory);
 
   (Array.isArray(esp32ButtonAssignments) ? esp32ButtonAssignments : []).forEach(
-    (category) => {
-      if (typeof category !== "string") {
-        return;
-      }
-      const value = category.trim();
-      if (!value || seen.has(value)) {
-        return;
-      }
-      seen.add(value);
-      categoriesList.push(value);
-    }
+    pushCategory
   );
 
   esp32ButtonComponents.forEach(({ select }, index) => {
