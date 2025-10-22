@@ -21,6 +21,12 @@ APT_PACKAGES=(
   pulseaudio-utils
   pulseaudio-module-bluetooth
   bluez
+  libportaudio2
+  portaudio19-dev
+  libportaudiocpp0
+  libsndfile1 
+  
+
 )
 
 TOTAL_STEPS=12
@@ -185,6 +191,9 @@ pydub>=0.25.1,<0.26
 simpleaudio>=1.0,<1.1
 adafruit-circuitpython-pca9685>=3.4.0,<4.0
 adafruit-blinka>=8.0.0,<9.0.0
+numpy
+soundfile
+sounddevice
 EOF
   chown "$SKULL_USER:$SKULL_GROUP" "$INSTALL_DIR/requirements.txt"
 }
