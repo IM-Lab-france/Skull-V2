@@ -5,6 +5,9 @@ const toastBox = document.getElementById("toast");
 const cooldownSpan = document.getElementById("cooldownRemaining");
 const cooldownHint = document.getElementById("cooldownHint");
 const scaryOverlay = document.getElementById("scaryOverlay");
+const mainContainer = document.getElementById("mainContainer");
+const catalogCard = document.getElementById("catalogCard");
+const toggleCatalogBtn = document.getElementById("toggleCatalogBtn");
 
 let sessions = Array.isArray(window.PLAYLIST_SESSIONS)
   ? window.PLAYLIST_SESSIONS
@@ -17,12 +20,52 @@ let cooldownSeconds = window.PLAYLIST_COOLDOWN || 180;
 let cooldownRemaining = window.PLAYLIST_COOLDOWN_REMAINING || 0;
 let countdownTimer = null;
 let clientId = null;
+let catalogVisible = false;
 
 function showScaryOverlay() {
   if (scaryOverlay) scaryOverlay.classList.remove("hidden");
 }
 function hideScaryOverlay() {
   if (scaryOverlay) scaryOverlay.classList.add("hidden");
+}
+
+function openCatalog() {
+  if (!catalogCard) return;
+  catalogCard.classList.remove("hidden");
+  if (mainContainer) {
+    mainContainer.classList.add("catalog-open");
+  }
+  if (toggleCatalogBtn) {
+    toggleCatalogBtn.textContent = "Fermer la sélection";
+    toggleCatalogBtn.setAttribute("aria-expanded", "true");
+  }
+  catalogVisible = true;
+  try {
+    catalogCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function closeCatalog() {
+  if (!catalogCard) return;
+  catalogCard.classList.add("hidden");
+  if (mainContainer) {
+    mainContainer.classList.remove("catalog-open");
+  }
+  if (toggleCatalogBtn) {
+    toggleCatalogBtn.textContent = "+ Ajouter un morceau";
+    toggleCatalogBtn.setAttribute("aria-expanded", "false");
+  }
+  catalogVisible = false;
+}
+
+function toggleCatalog() {
+  if (catalogVisible) {
+    closeCatalog();
+  } else {
+    openCatalog();
+  }
 }
 
 function showToast(message, type = "info") {
@@ -103,7 +146,10 @@ function renderSessions(items) {
     const submitBtn = document.createElement("button");
     submitBtn.textContent = "🔮 Lancer";
     submitBtn.dataset.session = session.name;
-    submitBtn.addEventListener("click", () => enqueueSession(session.name));
+    submitBtn.addEventListener("click", () => {
+      closeCatalog();
+      enqueueSession(session.name);
+    });
     actions.appendChild(submitBtn);
 
     li.appendChild(info);
@@ -199,6 +245,10 @@ window.addEventListener("load", () => {
   renderPlaylist(playlistState);
   startCountdown(cooldownRemaining);
   updateCooldownUI();
+  closeCatalog();
+  if (toggleCatalogBtn) {
+    toggleCatalogBtn.addEventListener("click", toggleCatalog);
+  }
   refreshSessions();
   setInterval(refreshSessions, 10000);
 });

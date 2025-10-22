@@ -33,6 +33,27 @@ body {
     gap: 20px;
 }
 
+.playlist-card {
+    order: 1;
+}
+
+.catalog-card {
+    order: 2;
+}
+
+.catalog-card.hidden {
+    display: none;
+}
+
+.container.catalog-open .catalog-card {
+    order: 0;
+}
+
+.container.catalog-open .playlist-card {
+    order: 1;
+}
+
+
 header h1 {
     margin: 0;
     font-size: 2rem;
@@ -54,6 +75,40 @@ header h1 {
     padding: 20px;
     box-shadow: 0 0 20px rgba(255, 117, 24, 0.4);
 }
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.card-header h2 {
+    margin: 0;
+}
+
+.toggle-catalog {
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-weight: bold;
+    padding: 10px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.toggle-catalog:hover {
+    background: var(--accent);
+    color: #0a070c;
+    transform: translateY(-1px);
+}
+
+.toggle-catalog[aria-expanded="true"] {
+    background: var(--accent);
+    color: #0a070c;
+}
+
 
 .card h2 {
     margin-top: 0;

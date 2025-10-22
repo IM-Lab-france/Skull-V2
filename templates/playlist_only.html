@@ -11,24 +11,32 @@
 </head>
 
 <body>
-    <main class="container">
+    <main class="container" id="mainContainer">
         <header>
             <h1>&#x1F383; Morceaux ensorcel&eacute;s</h1>
             <p class="subtitle">S&eacute;lectionne un sort musical pour l&rsquo;invoquer &#x2728;</p>
         </header>
 
-        <section class="card">
-            <h2>&#x1F3B6; Grimoire</h2>
+        <button type="button" id="toggleCatalogBtn" class="toggle-catalog" aria-expanded="false">
+            + Ajouter un morceau
+        </button>
+
+        <section class="card playlist-card" id="playlistCard">
+            <div class="card-header">
+                <h2>&#x1F47B; Playlist en cours</h2>
+            </div>
+            <div id="playlistCurrent" class="playlist-current">&#x1F3B5; Silence terrifiant&hellip;</div>
+            <ul id="playlistQueue" class="playlist-list"></ul>
+        </section>
+
+        <section class="card catalog-card hidden" id="catalogCard">
+            <div class="card-header">
+                <h2>&#x1F3B6; Grimoire</h2>
+            </div>
             <p class="hint" id="cooldownHint">
                 &#x23F3; Prochain sort disponible dans <span id="cooldownRemaining">-</span>s
             </p>
             <ul id="sessionList" class="available-list"></ul>
-        </section>
-
-        <section class="card">
-            <h2>&#x1F47B; Playlist en cours</h2>
-            <div id="playlistCurrent" class="playlist-current">&#x1F3B5; Silence terrifiant&hellip;</div>
-            <ul id="playlistQueue" class="playlist-list"></ul>
         </section>
     </main>
 
