@@ -22,15 +22,48 @@ APT_PACKAGES=(
   bluez
 )
 
+TOTAL_STEPS=10
+CURRENT_STEP=0
+
+msg() {
+  printf '[%s] %s\n' "$(date +'%H:%M:%S')" "$1"
+}
+
+announce_step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  msg ""
+  msg "==> (${CURRENT_STEP}/${TOTAL_STEPS}) $1"
+}
+
+run_quiet() {
+  local description="$1"
+  shift
+  msg "   - $description"
+  if "$@" >/dev/null; then
+    msg "     -> OK"
+  else
+    msg "     -> ERREUR (voir sortie ci-dessus)"
+    return 1
+  fi
+}
+
+run_cmd() {
+  local description="$1"
+  shift
+  msg "   - $description"
+  if "$@"; then
+    msg "     -> OK"
+  else
+    msg "     -> ERREUR (voir sortie ci-dessus)"
+    return 1
+  fi
+}
+
 READ_VALUE=""
 SELECTED_BLUETOOTH_MAC=""
 SELECTED_BLUETOOTH_NAME=""
 PAIRED_BLUETOOTH_MAC=""
 PAIRED_BLUETOOTH_NAME=""
-
-msg() {
-  printf '[%s] %s\n' "$(date +'%H:%M:%S')" "$1"
-}
 
 is_interactive() {
   [[ -t 0 ]] || [[ -t 1 ]] || [[ -t 2 ]] || [[ -w /dev/tty ]]
@@ -76,7 +109,7 @@ PLAYLIST_BT_DEVICE_NAME=$name_escaped
 EOF
 
   chown "$SKULL_USER:$SKULL_GROUP" "$config_file"
-  msg "Configuration bluetooth enregistree dans $config_file"
+  msg "   - Configuration bluetooth enregistree dans $config_file"
 }
 
 require_root() {
@@ -113,8 +146,12 @@ detect_user() {
 
 install_apt_packages() {
   msg "Installation des dependances systeme : ${APT_PACKAGES[*]}"
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y "${APT_PACKAGES[@]}"
+  run_quiet "Mise a jour du cache APT" apt-get update -qq
+  run_cmd "Installation des paquets systeme (cela peut prendre quelques minutes)" \
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      -o Dpkg::Progress-Fancy=1 \
+      -o Dpkg::Use-Pty=0 \
+      "${APT_PACKAGES[@]}"
 }
 
 prepare_source_tree() {
@@ -153,7 +190,8 @@ setup_python_env() {
     python3 -m venv "$INSTALL_DIR/.venv"
   fi
   "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip setuptools wheel
-  "$INSTALL_DIR/.venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+  msg "   - Installation des dependances Python (pip)"
+  "$INSTALL_DIR/.venv/bin/pip" install --no-cache-dir --progress-bar off -r "$INSTALL_DIR/requirements.txt"
 }
 
 prepare_runtime_dirs() {
@@ -505,16 +543,26 @@ main() {
   require_root
   detect_user
   msg "Installation pour l'utilisateur $SKULL_USER (UID=$SKULL_UID)"
+  announce_step "Installation des dependances systeme (APT)"
   install_apt_packages
+  announce_step "Activation du support I2C"
   enable_i2c
+  announce_step "Configuration Bluetooth"
   configure_bluetooth
+  announce_step "Deploiement du code Skull-V2"
   prepare_source_tree
+  announce_step "Generation du fichier requirements.txt"
   write_requirements
+  announce_step "Installation des dependances Python"
   setup_python_env
+  announce_step "Preparation des repertoires applicatifs"
   prepare_runtime_dirs
   persist_bluetooth_device
+  announce_step "Verification / creation du runtime utilisateur"
   ensure_runtime_dir
+  announce_step "Creation du service systemd"
   write_systemd_service
+  announce_step "Activation du service"
   enable_service
   msg "Installation terminee."
   msg "Le service peut etre controle avec : systemctl status $SERVICE_NAME"
