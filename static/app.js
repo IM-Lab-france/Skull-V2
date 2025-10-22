@@ -108,6 +108,11 @@ const elBtTopStatusDot = document.getElementById("bluetoothTopStatusDot");
 
 const elBtTopStatusText = document.getElementById("bluetoothTopStatusText");
 
+// Bluetooth pairing UI
+const elBtScanBtn = document.getElementById("btScanBtn");
+const elBtDeviceSelect = document.getElementById("btDeviceSelect");
+const elBtPairBtn = document.getElementById("btPairBtn");
+
 const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
 const elRestartServiceBtn = document.getElementById("restartServiceBtn");
@@ -125,6 +130,24 @@ const elEsp32TopStatus = document.getElementById("esp32TopStatus");
 const elEsp32TopStatusDot = document.getElementById("esp32TopStatusDot");
 
 const elEsp32TopStatusText = document.getElementById("esp32TopStatusText");
+
+const elLoopFile = document.getElementById("loopFile");
+const elLoopUploadBtn = document.getElementById("loopUploadBtn");
+const elLoopToggleBtn = document.getElementById("loopToggleBtn");
+const elLoopStatusText = document.getElementById("loopStatusText");
+const elLoopFilename = document.getElementById("loopFilename");
+const elLoopResume = document.getElementById("loopResumeHint");
+const elLoopSelectedRow = document.getElementById("loopSelectedRow");
+const elLoopSelectedName = document.getElementById("loopSelectedName");
+
+const loopUploadDefaultLabel =
+  elLoopUploadBtn?.textContent?.trim() || "Importer";
+const loopUploadLoadingLabel =
+  elLoopUploadBtn?.dataset.loadingLabel || "Import...";
+const loopToggleActivateLabel =
+  elLoopToggleBtn?.dataset.labelOn || "Activer la boucle";
+const loopToggleDeactivateLabel =
+  elLoopToggleBtn?.dataset.labelOff || "Desactiver la boucle";
 
 const elEsp32StatusRefresh = document.getElementById("esp32StatusRefreshBtn");
 
@@ -209,6 +232,10 @@ let restartServiceBusy = false;
 
 let restartBluetoothBusy = false;
 
+let loopState = null;
+let loopUploadInFlight = false;
+let loopToggleInFlight = false;
+
 let randomModeState = {
   enabled: false,
 
@@ -218,6 +245,79 @@ let randomModeState = {
 
   busy: false,
 };
+
+// -------------------- Bluetooth pairing helpers --------------------
+let btScanBusy = false;
+
+function setBtUiBusy(busy) {
+  btScanBusy = !!busy;
+  if (elBtScanBtn) elBtScanBtn.disabled = !!busy;
+  if (elBtDeviceSelect) elBtDeviceSelect.disabled = !!busy;
+  if (elBtPairBtn) elBtPairBtn.disabled = !!busy || !(elBtDeviceSelect && elBtDeviceSelect.value);
+}
+
+function populateBtDevicesList(devices) {
+  if (!elBtDeviceSelect) return;
+  elBtDeviceSelect.innerHTML = "";
+  const list = Array.isArray(devices) ? devices : [];
+  list.forEach((d) => {
+    const mac = (d && d.mac) || (d && d.address) || "";
+    const name = (d && d.name) || "Inconnu";
+    if (!mac) return;
+    const opt = document.createElement("option");
+    opt.value = mac;
+    opt.textContent = `${name} — ${mac}`;
+    elBtDeviceSelect.appendChild(opt);
+  });
+  if (elBtPairBtn) {
+    elBtPairBtn.disabled = !elBtDeviceSelect.value;
+  }
+}
+
+async function scanBtDevices() {
+  if (!elBtScanBtn) return;
+  setBtUiBusy(true);
+  try {
+    const res = await fetch("/scan", { method: "POST" });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || `HTTP ${res.status}`);
+    }
+    const devices = await res.json();
+    populateBtDevicesList(devices);
+    const count = Array.isArray(devices) ? devices.length : 0;
+    toast(count ? `${count} périphérique(s) trouvé(s)` : "Aucun périphérique trouvé");
+  } catch (e) {
+    toast(`Erreur scan Bluetooth: ${e && e.message ? e.message : e}`, true);
+  } finally {
+    setBtUiBusy(false);
+  }
+}
+
+async function pairBtSelected() {
+  if (!elBtDeviceSelect || !elBtDeviceSelect.value) return;
+  const mac = elBtDeviceSelect.value;
+  setBtUiBusy(true);
+  try {
+    const res = await fetch("/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mac }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = (payload && (payload.error || payload.message)) || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    toast(`Appairage demandé pour ${mac}`);
+    // Rafraîchir le statut global (mettra à jour l'état Bluetooth)
+    updateStatus();
+  } catch (e) {
+    toast(`Échec appairage: ${e && e.message ? e.message : e}`, true);
+  } finally {
+    setBtUiBusy(false);
+  }
+}
 
 const ESP32_STATUS_INTERVAL = 5000;
 
@@ -593,7 +693,286 @@ elForm?.addEventListener("submit", (e) => {
   xhr.send(fd);
 });
 
+// Boucle audio
+
+function formatLoopResume(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) {
+    return null;
+  }
+  const value = Math.max(0, Math.round(seconds));
+  if (value <= 0) {
+    return "Reprise imminente";
+  }
+  return `Reprise dans ~${value}s`;
+}
+
+function describeLoopStatus(status) {
+  if (!status || typeof status !== "object") {
+    return "Boucle inconnue";
+  }
+  if (!status.has_audio) {
+    return "Aucune boucle importee";
+  }
+  if (!status.enabled) {
+    return "Boucle importee mais desactivee";
+  }
+  if (status.suppressed) {
+    const resume = formatLoopResume(status.resuming_in);
+    return resume ? `Boucle en pause (${resume})` : "Boucle en pause";
+  }
+  if (status.playing) {
+    return "Boucle en lecture";
+  }
+  if (status.fade_active) {
+    return "Transition de volume en cours";
+  }
+  return "Boucle prete";
+}
+
+function refreshLoopControls() {
+  const hasFile =
+    elLoopFile && elLoopFile.files && elLoopFile.files.length > 0;
+
+  if (elLoopUploadBtn) {
+    elLoopUploadBtn.disabled = loopUploadInFlight || !hasFile;
+    elLoopUploadBtn.textContent = loopUploadInFlight
+      ? loopUploadLoadingLabel
+      : loopUploadDefaultLabel;
+    elLoopUploadBtn.classList.toggle("is-busy", loopUploadInFlight);
+  }
+
+  if (elLoopToggleBtn) {
+    const enabled = !!(loopState && loopState.enabled);
+    const hasAudio = !!(loopState && loopState.has_audio);
+
+    elLoopToggleBtn.disabled = loopToggleInFlight || !hasAudio;
+    elLoopToggleBtn.textContent = enabled
+      ? loopToggleDeactivateLabel
+      : loopToggleActivateLabel;
+    elLoopToggleBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
+    elLoopToggleBtn.classList.remove("success", "warning");
+    elLoopToggleBtn.classList.add(enabled ? "warning" : "success");
+    elLoopToggleBtn.classList.toggle("is-busy", loopToggleInFlight);
+  }
+}
+
+function clearLoopSelection() {
+  if (elLoopFile) {
+    elLoopFile.value = "";
+  }
+  if (elLoopSelectedRow) {
+    elLoopSelectedRow.hidden = true;
+  }
+  if (elLoopSelectedName) {
+    elLoopSelectedName.textContent = "";
+  }
+}
+
+function handleLoopFileChange() {
+  const file =
+    elLoopFile && elLoopFile.files && elLoopFile.files.length
+      ? elLoopFile.files[0]
+      : null;
+  if (elLoopSelectedRow) {
+    if (file) {
+      elLoopSelectedRow.hidden = false;
+      if (elLoopSelectedName) {
+        elLoopSelectedName.textContent = file.name;
+      }
+    } else {
+      elLoopSelectedRow.hidden = true;
+      if (elLoopSelectedName) {
+        elLoopSelectedName.textContent = "";
+      }
+    }
+  }
+  refreshLoopControls();
+}
+
+function applyLoopStatus(status) {
+  loopState = status && typeof status === "object" ? status : null;
+
+  if (elLoopStatusText) {
+    elLoopStatusText.textContent = describeLoopStatus(loopState);
+  }
+
+  if (elLoopFilename) {
+    const label =
+      loopState && loopState.filename ? loopState.filename : "Aucun MP3";
+    elLoopFilename.textContent = label;
+  }
+
+  if (elLoopResume) {
+    if (loopState && loopState.suppressed) {
+      const resume = formatLoopResume(loopState.resuming_in);
+      elLoopResume.textContent =
+        resume || "Reprise automatique des que possible";
+      elLoopResume.hidden = false;
+    } else if (loopState && loopState.fade_active) {
+      elLoopResume.textContent = "Transition de volume en cours";
+      elLoopResume.hidden = false;
+    } else {
+      elLoopResume.textContent = "";
+      elLoopResume.hidden = true;
+    }
+  }
+
+  refreshLoopControls();
+}
+
+async function fetchLoopStatus(silent = false) {
+  if (!elLoopStatusText) {
+    return;
+  }
+  try {
+    const res = await fetch("/loop/status");
+    if (!res.ok) {
+      throw new Error(`loop_status_${res.status}`);
+    }
+    const status = await res.json();
+    applyLoopStatus(status);
+  } catch (err) {
+    if (!silent) {
+      toast("Erreur boucle audio (status)", true);
+    }
+    console.error("Loop status error:", err);
+  }
+}
+
+async function uploadLoopFile() {
+  if (!elLoopFile || !elLoopFile.files || !elLoopFile.files.length) {
+    toast("Selectionnez un MP3 pour la boucle", true);
+    return;
+  }
+
+  const file = elLoopFile.files[0];
+  const fd = new FormData();
+  fd.append("loop_mp3", file);
+
+  loopUploadInFlight = true;
+  refreshLoopControls();
+
+  try {
+    const res = await fetch("/loop/upload", {
+      method: "POST",
+      body: fd,
+    });
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      data = null;
+    }
+
+    if (!res.ok || (data && data.error)) {
+      const message =
+        data && data.error ? data.error : `HTTP ${res.status}`;
+      toast(`Echec import boucle: ${message}`, true);
+      return;
+    }
+
+    if (data && data.loop) {
+      applyLoopStatus(data.loop);
+    } else {
+      await fetchLoopStatus(true);
+    }
+
+    toast("Boucle audio importee");
+    clearLoopSelection();
+  } catch (err) {
+    toast("Erreur reseau boucle audio", true);
+    console.error("Loop upload error:", err);
+  } finally {
+    loopUploadInFlight = false;
+    refreshLoopControls();
+  }
+}
+
+async function toggleLoopState() {
+  if (!loopState) {
+    await fetchLoopStatus(true);
+  }
+
+  if (!loopState || !loopState.has_audio) {
+    toast("Importer un MP3 avant d'activer la boucle", true);
+    return;
+  }
+
+  const desired = !loopState.enabled;
+
+  loopToggleInFlight = true;
+  refreshLoopControls();
+
+  try {
+    const res = await fetch("/loop/enable", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled: desired }),
+    });
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      data = null;
+    }
+
+    if (!res.ok || (data && data.error)) {
+      const message =
+        data && data.error ? data.error : `HTTP ${res.status}`;
+      toast(`Echec mise a jour boucle: ${message}`, true);
+      return;
+    }
+
+    const status =
+      data && typeof data === "object" && "loop" in data ? data.loop : data;
+    applyLoopStatus(status);
+
+    toast(desired ? "Boucle activee" : "Boucle desactivee");
+  } catch (err) {
+    toast("Erreur reseau boucle audio", true);
+    console.error("Loop toggle error:", err);
+  } finally {
+    loopToggleInFlight = false;
+    refreshLoopControls();
+  }
+}
+
+elLoopFile?.addEventListener("change", handleLoopFileChange);
+
+elLoopUploadBtn?.addEventListener("click", () => {
+  if (!loopUploadInFlight) {
+    uploadLoopFile();
+  }
+});
+
+elLoopToggleBtn?.addEventListener("click", () => {
+  if (!loopToggleInFlight) {
+    toggleLoopState();
+  }
+});
+
+refreshLoopControls();
+
 // Sessions
+
+// ---- Bind Bluetooth pairing UI ----
+elBtScanBtn?.addEventListener("click", () => {
+  if (!btScanBusy) scanBtDevices();
+});
+
+elBtDeviceSelect?.addEventListener("change", () => {
+  if (elBtPairBtn) {
+    elBtPairBtn.disabled = !elBtDeviceSelect.value || btScanBusy;
+  }
+});
+
+elBtPairBtn?.addEventListener("click", () => {
+  if (!btScanBusy) pairBtSelected();
+});
 
 const deleteButtonDefaultLabel =
   elDeleteSession?.textContent || "Supprimer la session";
@@ -1840,6 +2219,10 @@ async function updateStatus() {
     const st = await res.json();
 
     elStatus.textContent = JSON.stringify(st, null, 2);
+
+    if (st && typeof st === "object" && st.loop) {
+      applyLoopStatus(st.loop);
+    }
 
     if (st && typeof st === "object" && st.random_mode) {
       applyRandomModeSnapshot(st.random_mode);
@@ -3434,6 +3817,8 @@ window.addEventListener("load", () => {
   fetchSessions();
 
   fetchRandomModeState();
+
+  fetchLoopStatus(true);
 
   updateStatus();
 

@@ -44,6 +44,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 from pydub import AudioSegment
 from sync_player import SyncPlayer
+from loop_player import LoopPlayer
 from logger import servo_logger
 
 DATA_DIR = Path("data")
@@ -55,10 +56,12 @@ CHANNELS_CONFIG_PATH = CONFIG_DIR / "channels_state.json"
 ESP32_CONFIG_PATH = CONFIG_DIR / "esp32_settings.json"
 SESSION_CATEGORIES_PATH = CONFIG_DIR / "session_categories.json"
 ESP32_BUTTON_ASSIGNMENTS_PATH = CONFIG_DIR / "esp32_button_categories.json"
+LOOP_AUDIO_DIR = CONFIG_DIR / "loop_audio"
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 player = SyncPlayer()
+loop_player = LoopPlayer(LOOP_AUDIO_DIR)
 
 VOLUME_TIMEOUT = float(os.environ.get("PLAYLIST_VOLUME_TIMEOUT", "5"))
 VOLUME_STEP = int(os.environ.get("PLAYLIST_VOLUME_STEP", "8"))
@@ -90,6 +93,8 @@ _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 _TRANSPORT_RE = re.compile(r"^Transport\s+(/[^\s]+)", re.MULTILINE)
 _VOLUME_RE = re.compile(r"\s*Volume:\s*(?:0x[0-9A-Fa-f]+\s*)?(?:\((\d+)\)|(\d+))")
 _BT_CONNECTED_RE = re.compile(r"\bConnected:\s*(yes|no)\b", re.IGNORECASE)
+_BT_PAIRED_RE = re.compile(r"\bPaired:\s*(yes|no)\b", re.IGNORECASE)
+_BT_TRUSTED_RE = re.compile(r"\bTrusted:\s*(yes|no)\b", re.IGNORECASE)
 
 BT_DEVICE_ADDR = os.environ.get("PLAYLIST_BT_DEVICE_ADDR", "").strip().upper()
 BT_RECONNECT_INTERVAL = max(
@@ -225,11 +230,35 @@ def _bluetooth_info(address: str) -> dict[str, Any] | None:
 
     stdout = proc.stdout or ""
     connected = None
-    match = _BT_CONNECTED_RE.search(stdout)
-    if match:
-        connected = match.group(1).lower() == "yes"
+    paired = None
+    trusted = None
 
-    return {"connected": connected, "raw": stdout}
+    m = _BT_CONNECTED_RE.search(stdout)
+    if m:
+        connected = m.group(1).lower() == "yes"
+    m = _BT_PAIRED_RE.search(stdout)
+    if m:
+        paired = m.group(1).lower() == "yes"
+    m = _BT_TRUSTED_RE.search(stdout)
+    if m:
+        trusted = m.group(1).lower() == "yes"
+
+    return {"connected": connected, "paired": paired, "trusted": trusted, "raw": stdout}
+
+
+def _wait_bt_flag(address: str, key: str, desired: bool, timeout_s: float, interval: float = 0.5) -> bool:
+    """Poll bluetoothctl info until key (connected/paired/trusted) matches desired or timeout."""
+    deadline = time.time() + max(0.1, float(timeout_s))
+    while time.time() < deadline:
+        info = _bluetooth_info(address)
+        if info is None:
+            time.sleep(interval)
+            continue
+        value = info.get(key)
+        if isinstance(value, bool) and value == desired:
+            return True
+        time.sleep(interval)
+    return False
 
 
 def _ensure_bt_connection(address: str) -> bool:
@@ -693,8 +722,27 @@ def _start_session(
 
     try:
         player.load(session_dir)
+    except Exception as exc:
+        servo_logger.logger.error(
+            f"PLAYLIST_START_FAILED | session={session_name} | error={exc}"
+        )
+        return False
+
+    suppressed = False
+    try:
+        loop_player.suppress_for_session()
+        suppressed = True
+    except Exception:
+        servo_logger.logger.exception("LOOP_SUPPRESS_FAILED")
+
+    try:
         player.play()
     except Exception as exc:
+        if suppressed:
+            try:
+                loop_player.release_suppression(delay=0.0)
+            except Exception:
+                servo_logger.logger.exception("LOOP_SUPPRESS_RELEASE_FAILED")
         servo_logger.logger.error(
             f"PLAYLIST_START_FAILED | session={session_name} | error={exc}"
         )
@@ -765,6 +813,11 @@ def _handle_track_finished(
 
     if reason != "replace":
         _set_current_entry(None)
+
+        try:
+            loop_player.release_suppression(delay=5.0)
+        except Exception:
+            servo_logger.logger.exception("LOOP_RESUME_SCHEDULE_FAILED")
 
     if reason in {"completed", "skip", "error"}:
         threading.Thread(target=_start_next_from_playlist, daemon=True).start()
@@ -1700,6 +1753,19 @@ def sanitize_scene_name(name: str) -> str:
     return sanitized[:50]  # Limiter la longueur
 
 
+def _sanitize_loop_filename(filename: str) -> str:
+    """Sanitize uploaded loop file names."""
+    if not filename:
+        return "loop.mp3"
+    base = Path(filename).name
+    cleaned = re.sub(r"[^a-zA-Z0-9_.-]", "_", base).strip("._")
+    if not cleaned:
+        cleaned = "loop"
+    if not cleaned.lower().endswith(".mp3"):
+        cleaned = f"{cleaned}.mp3"
+    return cleaned[:80]
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -1788,6 +1854,87 @@ def upload():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Erreur lors de l'upload: {str(e)}"}), 500
+
+
+@app.route("/loop/status")
+def loop_status():
+    try:
+        return jsonify(loop_player.status())
+    except Exception as exc:
+        servo_logger.logger.exception("LOOP_STATUS_ERROR")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/loop/enable", methods=["POST"])
+def loop_enable():
+    payload = request.get_json(silent=True) or {}
+    if "enabled" not in payload:
+        return jsonify({"error": "Champ 'enabled' manquant"}), 400
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "Le champ 'enabled' doit etre booleen"}), 400
+    try:
+        changed = loop_player.set_enabled(enabled)
+    except Exception as exc:
+        servo_logger.logger.exception("LOOP_ENABLE_ERROR")
+        return jsonify({"error": str(exc)}), 500
+
+    status = loop_player.status()
+    status["changed"] = changed
+    return jsonify(status)
+
+
+@app.route("/loop/upload", methods=["POST"])
+def loop_upload():
+    try:
+        up_file = request.files.get("loop_mp3")
+        if not up_file or not up_file.filename:
+            return jsonify({"error": "Fichier MP3 requis"}), 400
+
+        original_name = up_file.filename
+        safe_name = _sanitize_loop_filename(original_name)
+
+        tmp_handle = tempfile.NamedTemporaryFile(
+            dir=str(LOOP_AUDIO_DIR), suffix=".mp3", delete=False
+        )
+        tmp_path = Path(tmp_handle.name)
+        tmp_handle.close()
+        try:
+            up_file.save(str(tmp_path))
+            final_path = LOOP_AUDIO_DIR / safe_name
+            shutil.move(str(tmp_path), final_path)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+
+        try:
+            loop_player.replace_audio(final_path, display_name=original_name)
+        except ValueError as exc:
+            try:
+                final_path.unlink()
+            except Exception:
+                pass
+            return jsonify({"error": str(exc)}), 400
+
+        # Clean up older loop files to avoid clutter.
+        for leftover in LOOP_AUDIO_DIR.glob("*.mp3"):
+            if leftover != final_path:
+                try:
+                    leftover.unlink()
+                except Exception:
+                    servo_logger.logger.warning(
+                        "LOOP_FILE_CLEANUP_FAILED | file=%s", leftover
+                    )
+
+        status = loop_player.status()
+        status["filename"] = original_name
+        return jsonify({"status": "ok", "loop": status})
+    except Exception as exc:
+        servo_logger.logger.exception("LOOP_UPLOAD_ERROR")
+        return jsonify({"error": f"Echec upload boucle: {exc}"}), 500
 
 
 @app.route("/sessions")
@@ -2213,6 +2360,7 @@ def status():
             }
             if volume_percent is not None:
                 st["bluetooth"]["volume_percent"] = volume_percent
+        st["loop"] = loop_player.status()
         return jsonify(st)
     except Exception as e:
         return jsonify({"error": f"Erreur status: {e}"}), 500
@@ -2539,6 +2687,100 @@ def bluetooth_restart():
 
     return jsonify({"status": "restarted"})
 
+
+# -------------------- Bluetooth pairing API --------------------
+
+def _parse_bt_devices_list(text: str) -> list[dict[str, str]]:
+    devices: list[dict[str, str]] = []
+    if not text:
+        return devices
+    for line in (text or "").splitlines():
+        line = line.strip()
+        # Expected: "Device AA:BB:CC:DD:EE:FF Name Of Device"
+        if not line.startswith("Device "):
+            continue
+        parts = line.split(maxsplit=2)
+        if len(parts) < 2:
+            continue
+        mac = parts[1].strip()
+        name = parts[2].strip() if len(parts) > 2 else ""
+        if mac:
+            devices.append({"mac": mac, "name": name})
+    return devices
+
+
+@app.route("/scan", methods=["POST"])
+def bt_scan():
+    try:
+        _ = _bluetoothctl_script("power on")
+        _ = _bluetoothctl_script("agent on")
+        _ = _bluetoothctl_script("default-agent")
+        _ = _bluetoothctl_script("scan on")
+        time.sleep(5)
+        _ = _bluetoothctl_script("scan off")
+        proc = _bluetoothctl_script("devices")
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Scan bluetooth timeout"}), 504
+    except Exception as e:
+        servo_logger.logger.exception("BT_SCAN_ERROR")
+        return jsonify({"error": f"Scan bluetooth impossible: {e}"}), 500
+
+    devices = _parse_bt_devices_list(proc.stdout or "")
+    return jsonify(devices)
+
+
+@app.route("/pair", methods=["POST"])
+def bt_pair():
+    data = request.get_json(silent=True) or {}
+    mac = (data.get("mac") or data.get("address") or "").strip()
+    if not mac:
+        return jsonify({"error": "mac address required"}), 400
+
+    results: dict[str, dict[str, object]] = {}
+
+    def run(cmd: str) -> subprocess.CompletedProcess:
+        proc = _bluetoothctl_script(cmd)
+        results[cmd] = {
+            "stdout": (proc.stdout or ""),
+            "stderr": (proc.stderr or ""),
+            "rc": int(proc.returncode),
+        }
+        return proc
+
+    try:
+        # Ensure controller is ready
+        _ = _bluetoothctl_script("power on")
+        _ = _bluetoothctl_script("agent on")
+        _ = _bluetoothctl_script("default-agent")
+
+        # 1) Pair
+        p1 = run(f"pair {mac}")
+        if p1.returncode != 0:
+            return jsonify({"error": "pair_failed", "results": results}), 500
+        if not _wait_bt_flag(mac, "paired", True, timeout_s=15.0):
+            return jsonify({"error": "pair_timeout", "results": results}), 504
+
+        # 2) Trust
+        p2 = run(f"trust {mac}")
+        if p2.returncode != 0:
+            return jsonify({"error": "trust_failed", "results": results}), 500
+        if not _wait_bt_flag(mac, "trusted", True, timeout_s=8.0):
+            return jsonify({"error": "trust_timeout", "results": results}), 504
+
+        # 3) Connect
+        p3 = run(f"connect {mac}")
+        if p3.returncode != 0:
+            return jsonify({"error": "connect_failed", "results": results}), 500
+        if not _wait_bt_flag(mac, "connected", True, timeout_s=12.0):
+            return jsonify({"error": "connect_timeout", "results": results}), 504
+
+        flags = _bluetooth_info(mac) or {}
+        return jsonify({"results": results, "status": {k: flags.get(k) for k in ("paired", "trusted", "connected")}})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "bluetoothctl_timeout", "results": results}), 504
+    except Exception as e:
+        servo_logger.logger.exception("BT_PAIR_ERROR")
+        return jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}), 500
 
 # -------------------- Channels API --------------------
 

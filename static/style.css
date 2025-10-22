@@ -421,6 +421,57 @@ body.theme-halloween::after {
     gap: 8px;
 }
 
+.loop-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .04);
+}
+
+.loop-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.loop-status-text {
+    margin: 0;
+    font-weight: 600;
+    color: var(--muted);
+    font-size: .95rem;
+}
+
+.loop-meta {
+    margin: 0;
+    color: var(--muted);
+    font-size: .9rem;
+}
+
+.loop-meta .label {
+    font-weight: 600;
+    margin-right: 6px;
+}
+
+.loop-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.loop-actions .btn {
+    min-width: 140px;
+}
+
+.loop-actions .btn.is-busy {
+    opacity: .7;
+}
+
 .playback-status {
     display: flex;
     align-items: center;

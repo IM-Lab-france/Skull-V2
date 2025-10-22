@@ -85,6 +85,34 @@
                     </p>
                 </div>
 
+                <section class="loop-panel" aria-labelledby="loopTitle">
+                    <div class="loop-header">
+                        <h3 id="loopTitle">Boucle audio</h3>
+                        <p id="loopStatusText" class="loop-status-text">Aucune boucle importee</p>
+                    </div>
+                    <p class="loop-meta">
+                        <span class="label">Fichier actuel :</span>
+                        <span id="loopFilename">Aucun MP3</span>
+                    </p>
+                    <p class="loop-meta" id="loopSelectedRow" hidden>
+                        <span class="label">Selection :</span>
+                        <span id="loopSelectedName"></span>
+                    </p>
+                    <p id="loopResumeHint" class="hint" hidden>La boucle reprendra automatiquement apres la lecture.</p>
+                    <div class="loop-actions">
+                        <label class="btn secondary">
+                            <input id="loopFile" type="file" accept="audio/mpeg,.mp3" hidden />
+                            Choisir un MP3
+                        </label>
+                        <button id="loopUploadBtn" class="btn primary" type="button" disabled data-loading-label="Import...">
+                            Importer
+                        </button>
+                        <button id="loopToggleBtn" class="btn success" type="button" disabled data-label-on="Activer la boucle"
+                            data-label-off="Desactiver la boucle">
+                            Activer la boucle
+                        </button>
+                    </div>
+                </section>
                 <div class="session-danger-zone playback-danger-zone" role="group"
                     aria-label="Suppression de la session sélectionnée">
                     <button id="deleteSessionBtn" class="btn danger" type="button">
@@ -270,6 +298,22 @@
                         </div>
                     </div>
                 </details>
+            </section>
+
+            <section class="card bt-pairing-card">
+                <header class="card-header">
+                    <h2>Appairage Bluetooth</h2>
+                    <button id="btScanBtn" class="btn secondary" type="button">Scanner</button>
+                </header>
+                <div class="row">
+                    <label class="label" for="btDeviceSelect">Périphériques détectés</label>
+                    <select id="btDeviceSelect" class="select" aria-label="Périphériques détectés"></select>
+                </div>
+                <div class="controls-inline" role="group" aria-label="Appairage Bluetooth">
+                    <button id="btPairBtn" class="btn primary" type="button" disabled>Connecter l'enceinte</button>
+                </div>
+                <p class="hint">Lancez un scan puis sélectionnez votre enceinte.
+                </p>
             </section>
 
 
