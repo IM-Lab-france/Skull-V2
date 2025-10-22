@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_URL="https://github.com/IM-Lab-france/Skull-V2.git"
 INSTALL_DIR="/opt/skull"
 SERVICE_NAME="servo-sync.service"
+PLAYLIST_SERVICE_NAME="playlist-web.service"
 
 # APT packages required because they cannot be installed via pip
 APT_PACKAGES=(
@@ -22,7 +23,7 @@ APT_PACKAGES=(
   bluez
 )
 
-TOTAL_STEPS=10
+TOTAL_STEPS=12
 CURRENT_STEP=0
 
 msg() {
@@ -170,6 +171,10 @@ prepare_source_tree() {
     msg "Clonage du depot dans $INSTALL_DIR"
     git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
+
+  if [[ -f "$INSTALL_DIR/launch_playlist_web.sh" ]]; then
+    chmod +x "$INSTALL_DIR/launch_playlist_web.sh" || true
+  fi
 }
 
 write_requirements() {
@@ -194,6 +199,37 @@ setup_python_env() {
   "$INSTALL_DIR/.venv/bin/pip" install --no-cache-dir --progress-bar off -r "$INSTALL_DIR/requirements.txt"
 }
 
+setup_playlist_web_env() {
+  msg "Preparation de l'environnement playlist web"
+  local playlist_venv="$INSTALL_DIR/.venv_playlist"
+  local req_file="$INSTALL_DIR/requirements_playlist.txt"
+
+  if [[ ! -d "$INSTALL_DIR" ]]; then
+    msg "   - Depot $INSTALL_DIR introuvable, etape ignoree."
+    return
+  fi
+
+  if [[ ! -d "$playlist_venv" ]]; then
+    msg "   - Creation du virtualenv playlist ($playlist_venv)"
+    python3 -m venv "$playlist_venv"
+  else
+    msg "   - Virtualenv playlist deja present ($playlist_venv)"
+  fi
+
+  run_cmd "Mise a jour pip (playlist)" "$playlist_venv/bin/pip" install --upgrade pip setuptools wheel
+
+  if [[ -f "$req_file" ]]; then
+    run_cmd "Installation des dependances playlist (requirements_playlist.txt)" \
+      "$playlist_venv/bin/pip" install --no-cache-dir --progress-bar off -r "$req_file"
+  else
+    msg "   - Fichier $req_file introuvable, installation minimale Flask"
+    run_cmd "Installation de Flask pour l'interface playlist" \
+      "$playlist_venv/bin/pip" install --no-cache-dir --progress-bar off Flask
+  fi
+
+  msg "   - Interface playlist web prete (virtualenv: $playlist_venv)"
+}
+
 prepare_runtime_dirs() {
   mkdir -p "$INSTALL_DIR/config" "$INSTALL_DIR/data" "$INSTALL_DIR/logs"
   chown -R "$SKULL_USER:$SKULL_GROUP" "$INSTALL_DIR"
@@ -214,6 +250,24 @@ prompt_bluetooth_pairing() {
     msg "Mode non interactif : attente 20s avant de poursuivre."
     sleep 20
   fi
+}
+
+should_configure_bluetooth() {
+  if [[ "${SKULL_SKIP_BLUETOOTH:-}" =~ ^([1Yy]|[Tt][Rr][Uu][Ee]|[Oo][Nn])$ ]]; then
+    return 1
+  fi
+  if [[ "${SKULL_FORCE_BLUETOOTH_CONFIG:-}" =~ ^([1Yy]|[Tt][Rr][Uu][Ee]|[Oo][Nn])$ ]]; then
+    return 0
+  fi
+  if is_interactive; then
+    read_input "Souhaitez-vous configurer une enceinte bluetooth maintenant ? [O/n] " "O"
+    local answer="${READ_VALUE:-O}"
+    case "${answer^^}" in
+      N*) return 1 ;;
+    esac
+    return 0
+  fi
+  return 1
 }
 
 manage_paired_devices() {
@@ -531,12 +585,48 @@ EOF
   chmod 644 "/etc/systemd/system/$SERVICE_NAME"
 }
 
-enable_service() {
+write_playlist_service() {
+  if [[ ! -f "$INSTALL_DIR/launch_playlist_web.sh" ]]; then
+    msg "   - Script launch_playlist_web.sh introuvable, service playlist non cree."
+    return
+  fi
+
+  msg "Creation du service systemd $PLAYLIST_SERVICE_NAME"
+
+  cat >"/etc/systemd/system/$PLAYLIST_SERVICE_NAME" <<EOF
+[Unit]
+Description=Skull Playlist Web Interface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SKULL_USER
+Group=$SKULL_GROUP
+WorkingDirectory=$INSTALL_DIR
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/$SKULL_UID
+ExecStart=$INSTALL_DIR/launch_playlist_web.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  chmod 644 "/etc/systemd/system/$PLAYLIST_SERVICE_NAME"
+}
+
+enable_services() {
   if command -v loginctl >/dev/null 2>&1; then
     loginctl enable-linger "$SKULL_USER" || true
   fi
   systemctl daemon-reload
   systemctl enable --now "$SERVICE_NAME"
+  if [[ -f "/etc/systemd/system/$PLAYLIST_SERVICE_NAME" ]]; then
+    systemctl enable --now "$PLAYLIST_SERVICE_NAME"
+  else
+    msg "   - Service playlist non disponible (fichier d'unite manquant)."
+  fi
 }
 
 main() {
@@ -548,24 +638,34 @@ main() {
   announce_step "Activation du support I2C"
   enable_i2c
   announce_step "Configuration Bluetooth"
-  configure_bluetooth
+  if should_configure_bluetooth; then
+    configure_bluetooth
+  else
+    msg "   - Bluetooth : etape ignoree (mode non interactif ou SKULL_SKIP_BLUETOOTH)."
+  fi
   announce_step "Deploiement du code Skull-V2"
   prepare_source_tree
   announce_step "Generation du fichier requirements.txt"
   write_requirements
   announce_step "Installation des dependances Python"
   setup_python_env
+  announce_step "Preparation de l'interface playlist web"
+  setup_playlist_web_env
   announce_step "Preparation des repertoires applicatifs"
   prepare_runtime_dirs
   persist_bluetooth_device
   announce_step "Verification / creation du runtime utilisateur"
   ensure_runtime_dir
-  announce_step "Creation du service systemd"
+  announce_step "Creation du service systemd (serveur principal)"
   write_systemd_service
-  announce_step "Activation du service"
-  enable_service
+  announce_step "Creation du service playlist web"
+  write_playlist_service
+  announce_step "Activation des services"
+  enable_services
   msg "Installation terminee."
-  msg "Le service peut etre controle avec : systemctl status $SERVICE_NAME"
+  msg "Services actifs :"
+  msg "  - systemctl status $SERVICE_NAME"
+  msg "  - systemctl status $PLAYLIST_SERVICE_NAME"
   msg "Si c'est la premiere activation I2C, redemarrez l'appareil."
 }
 
