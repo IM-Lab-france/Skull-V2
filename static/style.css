@@ -1890,3 +1890,107 @@ body.modal-open {
         left: 12px;
     }
 }
+
+
+/* ================== Loop volume slider ================== */
+.loop-panel .loop-volume {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.loop-panel .loop-volume .label {
+    display: block;
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 0.5rem;
+}
+
+.loop-panel .loop-volume-slider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* valeur affichée à droite (ex: 73) */
+.loop-panel .loop-volume-value {
+    min-width: 2ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+/* ---- Track commun ---- */
+#loopVolumeSlider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 240px;
+    max-width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 165, 0, 0.9), rgba(255, 105, 0, 0.9));
+    outline: none;
+    transition: box-shadow .15s ease;
+}
+
+#loopVolumeSlider:focus {
+    box-shadow: 0 0 0 3px rgba(255, 165, 0, 0.25);
+}
+
+#loopVolumeSlider:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+/* ---- Thumb WebKit ---- */
+#loopVolumeSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent, #ffae00);
+    border: 2px solid rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    transition: transform .12s ease;
+}
+
+#loopVolumeSlider::-webkit-slider-thumb:active {
+    transform: scale(1.05);
+}
+
+/* ---- Thumb Firefox ---- */
+#loopVolumeSlider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent, #ffae00);
+    border: 2px solid rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    transition: transform .12s ease;
+}
+
+#loopVolumeSlider::-moz-range-thumb:active {
+    transform: scale(1.05);
+}
+
+/* Track Firefox */
+#loopVolumeSlider::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 165, 0, 0.9), rgba(255, 105, 0, 0.9));
+}
+
+/* Responsive: étire le slider sur mobile */
+@media (max-width: 640px) {
+    .loop-panel .loop-volume-slider {
+        gap: 0.6rem;
+    }
+
+    #loopVolumeSlider {
+        width: 100%;
+    }
+}

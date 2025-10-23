@@ -98,17 +98,32 @@
                         <span class="label">Selection :</span>
                         <span id="loopSelectedName"></span>
                     </p>
+
+                    <!-- AJOUT: slider de volume de la boucle -->
+                    <div class="loop-volume-row" role="group" aria-label="Volume boucle">
+                        <label for="loopVolumeSlider" class="label">Volume boucle</label>
+                        <div class="header-volume-slider">
+                            <input id="loopVolumeSlider" class="volume-slider-input" type="range" min="0" max="100"
+                                value="0" step="1" />
+                            <span id="loopVolumeValue" class="volume-slider-value header-volume-value"
+                                aria-live="polite">0%</span>
+                        </div>
+                        <p class="hint">Règle le niveau de la boucle interne (0–100%).</p>
+                    </div>
+                    <!-- FIN AJOUT -->
+
                     <p id="loopResumeHint" class="hint" hidden>La boucle reprendra automatiquement apres la lecture.</p>
                     <div class="loop-actions">
                         <label class="btn secondary">
                             <input id="loopFile" type="file" accept="audio/mpeg,.mp3" hidden />
                             Choisir un MP3
                         </label>
-                        <button id="loopUploadBtn" class="btn primary" type="button" disabled data-loading-label="Import...">
+                        <button id="loopUploadBtn" class="btn primary" type="button" disabled
+                            data-loading-label="Import...">
                             Importer
                         </button>
-                        <button id="loopToggleBtn" class="btn success" type="button" disabled data-label-on="Activer la boucle"
-                            data-label-off="Desactiver la boucle">
+                        <button id="loopToggleBtn" class="btn success" type="button" disabled
+                            data-label-on="Activer la boucle" data-label-off="Desactiver la boucle">
                             Activer la boucle
                         </button>
                     </div>

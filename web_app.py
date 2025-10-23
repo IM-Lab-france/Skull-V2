@@ -124,9 +124,7 @@ BLUETOOTH_RESTART_TIMEOUT = float(
 def _client_request_metadata() -> dict[str, str]:
     """Extract request origin details for logging."""
     forwarded_for = request.headers.get("X-Forwarded-For", "")
-    primary_forward = (
-        forwarded_for.split(",")[0].strip() if forwarded_for else None
-    )
+    primary_forward = forwarded_for.split(",")[0].strip() if forwarded_for else None
     remote_addr = primary_forward or request.remote_addr or ""
     user_agent = request.headers.get("User-Agent") or ""
     return {
@@ -246,7 +244,9 @@ def _bluetooth_info(address: str) -> dict[str, Any] | None:
     return {"connected": connected, "paired": paired, "trusted": trusted, "raw": stdout}
 
 
-def _wait_bt_flag(address: str, key: str, desired: bool, timeout_s: float, interval: float = 0.5) -> bool:
+def _wait_bt_flag(
+    address: str, key: str, desired: bool, timeout_s: float, interval: float = 0.5
+) -> bool:
     """Poll bluetoothctl info until key (connected/paired/trusted) matches desired or timeout."""
     deadline = time.time() + max(0.1, float(timeout_s))
     while time.time() < deadline:
@@ -339,7 +339,9 @@ def _set_transport_volume(
     return True, volume, proc
 
 
-def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bool, str, int | None]:
+def _run_volume_action(
+    action: str, target_value: int | None = None
+) -> tuple[bool, str, int | None]:
     try:
         transport, list_proc = _pick_transport_path()
     except FileNotFoundError as exc:
@@ -358,7 +360,11 @@ def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bo
         if not transport:
             if detail:
                 servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
-            return False, "Aucun transport bluetooth actif (peripherique connecte ?)", None
+            return (
+                False,
+                "Aucun transport bluetooth actif (peripherique connecte ?)",
+                None,
+            )
 
     try:
         current, history = _get_transport_volume(transport)
@@ -1056,9 +1062,7 @@ def _load_button_assignments_locked() -> list[str]:
 def _save_button_assignments_locked(assignments: Iterable[str]) -> list[str]:
     sanitized = _sanitize_button_assignments(list(assignments))
     try:
-        _write_json_atomic(
-            ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": sanitized}
-        )
+        _write_json_atomic(ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": sanitized})
     except Exception:
         servo_logger.logger.exception("ESP32_BUTTON_ASSIGNMENTS_SAVE_FAILED")
     return sanitized
@@ -1669,9 +1673,7 @@ def esp32_button_play(button_index: int):
     if button_index < 0 or button_index >= ESP32_BUTTON_COUNT:
         return (
             jsonify(
-                {
-                    "error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1})."
-                }
+                {"error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1})."}
             ),
             400,
         )
@@ -1708,12 +1710,15 @@ def esp32_button_play(button_index: int):
 
     sessions = _sessions_for_category(category)
     if not sessions:
-        return jsonify(
-            {
-                "error": f"Aucune session disponible pour la categorie '{category}'.",
-                "category": category,
-            }
-        ), 404
+        return (
+            jsonify(
+                {
+                    "error": f"Aucune session disponible pour la categorie '{category}'.",
+                    "category": category,
+                }
+            ),
+            404,
+        )
 
     chosen_session = random.choice(sessions)
     payload, status_code = _trigger_session_for_button(
@@ -1937,6 +1942,45 @@ def loop_upload():
         return jsonify({"error": f"Echec upload boucle: {exc}"}), 500
 
 
+@app.route("/loop/volume", methods=["POST"])
+def loop_volume():
+    """
+    Régler le volume de la boucle.
+    Body JSON attendu:
+      { "volume": 0.7, "fade_ms": 600 }
+    Notes:
+      - volume peut aussi être en pourcentage (ex: 70 -> 0.7)
+      - fade_ms est optionnel (par défaut: self.fade_ms côté LoopPlayer)
+    """
+    payload = request.get_json(silent=True) or {}
+    if "volume" not in payload:
+        return jsonify({"error": "Champ 'volume' manquant"}), 400
+
+    raw_vol = payload.get("volume")
+    try:
+        vol = float(raw_vol)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Volume invalide"}), 400
+
+    # Autoriser 0..1 ou 0..100 (auto-détection)
+    if vol > 1.0:
+        # interpréter comme pourcentage si plausible
+        if 0.0 <= vol <= 100.0:
+            vol = vol / 100.0
+
+    # Clamp 0..1
+    vol = max(0.0, min(1.0, vol))
+
+    fade_ms = payload.get("fade_ms", None)
+    try:
+        loop_player.set_volume(vol, fade_ms=fade_ms)
+        st = loop_player.status()
+        return jsonify({"status": "ok", "loop": st})
+    except Exception as exc:
+        servo_logger.logger.exception("LOOP_VOLUME_ERROR")
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/sessions")
 def sessions():
     try:
@@ -1999,9 +2043,7 @@ def api_sessions():
     meta = _client_request_metadata()
     current_entry = playlist_snapshot["current"]
     current_session = (
-        current_entry.get("session")
-        if isinstance(current_entry, dict)
-        else None
+        current_entry.get("session") if isinstance(current_entry, dict) else None
     )
     queue_length = original_queue_length
     transition_state = "pending" if hold_active else "steady"
@@ -2254,7 +2296,11 @@ def api_enqueue():
     response_log = _format_log_payload(payload)
     if status_code >= 400:
         payload["success"] = False
-        logger_fn = servo_logger.logger.error if status_code >= 500 else servo_logger.logger.warning
+        logger_fn = (
+            servo_logger.logger.error
+            if status_code >= 500
+            else servo_logger.logger.warning
+        )
         logger_fn(
             "ESP32_ENQUEUE_RESPONSE | remote=%s | status=%s | session=%s | error=%s | payload=%s",
             meta["client_ip"],
@@ -2520,9 +2566,7 @@ def playlist_shuffle():
             "status": "shuffled",
             "count": len(sessions),
             "sessions": sessions,
-            "playlist": _enrich_queue_with_categories(
-                playlist.snapshot(), mapping
-            ),
+            "playlist": _enrich_queue_with_categories(playlist.snapshot(), mapping),
         }
     )
 
@@ -2690,6 +2734,7 @@ def bluetooth_restart():
 
 # -------------------- Bluetooth pairing API --------------------
 
+
 def _parse_bt_devices_list(text: str) -> list[dict[str, str]]:
     devices: list[dict[str, str]] = []
     if not text:
@@ -2775,12 +2820,21 @@ def bt_pair():
             return jsonify({"error": "connect_timeout", "results": results}), 504
 
         flags = _bluetooth_info(mac) or {}
-        return jsonify({"results": results, "status": {k: flags.get(k) for k in ("paired", "trusted", "connected")}})
+        return jsonify(
+            {
+                "results": results,
+                "status": {k: flags.get(k) for k in ("paired", "trusted", "connected")},
+            }
+        )
     except subprocess.TimeoutExpired:
         return jsonify({"error": "bluetoothctl_timeout", "results": results}), 504
     except Exception as e:
         servo_logger.logger.exception("BT_PAIR_ERROR")
-        return jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}), 500
+        return (
+            jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}),
+            500,
+        )
+
 
 # -------------------- Channels API --------------------
 
