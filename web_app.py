@@ -58,6 +58,16 @@ SESSION_CATEGORIES_PATH = CONFIG_DIR / "session_categories.json"
 ESP32_BUTTON_ASSIGNMENTS_PATH = CONFIG_DIR / "esp32_button_categories.json"
 LOOP_AUDIO_DIR = CONFIG_DIR / "loop_audio"
 
+ACCUEIL_WEBHOOK_URL = (
+    os.environ.get(
+        "PLAYLIST_ACCUEIL_WEBHOOK",
+        "http://192.168.1.140:8123/api/webhook/fuzzix_a_webhook_9a7b3c2f0b",
+    ).strip()
+    or ""
+)
+ACCUEIL_WEBHOOK_TIMEOUT = float(
+    os.environ.get("PLAYLIST_ACCUEIL_WEBHOOK_TIMEOUT", "2.0")
+)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 player = SyncPlayer()
@@ -594,7 +604,7 @@ def _get_current_entry() -> Optional[dict[str, Any]]:
 
 
 _random_lock = threading.Lock()
-_RANDOM_EXCLUDED_NAMES = {"accueil"}
+_RANDOM_EXCLUDED_NAMES = {"Accueil"}
 _random_enabled = False
 _random_last_pick: Optional[dict[str, Any]] = None
 
@@ -709,6 +719,52 @@ def _ensure_session_exists(session_name: str) -> Path:
 def _start_session(
     session_name: str, source: str, item_id: Optional[int] = None
 ) -> bool:
+    def _maybe_trigger_accueil_webhook(name: str) -> None:
+        if not ACCUEIL_WEBHOOK_URL:
+            return
+        if _normalize_session_name(name) != "accueil":
+            return
+        curl_cmd = [
+            "curl",
+            "-sS",
+            "-X",
+            "POST",
+            ACCUEIL_WEBHOOK_URL,
+        ]
+        try:
+            completed = subprocess.run(
+                curl_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=ACCUEIL_WEBHOOK_TIMEOUT,
+                check=False,
+            )
+            if completed.returncode == 0:
+                servo_logger.logger.info("ACCUEIL_WEBHOOK_TRIGGERED | session=%s", name)
+            else:
+                servo_logger.logger.warning(
+                    "ACCUEIL_WEBHOOK_FAILED | session=%s | code=%s | stderr=%s",
+                    name,
+                    completed.returncode,
+                    completed.stderr.decode("utf-8", errors="ignore"),
+                )
+        except subprocess.TimeoutExpired:
+            servo_logger.logger.warning(
+                "ACCUEIL_WEBHOOK_TIMEOUT | session=%s | timeout=%.1fs",
+                name,
+                ACCUEIL_WEBHOOK_TIMEOUT,
+            )
+        except FileNotFoundError:
+            servo_logger.logger.error(
+                "ACCUEIL_WEBHOOK_CURL_MISSING | session=%s | cmd=%s",
+                name,
+                " ".join(curl_cmd),
+            )
+        except Exception:
+            servo_logger.logger.exception(
+                "ACCUEIL_WEBHOOK_UNEXPECTED_ERROR | session=%s", name
+            )
+
     try:
         session_dir = _ensure_session_exists(session_name)
     except ValueError as exc:
@@ -754,6 +810,7 @@ def _start_session(
         )
         return False
 
+    _maybe_trigger_accueil_webhook(session_name)
     _set_current_entry(
         {
             "session": session_name,
