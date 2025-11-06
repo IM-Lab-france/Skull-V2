@@ -54,7 +54,7 @@ function closeCatalog() {
     mainContainer.classList.remove("catalog-open");
   }
   if (toggleCatalogBtn) {
-    toggleCatalogBtn.textContent = "+ Ajouter un morceau";
+    toggleCatalogBtn.textContent = "+ Lancer un sort";
     toggleCatalogBtn.setAttribute("aria-expanded", "false");
   }
   catalogVisible = false;

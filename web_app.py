@@ -830,6 +830,20 @@ def _start_next_from_playlist() -> None:
         next_item = playlist.pop_next()
         if not next_item:
             return
+        session_name = next_item.get("session")
+        if session_name and _normalize_session_name(session_name) == "accueil":
+            queue_cleared = False
+            try:
+                queue_cleared = playlist.has_items()
+            except Exception:
+                queue_cleared = False
+            if queue_cleared:
+                playlist.clear()
+            servo_logger.logger.info(
+                "ACCUEIL_PRIORITY_PLAYLIST | cleared_queue=%s | next_id=%s",
+                queue_cleared,
+                next_item.get("id"),
+            )
         if _start_session(next_item["session"], "playlist", next_item["id"]):
             return
         retries = int(next_item.get("retries", 0)) + 1
@@ -1211,14 +1225,51 @@ def _enqueue_or_play_session(
 
     context = log_context or {}
     context_bits = " | ".join(f"{k}={v}" for k, v in context.items() if v is not None)
+    log_suffix = f" | {context_bits}" if context_bits else ""
+
+    normalized_session = _normalize_session_name(session_name)
+    is_accueil = normalized_session == "accueil"
+    queue_cleared = False
+    forced_replace = False
 
     try:
         status_info = player.status()
     except Exception:
         status_info = {}
     is_running = bool(status_info.get("running"))
+    was_running = is_running
 
-    if is_running:
+    if is_accueil:
+        try:
+            queue_cleared = playlist.has_items()
+        except Exception:
+            queue_cleared = False
+        if queue_cleared:
+            playlist.clear()
+
+        if was_running:
+            previous_session = status_info.get("session")
+            try:
+                player.stop(reason="replace")
+                forced_replace = True
+            except Exception:
+                servo_logger.logger.exception(
+                    "ACCUEIL_FORCE_STOP_FAILED | requested=%s", session_name
+                )
+            finally:
+                _set_current_entry(None)
+            is_running = False
+
+        servo_logger.logger.info(
+            "ACCUEIL_PRIORITY | cleared_queue=%s | stop_attempted=%s | stop_succeeded=%s | source=%s%s",
+            queue_cleared,
+            was_running,
+            forced_replace,
+            source,
+            log_suffix,
+        )
+
+    if is_running and not is_accueil:
         item, position = playlist.add(session_name)
         enriched_item = _enrich_entry_with_category(item)
         category_label = requested_category or _get_session_category(session_name)
