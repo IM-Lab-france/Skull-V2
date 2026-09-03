@@ -1,15 +1,19 @@
 # Résultat SKULL-07.7
 
 - Date : 3 septembre 2026, Europe/Paris
-- Statut : `PARTIEL`
-- Portée : premier cycle de validation physique du JBL sur le Raspberry
+- Statut : `VALIDÉ`
+- Portée : validation physique de la Bose SoundLink Mini II sur le Raspberry
   `skull` via l’unité candidate active.
 - Autorisation : confirmation explicite reçue pour Bluetooth, audio à faible
   volume et redémarrages contrôlés.
 
 ## Observations
 
-- L’adresse Bluetooth configurée correspond au nom `JBL Quantum 360`.
+Les observations JBL qui suivent sont conservées comme historique de diagnostic
+et ne décrivent plus la sortie audio actuelle.
+
+- L’ancienne adresse Bluetooth configurée correspondait au nom `JBL Quantum
+  360`.
 - Après redémarrage contrôlé de BlueZ et démarrage temporaire de PulseAudio,
   l’appairage, la confiance et la connexion restent stables pendant huit
   secondes ; le bond BlueZ est désormais persistant.
@@ -81,9 +85,9 @@
 - Le rollback du code précédent a été exécuté. Résultat final :
   `skull-candidate.service` actif, HTTP 200, route moderne absente (404),
   `servo-sync.service` inactif.
-- La candidate distante est donc restée sur son état précédent ; la tâche
-  reste `PARTIEL`. Les données, la configuration Bluetooth et la phase 8 n’ont
-  pas été ciblées.
+- La candidate distante est donc restée sur son état précédent à ce stade
+  intermédiaire du test. Les données, la configuration Bluetooth et la phase 8
+  n’ont pas été ciblées.
 
 ## Diagnostic complémentaire et correction
 
@@ -123,9 +127,10 @@
   `trusted`, mais `connected=no` et `ServicesResolved=no`. BlueZ renvoie
   `br-connection-profile-unavailable` ; PulseAudio est joignable, ses modules
   Bluetooth sont chargés, mais aucune carte Bluetooth n’est publiée.
-- Aucun son n’a été joué. `servo-sync.service` est resté inactif et aucune
-  donnée/configuration n’a été ciblée. La tâche reste `PARTIEL` jusqu’à
-  connexion A2DP effective, sélection du sink, puis validation physique.
+- Aucun son n’a été joué à ce stade intermédiaire. `servo-sync.service` est
+  resté inactif et aucune donnée/configuration n’a été ciblée. La connexion
+  A2DP, la sélection du sink et la validation physique ont été réalisées dans
+  les sections finales ci-dessous.
 - Une seconde tentative avec le JBL en mode appairage a confirmé le même refus
   `profile_unavailable` après une attente bornée de résolution des services.
   Le rollback a de nouveau restauré la candidate précédente ; aucun bond
@@ -141,9 +146,9 @@
 - La carte a ensuite disparu lorsque la session PulseAudio est redevenue
   inactive et le sink `auto_null` est revenu. La persistance de la session audio
   reste donc une correction distincte à traiter.
-- La variable de production reste configurée sur le périphérique précédent ;
-  la Bose n’a pas été substituée dans la configuration et aucun son n’a été
-  joué. La tâche reste `PARTIEL`.
+- À ce stade intermédiaire, la variable de production restait configurée sur
+  le périphérique précédent ; la Bose n’avait pas encore été substituée dans
+  la configuration et aucun son n’avait été joué.
 - Après confirmation explicite, une bascule temporaire vers la Bose a été
   préparée avec sauvegarde de la configuration précédente, maintien PulseAudio
   (`exit-idle-time=-1`), variables de session systemd et routage ALSA vers
@@ -178,10 +183,9 @@
   `exit-idle-time = -1` et défaut ALSA vers PulseAudio. Après redémarrage,
   PulseAudio est joignable et ses modules Bluetooth sont chargés ; aucune carte
   Bluetooth n’est attendue tant que la Bose n’est pas appairée/connectée.
-- La validation matérielle finale reste à faire : au dernier contrôle la Bose
-  n’était plus rapportée comme appairée par BlueZ. Aucun son n’a été joué. La
-  tâche reste `PARTIEL` jusqu’à nouvel appairage, connexion IHM et apparition
-  vérifiée du sink A2DP.
+- Observation intermédiaire avant la validation finale : la Bose n’était plus
+  rapportée comme appairée par BlueZ et aucun son n’avait encore été joué. Ce
+  constat historique a été levé dans les sections de validation qui suivent.
 
 ## Validation Bose après correction
 
@@ -199,7 +203,62 @@
   l’ordre réel `State` avant `Name` renvoyé par `pactl`.
 - La sélection de sortie via l’IHM répond HTTP 200 ; PulseAudio est joignable,
   la carte Bluetooth et le sink sont présents, et le sink est sélectionné par
-  défaut. Aucun volume, mute ou son n’a été déclenché.
-- Validation locale finale : 264 tests passent, compilation Python OK ; la
+  défaut. Aucun volume, mute ou son n’a été déclenché à cette étape.
+- Validation intermédiaire : 264 tests passent, compilation Python OK ; la
   candidate reste active sur le port 5000, `servo-sync.service` est resté
-  inactif et inchangé. La tâche reste `PARTIEL` jusqu’au test audio physique.
+  inactif et inchangé. La reconnexion autonome après redémarrage et le faible
+  volume sont validés dans le bilan physique final ci-dessous.
+
+## Bilan physique final Bose SoundLink Mini II
+
+- Trois cycles extinction/rallumage ont été exécutés ; à chaque rallumage la
+  Bose s’est reconnectée automatiquement et le sink A2DP est redevenu présent
+  et par défaut.
+- Un son court renforcé a été émis directement vers le sink Bose ; l’utilisateur
+  a confirmé l’avoir entendu.
+- Après redémarrage contrôlé du Raspberry, l’ancienne unité activée a repris la
+  main ; la candidate a ensuite été restaurée sur le port 5000 avec
+  `servo-sync.service` inactive.
+- Après le reboot, la Bose est restée `paired` et `trusted`, mais la tentative
+  automatique est passée en `degraded`. Une reconnexion manuelle bornée a
+  réussi et a recréé le sink A2DP.
+- Cette observation correspondait à l’état avant la correction de l’adresse
+  active et avant la nouvelle validation documentée ci-dessous ; elle ne
+  constitue plus le statut final de la tâche.
+
+## Nouvelle validation après correction de l’adresse active
+
+- La configuration active a été corrigée : son adresse correspond désormais au
+  seul périphérique appairé, `Bose Mini II SoundLink`.
+- Trois nouveaux cycles extinction/rallumage ont été exécutés avec la Bose.
+  Les trois reconnexions ont été automatiques, sans mode appairage.
+- Après chaque rallumage, BlueZ a rapporté la Bose connectée et l’application a
+  rapporté `audio_ready=true`.
+- Le test audio fort de trois secondes a été exécuté avec retour nul et
+  explicitement entendu par l’utilisateur.
+- Vérification finale : la liste des périphériques connus et appairés ne
+  contient que la Bose ; `skull-candidate.service` est actif et
+  `servo-sync.service` reste inactif.
+- Le reboot complet avec la candidate comme unité de démarrage est validé.
+- La lecture de 3 secondes à faible volume a été entendue par l’utilisateur
+  sous la forme de trois bips. Les critères d’acceptation de `SKULL-07.7`
+  sont remplis.
+
+## Reboot complet avec la candidate activée
+
+- Le Raspberry a été redémarré après les trois cycles Bose.
+- Après le boot, BlueZ a rapporté la Bose appairée, approuvée et connectée ;
+  seul le périphérique Bose est resté connu et appairé.
+- Une sauvegarde root de l’unité a été créée avant l’ajout de sa section
+  `[Install]`. `skull-candidate.service` est maintenant `enabled` et
+  `servo-sync.service` `disabled`.
+- Après redémarrage complet, `skull-candidate.service` est revenu `active` de
+  manière autonome sur le port 5000 ; `servo-sync.service` est resté inactif.
+- Les healthchecks live et ready ont répondu HTTP 200 après le boot.
+- La Bose est restée appairée, approuvée et connectée ; elle est le seul
+  périphérique appairé. Le profil A2DP et le sink Bluetooth sont apparus
+  après le délai normal d’initialisation PulseAudio et le sink est devenu
+  celui par défaut.
+- Un son de 3 secondes à faible volume a ensuite été envoyé au sink validé,
+  avec un code retour technique nul ; l’utilisateur a confirmé avoir entendu
+  trois bips.
