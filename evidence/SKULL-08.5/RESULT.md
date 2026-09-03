@@ -36,15 +36,20 @@ producteur et le retrait de l’ancien secret nécessitent une confirmation
 explicite, un mécanisme approuvé de gestion des secrets et l’accès au
 consommateur domotique. Aucun de ces changements réels n’a été effectué.
 
-La confirmation de l’utilisateur a été reçue le 3 septembre 2026. Le
-consommateur HTTP interne déduit de l’ancien endpoint reste toutefois
-injoignable : le port `8123` ne répond ni depuis le Skull ni depuis le PC.
-La création du nouveau webhook et la preuve ancien refusé/nouveau accepté sont
-donc impossibles sans rétablir cet accès.
+La confirmation de l’utilisateur a été reçue le 3 septembre 2026. Home
+Assistant est maintenant accessible via `ha.home.arpa` et une session
+administrateur est disponible.
 
 Le Skull est désormais joignable en SSH sur `192.168.40.20`. Depuis cette
 adresse, la candidate reste active et `servo-sync.service` reste inactif ; le
-consommateur domotique reste fermé ou filtré sur les ports testés.
+service Home Assistant n’est pas exposé directement sur `8123` mais passe par
+le proxy web.
+
+L’interface Home Assistant expose une automatisation `Sonnette` avec un
+déclencheur webhook local-only et une action `Lampe Bureau`. L’ancien endpoint
+du Skull ne peut pas être remplacé automatiquement : la cible observée est une
+action de sonnette, pas une action fumée. Une confirmation de périmètre est
+nécessaire avant toute modification afin de ne pas casser la sonnette.
 
 Le relevé distant en lecture seule du 3 septembre 2026 confirme que
 `/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
@@ -54,8 +59,8 @@ secret généré hors chat et la fenêtre de test ne sont donc pas établis.
 
 Pour débloquer cette fiche, il faut confirmer séparément :
 
-1. rétablir l’accès à l’interface ou à l’API approuvée du consommateur
-   domotique ;
+1. confirmer si le webhook `Sonnette`/`Lampe Bureau` est bien la cible à
+   traiter, ou indiquer l’automatisation fumée correcte ;
 2. préparer l’acceptation temporaire de l’ancien et du nouveau secret ;
 3. générer et stocker le nouveau secret hors chat, dépôt Git et historique
    shell, puis confirmer la fenêtre de test et le rollback.

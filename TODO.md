@@ -287,9 +287,9 @@ Exécution atomique :
 ## Prochaine action
 
 `SKULL-08.7` est validée sur la candidate `5000`. `SKULL-08.5` reste
-`BLOQUÉE` : la confirmation est reçue, mais le consommateur domotique HTTP
-interne ne répond pas sur son port de gestion ; il faut rétablir cet accès
-avant de créer et tester le nouveau webhook.
+`BLOQUÉE` : Home Assistant est accessible, mais le seul webhook observé est
+celui de `Sonnette` et déclenche `Lampe Bureau`, pas la fumée. Il faut confirmer
+la cible avant de modifier ce webhook et risquer de casser la sonnette.
 Le lien final
 `/opt/skull/current` et l’unité indépendante de la version restent dans la
 phase 10. `SKULL-08.6` reste toutefois partielle ; la phase
