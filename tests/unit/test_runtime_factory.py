@@ -143,6 +143,18 @@ def test_simulated_startup_selects_one_common_bundle(monkeypatch: pytest.MonkeyP
     assert isinstance(adapters.gaze, GazeAdapter)
 
 
+def test_phase8_runtime_mode_name_wins_over_legacy_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKULL_HARDWARE_MODE", "production")
+    monkeypatch.setenv("SKULL_RUNTIME_MODE", "simulated")
+
+    assert resolve_runtime_mode() == "simulated"
+
+    monkeypatch.delenv("SKULL_RUNTIME_MODE")
+    assert resolve_runtime_mode() == "production"
+
+
 def test_production_startup_requires_explicit_provider_and_never_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

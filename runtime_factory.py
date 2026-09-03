@@ -112,19 +112,26 @@ def resolve_runtime_mode(mode: str | None = None) -> RuntimeMode:
     value, so a caller cannot silently turn a production process into a test
     process through a default or an unrelated argument.
     """
-    configured = os.environ.get("SKULL_HARDWARE_MODE")
+    # Phase 8 owns the new name. Keep the legacy alias during coexistence;
+    # the new variable wins when both are present, matching config.loader.
+    configured = os.environ.get("SKULL_RUNTIME_MODE")
+    configured_name = "SKULL_RUNTIME_MODE"
+    if configured is None:
+        configured = os.environ.get("SKULL_HARDWARE_MODE")
+        configured_name = "SKULL_HARDWARE_MODE"
     candidate = (mode if mode is not None else configured or PRODUCTION_MODE).strip().lower()
     if candidate not in {PRODUCTION_MODE, SIMULATED_MODE}:
         raise RuntimeConfigurationError(
-            "SKULL_HARDWARE_MODE must be 'production' or 'simulated'"
+            f"{configured_name} must be 'production' or 'simulated'"
         )
     if candidate == SIMULATED_MODE and configured != SIMULATED_MODE:
         raise RuntimeConfigurationError(
-            "simulation requires explicit SKULL_HARDWARE_MODE=simulated"
+            "simulation requires explicit SKULL_RUNTIME_MODE=simulated "
+            "or SKULL_HARDWARE_MODE=simulated"
         )
     if mode == PRODUCTION_MODE and configured == SIMULATED_MODE:
         raise RuntimeConfigurationError(
-            "requested production conflicts with SKULL_HARDWARE_MODE=simulated"
+            f"requested production conflicts with {configured_name}=simulated"
         )
     return candidate
 
