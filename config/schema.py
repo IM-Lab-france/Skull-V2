@@ -8,6 +8,7 @@ opens a socket, or touches a Raspberry Pi.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import ipaddress
 import re
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -24,6 +25,12 @@ def _dns_name(value: str, path: str) -> str:
     if not value:
         return value
     normalized = value.rstrip(".")
+    try:
+        ipaddress.ip_address(normalized)
+    except ValueError:
+        pass
+    else:
+        _fail(path, "nom DNS interne attendu, pas une adresse IP ou URL")
     if any(part == "" or not _DNS_LABEL.fullmatch(part) for part in normalized.split(".")):
         _fail(path, "nom DNS interne attendu, pas une adresse IP ou URL")
     return normalized.lower()
