@@ -2,5 +2,11 @@
 
 from .playback import PlaybackService
 from .legacy_playback import LegacyPlaybackService
+from .bluetooth_reconnect import BluetoothReconnectController, ReconnectResult
 
-__all__ = ["LegacyPlaybackService", "PlaybackService"]
+__all__ = [
+    "BluetoothReconnectController",
+    "LegacyPlaybackService",
+    "PlaybackService",
+    "ReconnectResult",
+]

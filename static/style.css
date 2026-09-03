@@ -542,6 +542,11 @@ body.theme-halloween::after {
     background: var(--danger);
 }
 
+.bt-status.is-connecting .bt-dot,
+.bt-status.is-degraded .bt-dot {
+    background: var(--warning);
+}
+
 .bt-status.is-unknown .bt-dot {
     background: rgba(255, 255, 255, .3);
 }
@@ -1037,6 +1042,18 @@ body.theme-halloween::after {
     box-shadow: 0 0 10px rgba(220, 53, 69, .5);
 }
 
+.connection-chip.connecting,
+.connection-chip.degraded {
+    border-color: rgba(240, 173, 78, .35);
+    box-shadow: 0 0 18px rgba(240, 173, 78, .16);
+}
+
+.connection-chip.connecting .connection-dot,
+.connection-chip.degraded .connection-dot {
+    background: var(--warning);
+    box-shadow: 0 0 10px rgba(240, 173, 78, .45);
+}
+
 .connection-chip.disabled .connection-dot,
 .connection-chip.unknown .connection-dot {
     background: var(--muted);
@@ -1407,6 +1424,12 @@ body.modal-open {
 .bt-status.is-disconnected .bt-dot {
     background: var(--danger);
     box-shadow: 0 0 10px rgba(220, 53, 69, .45);
+}
+
+.bt-status.is-connecting .bt-dot,
+.bt-status.is-degraded .bt-dot {
+    background: var(--warning);
+    box-shadow: 0 0 10px rgba(240, 173, 78, .4);
 }
 
 .bt-status.is-unknown .bt-dot {
@@ -1993,4 +2016,25 @@ body.modal-open {
     #loopVolumeSlider {
         width: 100%;
     }
+}
+
+/* ---------------- Bluetooth operation states ---------------- */
+.bt-state-grid {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr) minmax(5rem, auto);
+    gap: 0.35rem 1rem;
+    margin: 0.9rem 0;
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.bt-state-grid strong {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.bt-operation-controls {
+    flex-wrap: wrap;
 }

@@ -27,6 +27,7 @@ import traceback
 import threading
 import atexit
 import signal
+from functools import wraps
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -47,11 +48,25 @@ from logger import servo_logger
 from runtime_factory import resolve_runtime_mode
 from runtime_lock import RuntimeProcessLock
 from api.legacy import create_legacy_blueprint
+from api.bluetooth import BluetoothUiContext, create_bluetooth_blueprint
 from api.v1 import V1Context, create_v1_blueprint
-from domain.errors import InvalidInputError
+from domain.errors import DependencyUnavailableError, InvalidInputError, OperationNotAllowedError
+from domain.bluetooth import (
+    has_audio_sink_profile,
+    parse_bluez_uuids,
+    validate_bluetooth_address,
+)
 from domain.playlist import PlaybackStateStore, PlaylistStore, RandomSessionSelector
 from domain.session_catalog import SessionCatalog
 from services import LegacyPlaybackService
+from services.bluetooth_commands import BluetoothCommandRunner
+from services.bluetooth_reconnect import (
+    BluetoothReconnectController,
+    BluetoothReconnectWorker,
+    ReconnectResult,
+)
+from services.esp32_supervisor import ESP32ProbeSnapshot, ESP32Supervisor
+from adapters_runtime import PulseAudioOutputAdapter
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -178,6 +193,12 @@ def initialize_runtime(
             _runtime_loop_player = created_loop_player
             _runtime_process_lock = acquired_lock
             _runtime_initialized = True
+            if BT_DEVICE_ADDR and selected_mode == "production":
+                # The first BlueZ read also belongs to the worker so the
+                # Gunicorn startup hook never waits on Bluetooth.
+                _start_bt_reconnect_worker(BT_DEVICE_ADDR)
+            if selected_mode == "production" and load_esp32_config().get("enabled"):
+                _start_esp32_supervisor()
             return _runtime_player, _runtime_loop_player
         except Exception:
             _cleanup_component(created_loop_player, prefer_cleanup=False)
@@ -210,6 +231,18 @@ def _legacy_playback_service() -> LegacyPlaybackService:
 def cleanup_runtime() -> None:
     """Stop runtime resources once and release the cross-process lock."""
     global _runtime_process_lock, _runtime_cleaned
+
+    _bt_reconnect_cancel.set()
+    if _bt_reconnect_controller is not None:
+        _bt_reconnect_controller.cancel()
+    if _bt_reconnect_worker is not None:
+        stop_worker = getattr(_bt_reconnect_worker, "stop", None)
+        if callable(stop_worker):
+            stop_worker(timeout=1.0)
+    if _esp32_supervisor is not None:
+        stop_supervisor = getattr(_esp32_supervisor, "stop", None)
+        if callable(stop_supervisor):
+            stop_supervisor(timeout=1.0)
 
     with _runtime_state_lock:
         if _runtime_cleaned:
@@ -304,6 +337,40 @@ VOLUME_TOOL = os.environ.get("PLAYLIST_VOLUME_CLI", "bluetoothctl")
 _VOLUME_CMD_BASE = shlex.split(VOLUME_TOOL) if VOLUME_TOOL else ["bluetoothctl"]
 if not _VOLUME_CMD_BASE:
     _VOLUME_CMD_BASE = ["bluetoothctl"]
+_BLUETOOTH_COMMAND_RUNNER = BluetoothCommandRunner(
+    _VOLUME_CMD_BASE, timeout=VOLUME_TIMEOUT
+)
+BT_CONNECT_COMMAND_TIMEOUT = max(
+    5.0, float(os.environ.get("PLAYLIST_BT_CONNECT_COMMAND_TIMEOUT", "20"))
+)
+
+PULSE_AUDIO_TIMEOUT = float(os.environ.get("PLAYLIST_PULSE_AUDIO_TIMEOUT", "5"))
+PULSE_AUDIO_WAIT_TIMEOUT = max(
+    0.1, float(os.environ.get("PLAYLIST_PULSE_AUDIO_WAIT_TIMEOUT", "5"))
+)
+PULSE_AUDIO_POLL_INTERVAL = max(
+    0.05, float(os.environ.get("PLAYLIST_PULSE_AUDIO_POLL_INTERVAL", "0.2"))
+)
+PULSE_AUDIO_TOOL = os.environ.get("PLAYLIST_PULSE_AUDIO_CLI", "pactl")
+_PULSE_AUDIO_CMD_BASE = (
+    shlex.split(PULSE_AUDIO_TOOL) if PULSE_AUDIO_TOOL else ["pactl"]
+)
+if not _PULSE_AUDIO_CMD_BASE:
+    _PULSE_AUDIO_CMD_BASE = ["pactl"]
+PULSE_AUDIO_FALLBACK_SINK = os.environ.get(
+    "PLAYLIST_PULSE_AUDIO_FALLBACK_SINK", ""
+).strip()
+PULSE_AUDIO_FALLBACK_ENABLED = os.environ.get(
+    "PLAYLIST_PULSE_AUDIO_FALLBACK_ENABLED", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+_PULSEAUDIO_OUTPUT_ADAPTER = PulseAudioOutputAdapter(
+    tuple(_PULSE_AUDIO_CMD_BASE),
+    timeout=PULSE_AUDIO_TIMEOUT,
+    wait_timeout=PULSE_AUDIO_WAIT_TIMEOUT,
+    poll_interval=PULSE_AUDIO_POLL_INTERVAL,
+    fallback_sink=PULSE_AUDIO_FALLBACK_SINK or None,
+    fallback_enabled=PULSE_AUDIO_FALLBACK_ENABLED,
+)
 
 ESP32_DEFAULT_CONFIG = {"host": "", "port": 80, "enabled": False}
 ESP32_BUTTON_COUNT = 3
@@ -314,6 +381,24 @@ ESP32_CONNECT_TIMEOUT = float(
 # ``urllib`` exposes one socket timeout. Use the stricter ceiling so both the
 # connection limit and the request-wide limit remain enforced at this layer.
 ESP32_HTTP_TIMEOUT = min(ESP32_CONNECT_TIMEOUT, ESP32_TOTAL_TIMEOUT)
+ESP32_STATUS_INTERVAL = max(
+    1.0, float(os.environ.get("PLAYLIST_ESP32_STATUS_INTERVAL", "5"))
+)
+ESP32_STATUS_INITIAL_BACKOFF = max(
+    0.1, float(os.environ.get("PLAYLIST_ESP32_STATUS_INITIAL_BACKOFF", "5"))
+)
+ESP32_STATUS_MAX_BACKOFF = max(
+    ESP32_STATUS_INITIAL_BACKOFF,
+    float(os.environ.get("PLAYLIST_ESP32_STATUS_MAX_BACKOFF", "60")),
+)
+ESP32_STATUS_FAILURE_THRESHOLD = max(
+    1, int(os.environ.get("PLAYLIST_ESP32_STATUS_FAILURE_THRESHOLD", "3"))
+)
+ESP32_STATUS_CIRCUIT_COOLDOWN = max(
+    0.1, float(os.environ.get("PLAYLIST_ESP32_STATUS_CIRCUIT_COOLDOWN", "30"))
+)
+_ESP32_OPERATION_LOCK = threading.RLock()
+_esp32_supervisor: ESP32Supervisor | None = None
 
 VOLUME_ACTIONS = {"up", "down", "mute", "set"}
 
@@ -325,8 +410,6 @@ _SESSION_CATEGORY_DEFAULTS = {
 _session_categories_lock = threading.Lock()
 _session_categories_cache: Optional[dict[str, Any]] = None
 _esp32_button_assignments_lock = threading.Lock()
-
-_bt_last_reconnect_attempt: float = 0.0
 
 _ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
@@ -340,6 +423,25 @@ BT_DEVICE_ADDR = os.environ.get("PLAYLIST_BT_DEVICE_ADDR", "").strip().upper()
 BT_RECONNECT_INTERVAL = max(
     0.0, float(os.environ.get("PLAYLIST_BT_RECONNECT_INTERVAL", "10"))
 )
+BT_RECONNECT_MAX_ATTEMPTS = max(
+    1, int(os.environ.get("PLAYLIST_BT_RECONNECT_MAX_ATTEMPTS", "3"))
+)
+BT_RECONNECT_CONNECT_TIMEOUT = max(
+    0.1, float(os.environ.get("PLAYLIST_BT_RECONNECT_CONNECT_TIMEOUT", "3"))
+)
+BT_RECONNECT_INITIAL_DELAY = max(
+    0.0, float(os.environ.get("PLAYLIST_BT_RECONNECT_INITIAL_DELAY", "0.5"))
+)
+BT_RECONNECT_MAX_DELAY = max(
+    BT_RECONNECT_INITIAL_DELAY,
+    float(os.environ.get("PLAYLIST_BT_RECONNECT_MAX_DELAY", "8")),
+)
+_bt_reconnect_cancel = threading.Event()
+_bt_reconnect_controller: BluetoothReconnectController | None = None
+_bt_reconnect_worker: BluetoothReconnectWorker | None = None
+_bt_reconnect_policy_lock = threading.Lock()
+_bt_state_cache: dict[str, dict[str, Any]] = {}
+_bt_state_cache_lock = threading.Lock()
 _DEFAULT_RESTART_CMD = "sudo systemctl restart servo-sync.service"
 _SERVICE_RESTART_RAW = os.environ.get(
     "PLAYLIST_SERVICE_RESTART_CMD", _DEFAULT_RESTART_CMD
@@ -390,7 +492,7 @@ def _clean_bt_output(text: str) -> str:
         return ""
     text = text.replace("\n", "\n")
     text = _ANSI_RE.sub("", text)
-    return text
+    return _redact_sensitive_text(text)
 
 
 def _redact_sensitive_text(value: object) -> str:
@@ -418,16 +520,8 @@ def _bluetoothctl_script(*lines: str) -> subprocess.CompletedProcess:
     if needs_back:
         effective_lines.append("back")
     effective_lines.append("quit")
-    script = "\n".join(effective_lines) + "\n"
     joined = "; ".join(effective_lines)
-    proc = subprocess.run(
-        _VOLUME_CMD_BASE,
-        input=script,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=VOLUME_TIMEOUT,
-    )
+    proc = _BLUETOOTH_COMMAND_RUNNER.run(effective_lines)
     proc.stdout = _clean_bt_output(proc.stdout)
     proc.stderr = _clean_bt_output(proc.stderr)
     stdout = proc.stdout.strip()
@@ -448,6 +542,61 @@ def _bluetoothctl_script(*lines: str) -> subprocess.CompletedProcess:
     return proc
 
 
+def _bluetoothctl_direct(
+    *arguments: str, timeout_s: float | None = None
+) -> subprocess.CompletedProcess:
+    """Run one bluetoothctl command under an external Linux timeout."""
+    command_timeout = max(
+        0.1,
+        float(
+            BT_CONNECT_COMMAND_TIMEOUT
+            if timeout_s is None
+            else timeout_s
+        ),
+    )
+    if os.name == "nt":
+        command = None
+        direct_arguments = arguments
+    else:
+        command = ("timeout",)
+        direct_arguments = (f"{command_timeout:.3f}s", *_VOLUME_CMD_BASE, *arguments)
+    try:
+        proc = _BLUETOOTH_COMMAND_RUNNER.run_args(
+            direct_arguments,
+            timeout=command_timeout + 5,
+            command=command,
+        )
+    except Exception:
+        servo_logger.logger.exception("BTCTL_DIRECT_ERROR")
+        raise
+    proc.stdout = _clean_bt_output(proc.stdout)
+    proc.stderr = _clean_bt_output(proc.stderr)
+    return proc
+
+
+def _bluetoothctl_connect(
+    address: str, *, timeout_s: float | None = None
+) -> subprocess.CompletedProcess:
+    """Connect without sending an immediate interactive ``quit`` command."""
+    return _bluetoothctl_direct(
+        "--agent",
+        "NoInputNoOutput",
+        "connect",
+        address,
+        timeout_s=timeout_s,
+    )
+
+
+def _serialized_bluetooth_operation(function):
+    """Prevent overlapping multi-command scans and pairing workflows."""
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        with _BLUETOOTH_COMMAND_RUNNER.operation():
+            return function(*args, **kwargs)
+
+    return wrapper
+
+
 def _parse_volume_text(text: str) -> int | None:
     if not text:
         return None
@@ -465,6 +614,10 @@ def _parse_volume_text(text: str) -> int | None:
 
 def _bluetooth_info(address: str) -> dict[str, Any] | None:
     if not address:
+        return None
+    try:
+        address = validate_bluetooth_address(address)
+    except ValueError:
         return None
     try:
         proc = _bluetoothctl_script(f"info {address}")
@@ -499,7 +652,29 @@ def _bluetooth_info(address: str) -> dict[str, Any] | None:
     if m:
         trusted = m.group(1).lower() == "yes"
 
-    return {"connected": connected, "paired": paired, "trusted": trusted, "raw": stdout}
+    result = {
+        "connected": connected,
+        "paired": paired,
+        "trusted": trusted,
+        "audio_sink_capable": has_audio_sink_profile(parse_bluez_uuids(stdout)),
+        "raw": stdout,
+    }
+    with _bt_state_cache_lock:
+        _bt_state_cache[address] = dict(result)
+    return result
+
+
+def _cached_bluetooth_info(
+    address: str, result: ReconnectResult | None = None
+) -> dict[str, Any] | None:
+    """Read the last published state without waiting on the Bluetooth tool."""
+    with _bt_state_cache_lock:
+        cached = _bt_state_cache.get(address)
+    if cached is not None:
+        return dict(cached)
+    if result is not None and isinstance(result.state, dict):
+        return dict(result.state)
+    return None
 
 
 def _wait_bt_flag(
@@ -519,45 +694,104 @@ def _wait_bt_flag(
     return False
 
 
-def _ensure_bt_connection(address: str) -> bool:
+def _connect_bt_once(address: str, timeout_s: float) -> bool:
+    try:
+        proc = _bluetoothctl_connect(address, timeout_s=timeout_s)
+    except Exception:
+        return False
+    if proc.returncode != 0:
+        return False
+    return _wait_bt_flag(
+        address,
+        "connected",
+        True,
+        timeout_s=timeout_s,
+        interval=min(0.2, max(0.05, timeout_s / 4)),
+    )
+
+
+def _get_bt_reconnect_controller() -> BluetoothReconnectController:
+    global _bt_reconnect_controller
+    if _bt_reconnect_controller is None:
+        _bt_reconnect_controller = BluetoothReconnectController(
+            read_state=_bluetooth_info,
+            connect_once=_connect_bt_once,
+            max_attempts=BT_RECONNECT_MAX_ATTEMPTS,
+            connect_timeout=BT_RECONNECT_CONNECT_TIMEOUT,
+            initial_delay=BT_RECONNECT_INITIAL_DELAY,
+            max_delay=BT_RECONNECT_MAX_DELAY,
+            cancel_event=_bt_reconnect_cancel,
+            log_attempt=lambda message: servo_logger.logger.info(
+                "BTCTL_RECONNECT_ATTEMPT | %s", message
+            ),
+        )
+    return _bt_reconnect_controller
+
+
+def _run_bt_reconnect_policy(address: str) -> ReconnectResult:
+    with _bt_reconnect_policy_lock:
+        return _get_bt_reconnect_controller().ensure(address)
+
+
+def _on_bt_reconnect_result(result: ReconnectResult) -> None:
+    if not result.connected:
+        return
+    try:
+        _ensure_bt_audio_output(result.address)
+    except Exception:
+        servo_logger.logger.info("BT_AUDIO_OUTPUT_PENDING")
+
+
+def _start_bt_reconnect_worker(address: str) -> None:
+    global _bt_reconnect_worker
+    if _bt_reconnect_worker is None:
+        _bt_reconnect_worker = BluetoothReconnectWorker(
+            reconnect=_run_bt_reconnect_policy,
+            retry_interval=BT_RECONNECT_INTERVAL or 10.0,
+            on_result=_on_bt_reconnect_result,
+        )
+    _bt_reconnect_worker.start(address)
+
+
+def _ensure_bt_connection(address: str, *, max_attempts: int | None = None) -> bool:
     if not address:
         return True
-
-    info = _bluetooth_info(address)
-    if info and info.get("connected") is True:
-        return True
-
-    servo_logger.logger.warning("BTCTL_RECONNECT_ATTEMPT | address=%s", address)
     try:
-        proc = _bluetoothctl_script(f"connect {address}")
-    except subprocess.TimeoutExpired:
-        servo_logger.logger.error("BTCTL_CONNECT_TIMEOUT | address=%s", address)
+        normalized = validate_bluetooth_address(address)
+    except ValueError:
+        servo_logger.logger.warning("BTCTL_RECONNECT_INVALID_ADDRESS")
         return False
-    except Exception:
-        servo_logger.logger.exception("BTCTL_CONNECT_ERROR | address=%s", address)
-        return False
-
-    if proc.returncode != 0:
-        servo_logger.logger.error(
-            "BTCTL_CONNECT_FAILED | address=%s | code=%s | stderr=%s",
-            address,
-            proc.returncode,
-            (proc.stderr or "").strip(),
+    with _bt_reconnect_policy_lock:
+        result = _get_bt_reconnect_controller().ensure(
+            normalized, max_attempts=max_attempts
         )
-        return False
+    if not result.connected and result.reason not in {"not_trusted", "cancelled"}:
+        servo_logger.logger.warning(
+            "BTCTL_RECONNECT_DEGRADED | attempts=%s | reason=%s",
+            result.attempts,
+            result.reason,
+        )
+    return result.connected
 
-    time.sleep(0.5)
-    info_after = _bluetooth_info(address)
-    if info_after and info_after.get("connected") is True:
-        servo_logger.logger.info("BTCTL_RECONNECT_SUCCESS | address=%s", address)
+
+def _ensure_bt_audio_output(address: str) -> bool:
+    """Require an independently verified A2DP sink before starting audio."""
+    state = _bt_ui_state(address)
+    if (
+        state
+        and state.get("connected") is True
+        and state.get("audio_sink_capable") is True
+        and state.get("pulse_sink")
+        and state.get("pulse_default") is True
+        and state.get("pulse_state") != "SUSPENDED"
+    ):
         return True
-
-    servo_logger.logger.error(
-        "BTCTL_RECONNECT_UNCONFIRMED | address=%s | stdout=%s",
-        address,
-        (info_after or {}).get("raw", "")[:200],
-    )
-    return False
+    try:
+        _bt_ui_select_output(address)
+        return True
+    except Exception:
+        servo_logger.logger.warning("BT_AUDIO_OUTPUT_UNAVAILABLE")
+        return False
 
 
 def _pick_transport_path() -> tuple[str | None, subprocess.CompletedProcess]:
@@ -909,6 +1143,13 @@ def _start_session(
         if not _ensure_bt_connection(BT_DEVICE_ADDR):
             servo_logger.logger.error(
                 "PLAYLIST_BT_RECONNECT_FAILED | session=%s | source=%s",
+                session_name,
+                source,
+            )
+            return False
+        if not _ensure_bt_audio_output(BT_DEVICE_ADDR):
+            servo_logger.logger.error(
+                "PLAYLIST_BT_AUDIO_OUTPUT_FAILED | session=%s | source=%s",
                 session_name,
                 source,
             )
@@ -1587,18 +1828,19 @@ def _esp32_request(
     req = Request(url, data=data_bytes, headers=headers, method=method.upper())
 
     try:
-        with urlopen(req, timeout=ESP32_HTTP_TIMEOUT) as resp:
-            charset = resp.headers.get_content_charset() or "utf-8"
-            raw = resp.read()
-            if not raw:
-                return {}
-            text = raw.decode(charset, errors="replace")
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ESP32CommunicationError(
-                    "Reponse JSON invalide recue de l'ESP32."
-                ) from exc
+        with _ESP32_OPERATION_LOCK:
+            with urlopen(req, timeout=ESP32_HTTP_TIMEOUT) as resp:
+                charset = resp.headers.get_content_charset() or "utf-8"
+                raw = resp.read()
+                if not raw:
+                    return {}
+                text = raw.decode(charset, errors="replace")
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ESP32CommunicationError(
+                        "Reponse JSON invalide recue de l'ESP32."
+                    ) from exc
     except HTTPError as exc:
         body = ""
         try:
@@ -1634,6 +1876,74 @@ def _esp32_request(
             type(exc).__name__,
         )
         raise ESP32CommunicationError("Communication ESP32 impossible.") from exc
+
+
+def _esp32_probe_status() -> Dict[str, Any]:
+    return _esp32_request("/api/status", method="GET")
+
+
+def _esp32_is_enabled() -> bool:
+    return bool(load_esp32_config().get("enabled"))
+
+
+def _start_esp32_supervisor() -> None:
+    global _esp32_supervisor
+    if _esp32_supervisor is None:
+        _get_esp32_supervisor()
+    _esp32_supervisor.start()
+    _esp32_supervisor.wake()
+
+
+def _get_esp32_supervisor() -> ESP32Supervisor:
+    global _esp32_supervisor
+    if _esp32_supervisor is None:
+        _esp32_supervisor = ESP32Supervisor(
+            probe=_esp32_probe_status,
+            enabled=_esp32_is_enabled,
+            interval=ESP32_STATUS_INTERVAL,
+            initial_backoff=ESP32_STATUS_INITIAL_BACKOFF,
+            max_backoff=ESP32_STATUS_MAX_BACKOFF,
+            failure_threshold=ESP32_STATUS_FAILURE_THRESHOLD,
+            circuit_cooldown=ESP32_STATUS_CIRCUIT_COOLDOWN,
+        )
+    return _esp32_supervisor
+
+
+def _esp32_public_status(*, manual_probe: bool = False) -> Dict[str, Any]:
+    if _esp32_is_enabled():
+        supervisor = _get_esp32_supervisor()
+        if _runtime_initialized:
+            _start_esp32_supervisor()
+        snapshot = (
+            supervisor.manual_probe()
+            if manual_probe
+            else supervisor.snapshot()
+        )
+    elif _esp32_supervisor is not None:
+        _esp32_supervisor.wake()
+        snapshot = _esp32_supervisor.snapshot()
+    else:
+        snapshot = ESP32ProbeSnapshot()
+    response: Dict[str, Any] = {
+        "reachable": snapshot.reachable,
+        "supervision": snapshot.public(),
+    }
+    if snapshot.reachable and snapshot.payload is not None:
+        response["status"] = dict(snapshot.payload)
+    else:
+        if snapshot.state == "probing":
+            response["error"] = "Vérification ESP32 déjà en cours."
+            response["reason"] = "busy"
+        else:
+            response["error"] = (
+                "ESP32 indisponible."
+                if snapshot.state != "disabled"
+                else "Pilotage ESP32 desactive."
+            )
+            response["reason"] = (
+                "network" if snapshot.state != "disabled" else "config"
+            )
+    return response
 
 
 def save_pitch_offsets() -> None:
@@ -1725,14 +2035,30 @@ def esp32_update_config():
         return jsonify({"error": str(exc)}), 400
     payload = dict(updated)
     payload["buttonCount"] = ESP32_BUTTON_COUNT
+    if payload.get("enabled") and _runtime_initialized:
+        _start_esp32_supervisor()
+    elif _esp32_supervisor is not None:
+        _esp32_supervisor.wake()
     return jsonify(payload)
 
 
 @legacy_api.route("/esp32/status")
 def esp32_status():
     try:
-        status_payload = _esp32_request("/api/status", method="GET")
-        return jsonify({"reachable": True, "status": status_payload})
+        manual_probe = request.args.get("probe", "").strip().lower() == "manual"
+        return jsonify(_esp32_public_status(manual_probe=manual_probe))
+    except ESP32ConfigError as exc:
+        return jsonify(_esp32_response_error(str(exc), reason="config"))
+    except ESP32CommunicationError as exc:
+        return jsonify(_esp32_response_error(str(exc), reason="network"))
+
+
+@legacy_api.route("/esp32/status/check", methods=["POST"])
+def esp32_status_check():
+    try:
+        response = _esp32_public_status(manual_probe=True)
+        status_code = 202 if response.get("supervision", {}).get("busy") else 200
+        return jsonify(response), status_code
     except ESP32ConfigError as exc:
         return jsonify(_esp32_response_error(str(exc), reason="config"))
     except ESP32CommunicationError as exc:
@@ -2583,25 +2909,57 @@ def status():
         random_snapshot["available"] = random_snapshot["eligible_count"] > 0
         st["random_mode"] = random_snapshot
         if BT_DEVICE_ADDR:
-            info = _bluetooth_info(BT_DEVICE_ADDR)
+            reconnect_result = (
+                _bt_reconnect_worker.last_result
+                if _bt_reconnect_worker is not None
+                else _get_bt_reconnect_controller().last_result
+            )
+            worker_busy = bool(
+                _bt_reconnect_worker is not None
+                and getattr(_bt_reconnect_worker, "busy", False)
+            )
+            if _bt_reconnect_worker is not None:
+                # The worker owns the BlueZ command lock. Never wait for it from
+                # this read-only route; use the last published snapshot instead.
+                info = _cached_bluetooth_info(BT_DEVICE_ADDR, reconnect_result)
+            else:
+                info = _bluetooth_info(BT_DEVICE_ADDR)
             connected = info.get("connected") if info else None
             volume_percent: int | None = None
 
-            if connected is not True and BT_RECONNECT_INTERVAL > 0:
-                global _bt_last_reconnect_attempt
-                now = time.time()
-                if now - _bt_last_reconnect_attempt >= BT_RECONNECT_INTERVAL:
-                    _bt_last_reconnect_attempt = now
-                    if _ensure_bt_connection(BT_DEVICE_ADDR):
-                        info = _bluetooth_info(BT_DEVICE_ADDR)
-                        connected = info.get("connected") if info else True
-                    else:
-                        servo_logger.logger.warning(
-                            "BTCTL_STATUS_RETRY_FAILED | address=%s",
-                            BT_DEVICE_ADDR,
-                        )
+            selected_output = (
+                None
+                if worker_busy
+                else _PULSEAUDIO_OUTPUT_ADAPTER.selected_for(BT_DEVICE_ADDR)
+            )
+            audio_sink_capable = info.get("audio_sink_capable") if info else None
+            audio_ready = bool(
+                connected is True
+                and audio_sink_capable is True
+                and selected_output
+                and selected_output.get("pulse_default") is True
+                and selected_output.get("pulse_state") != "SUSPENDED"
+            )
+            if worker_busy:
+                connection_state = "reconnecting"
+            elif audio_ready:
+                connection_state = "audio_ready"
+            elif reconnect_result is not None and reconnect_result.reason in {
+                "degraded",
+                "state_unavailable",
+                "not_trusted",
+                "worker_error",
+                "cancelled",
+            }:
+                connection_state = "degraded"
+            elif connected is True:
+                connection_state = "connected"
+            elif connected is False:
+                connection_state = "disconnected"
+            else:
+                connection_state = "unknown"
 
-            if info and info.get("connected") is True:
+            if info and connected is True and not worker_busy:
                 try:
                     transport, _ = _pick_transport_path()
                     if transport:
@@ -2617,10 +2975,25 @@ def status():
                     volume_percent = None
             st["bluetooth"] = {
                 "address": BT_DEVICE_ADDR,
+                "paired": info.get("paired") if info else None,
+                "trusted": info.get("trusted") if info else None,
                 "connected": connected,
-                "last_attempt_ts": _bt_last_reconnect_attempt or None,
+                "connection_state": connection_state,
+                "audio_sink_capable": audio_sink_capable,
+                "pulse_sink": selected_output.get("pulse_sink") if selected_output else None,
+                "audio_ready": audio_ready,
+                "last_attempt_ts": (
+                    _bt_reconnect_worker.last_attempt_ts
+                    if _bt_reconnect_worker is not None
+                    else None
+                ),
                 "retry_interval": BT_RECONNECT_INTERVAL,
             }
+            if reconnect_result is not None:
+                st["bluetooth"]["reconnect"] = {
+                    "attempts": reconnect_result.attempts,
+                    "reason": reconnect_result.reason,
+                }
             if volume_percent is not None:
                 st["bluetooth"]["volume_percent"] = volume_percent
         st["loop"] = loop_player.status()
@@ -2966,12 +3339,16 @@ def _parse_bt_devices_list(text: str) -> list[dict[str, str]]:
             continue
         mac = parts[1].strip()
         name = parts[2].strip() if len(parts) > 2 else ""
-        if mac:
-            devices.append({"mac": mac, "name": name})
+        try:
+            mac = validate_bluetooth_address(mac)
+        except ValueError:
+            continue
+        devices.append({"mac": mac, "name": name})
     return devices
 
 
 @legacy_api.route("/scan", methods=["POST"])
+@_serialized_bluetooth_operation
 def bt_scan():
     try:
         _ = _bluetoothctl_script("power on")
@@ -2992,11 +3369,16 @@ def bt_scan():
 
 
 @legacy_api.route("/pair", methods=["POST"])
+@_serialized_bluetooth_operation
 def bt_pair():
     data = request.get_json(silent=True) or {}
     mac = (data.get("mac") or data.get("address") or "").strip()
     if not mac:
         return jsonify({"error": "mac address required"}), 400
+    try:
+        mac = validate_bluetooth_address(mac)
+    except ValueError:
+        return jsonify({"error": "invalid mac address"}), 400
 
     results: dict[str, dict[str, object]] = {}
 
@@ -3045,12 +3427,124 @@ def bt_pair():
         )
     except subprocess.TimeoutExpired:
         return jsonify({"error": "bluetoothctl_timeout", "results": results}), 504
-    except Exception as e:
+    except Exception:
         servo_logger.logger.exception("BT_PAIR_ERROR")
-        return (
-            jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}),
-            500,
+        return jsonify({"error": "pair_unavailable", "results": results}), 500
+
+
+# -------------------- Explicit Bluetooth UI operations --------------------
+
+
+def _bt_ui_state(address: str) -> dict[str, Any] | None:
+    """Return only independent, non-diagnostic state fields to the UI."""
+    info = _bluetooth_info(address)
+    if info is None:
+        return None
+    state = {
+        "address": address,
+        "paired": info.get("paired"),
+        "trusted": info.get("trusted"),
+        "connected": info.get("connected"),
+        "discovered": True,
+        "audio_sink_capable": info.get("audio_sink_capable"),
+        "pulse_sink": None,
+        "last_error": None,
+    }
+    selected = _PULSEAUDIO_OUTPUT_ADAPTER.selected_for(address)
+    if selected:
+        state.update(
+            {
+                "audio_sink_capable": True,
+                "pulse_sink": selected.get("pulse_sink"),
+                "pulse_default": selected.get("pulse_default"),
+                "pulse_state": selected.get("pulse_state"),
+                "fallback_used": selected.get("fallback_used", False),
+            }
         )
+    return state
+
+
+@_serialized_bluetooth_operation
+def _bt_ui_scan() -> list[dict[str, str]]:
+    for command in ("power on", "agent on", "default-agent", "scan on"):
+        proc = _bluetoothctl_script(command)
+        if proc.returncode != 0:
+            raise DependencyUnavailableError("Scan Bluetooth refuse")
+    time.sleep(5)
+    proc = _bluetoothctl_script("scan off")
+    if proc.returncode != 0:
+        raise DependencyUnavailableError("Scan Bluetooth refuse")
+    devices = _bluetoothctl_script("devices")
+    if devices.returncode != 0:
+        raise DependencyUnavailableError("Scan Bluetooth refuse")
+    return _parse_bt_devices_list(devices.stdout or "")
+
+
+def _bt_ui_prepare() -> None:
+    for command in ("power on", "agent on", "default-agent"):
+        proc = _bluetoothctl_script(command)
+        if proc.returncode != 0:
+            raise DependencyUnavailableError("Agent Bluetooth indisponible")
+
+
+@_serialized_bluetooth_operation
+def _bt_ui_pair(address: str) -> dict[str, Any]:
+    address = validate_bluetooth_address(address)
+    current = _bluetooth_info(address)
+    if current and current.get("paired") is True:
+        return {"address": address, "paired": True}
+    _bt_ui_prepare()
+    proc = _bluetoothctl_script(f"pair {address}")
+    if proc.returncode != 0:
+        raise DependencyUnavailableError("Appairage Bluetooth refuse")
+    if not _wait_bt_flag(address, "paired", True, timeout_s=15.0):
+        raise TimeoutError("Appairage Bluetooth expire")
+    return {"address": address, "paired": True}
+
+
+@_serialized_bluetooth_operation
+def _bt_ui_trust(address: str) -> dict[str, Any]:
+    address = validate_bluetooth_address(address)
+    current = _bluetooth_info(address)
+    if current and current.get("trusted") is True:
+        return {"address": address, "trusted": True}
+    proc = _bluetoothctl_script(f"trust {address}")
+    if proc.returncode != 0:
+        raise DependencyUnavailableError("Confiance Bluetooth refusee")
+    if not _wait_bt_flag(address, "trusted", True, timeout_s=8.0):
+        raise TimeoutError("Confiance Bluetooth expiree")
+    return {"address": address, "trusted": True}
+
+
+@_serialized_bluetooth_operation
+def _bt_ui_connect(address: str) -> dict[str, Any]:
+    address = validate_bluetooth_address(address)
+    current = _bluetooth_info(address)
+    if current and current.get("connected") is True:
+        return {"address": address, "connected": True}
+    proc = _bluetoothctl_connect(address)
+    if proc.returncode == 124:
+        raise TimeoutError("Connexion Bluetooth expiree")
+    if proc.returncode != 0:
+        raise DependencyUnavailableError("Connexion Bluetooth refusee")
+    if not _wait_bt_flag(address, "connected", True, timeout_s=12.0):
+        raise TimeoutError("Connexion Bluetooth expiree")
+    return {"address": address, "connected": True}
+
+
+def _bt_ui_select_output(address: str) -> dict[str, Any]:
+    """Select PulseAudio only after independent Bluetooth/A2DP proofs."""
+    state = _bt_ui_state(address)
+    if not state or state.get("connected") is not True:
+        raise OperationNotAllowedError("Connexion Bluetooth requise")
+    if state.get("audio_sink_capable") is not True:
+        raise OperationNotAllowedError("Profil Audio Sink indisponible")
+    return _PULSEAUDIO_OUTPUT_ADAPTER.select_for_bluetooth(address)
+
+
+def _bt_ui_test_audio(address: str, duration_ms: int, volume: int) -> dict[str, Any]:
+    """Keep physical playback behind the dedicated validation task."""
+    raise OperationNotAllowedError("Test audio réservé à la validation matérielle")
 
 
 # -------------------- Channels API --------------------
@@ -3339,8 +3833,21 @@ v1_api = create_v1_blueprint(
     )
 )
 
+bluetooth_api = create_bluetooth_blueprint(
+    BluetoothUiContext(
+        scan=_bt_ui_scan,
+        pair=_bt_ui_pair,
+        trust=_bt_ui_trust,
+        connect=_bt_ui_connect,
+        select_output=_bt_ui_select_output,
+        test_audio=_bt_ui_test_audio,
+        refresh_state=_bt_ui_state,
+    )
+)
+
 
 app.register_blueprint(legacy_api)
+app.register_blueprint(bluetooth_api, url_prefix="/bluetooth")
 app.register_blueprint(v1_api, url_prefix="/api/v1")
 
 

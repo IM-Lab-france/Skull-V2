@@ -317,17 +317,29 @@
 
             <section class="card bt-pairing-card">
                 <header class="card-header">
-                    <h2>Appairage Bluetooth</h2>
+                    <h2>Bluetooth</h2>
                     <button id="btScanBtn" class="btn secondary" type="button">Scanner</button>
                 </header>
                 <div class="row">
                     <label class="label" for="btDeviceSelect">Périphériques détectés</label>
                     <select id="btDeviceSelect" class="select" aria-label="Périphériques détectés"></select>
                 </div>
-                <div class="controls-inline" role="group" aria-label="Appairage Bluetooth">
-                    <button id="btPairBtn" class="btn primary" type="button" disabled>Connecter l'enceinte</button>
+                <div class="bt-state-grid" aria-label="États Bluetooth">
+                    <span>Découvert</span><strong id="btStateDiscovered">inconnu</strong>
+                    <span>Appairé</span><strong id="btStatePaired">inconnu</strong>
+                    <span>De confiance</span><strong id="btStateTrusted">inconnu</strong>
+                    <span>Connecté</span><strong id="btStateConnected">inconnu</strong>
+                    <span>Profil Audio Sink</span><strong id="btStateAudio">inconnu</strong>
+                    <span>Sink PulseAudio</span><strong id="btStatePulse">inconnu</strong>
                 </div>
-                <p class="hint">Lancez un scan puis sélectionnez votre enceinte.
+                <div class="controls-inline bt-operation-controls" role="group" aria-label="Opérations Bluetooth">
+                    <button id="btPairBtn" class="btn primary" type="button" disabled>Appairer</button>
+                    <button id="btTrustBtn" class="btn secondary" type="button" disabled>Faire confiance</button>
+                    <button id="btConnectBtn" class="btn secondary" type="button" disabled>Connecter</button>
+                    <button id="btSelectOutputBtn" class="btn secondary" type="button" disabled>Sélectionner la sortie</button>
+                    <button id="btTestAudioBtn" class="btn secondary" type="button" disabled>Tester le son</button>
+                </div>
+                <p id="btOperationStatus" class="hint" role="status" aria-live="polite">Lancez un scan puis sélectionnez un périphérique.
                 </p>
             </section>
 

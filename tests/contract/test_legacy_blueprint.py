@@ -38,6 +38,7 @@ def test_all_public_routes_are_registered_by_the_legacy_blueprint(
             for rule in api.app.url_map.iter_rules()
             if rule.endpoint != "static" and not rule.endpoint.startswith("static.")
             and not rule.endpoint.startswith("v1.")
+            and not rule.endpoint.startswith("bluetooth.")
         ]
     )
     assert api.legacy_api.name == "legacy"
