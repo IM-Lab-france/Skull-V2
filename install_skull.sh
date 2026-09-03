@@ -242,6 +242,9 @@ setup_playlist_web_env() {
 prepare_runtime_dirs() {
   mkdir -p "$INSTALL_DIR/config" "$INSTALL_DIR/data" "$INSTALL_DIR/logs"
   chown -R "$SKULL_USER:$SKULL_GROUP" "$INSTALL_DIR"
+  install -d -m 0750 -o "$SKULL_USER" -g "$SKULL_GROUP" "$INSTALL_DIR/logs"
+  find "$INSTALL_DIR/logs" -type f -exec chown "$SKULL_USER:$SKULL_GROUP" {} + \
+    -exec chmod 0640 {} +
 }
 
 ensure_runtime_dir() {
@@ -577,13 +580,14 @@ User=$SKULL_USER
 Group=$SKULL_GROUP
 WorkingDirectory=$INSTALL_DIR
 Environment=PYTHONUNBUFFERED=1
+Environment=SKULL_HARDWARE_MODE=production
 Environment=VIRTUAL_ENV=$INSTALL_DIR/.venv
 Environment=PATH=$INSTALL_DIR/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=XDG_RUNTIME_DIR=/run/user/$SKULL_UID
 Environment=PULSE_SERVER=unix:/run/user/$SKULL_UID/pulse/native
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$SKULL_UID/bus
 EnvironmentFile=-$INSTALL_DIR/config/bluetooth_device.env
-ExecStartPre=/bin/sh -c "if [ -n \"\${PLAYLIST_BT_DEVICE_ADDR:-}\" ]; then /usr/bin/bluetoothctl connect \"\${PLAYLIST_BT_DEVICE_ADDR}\" >/dev/null 2>&1 || true; fi"
+ExecStartPre=/bin/sh -c "test \"\${SKULL_HARDWARE_MODE:-production}\" = production || { echo 'SKULL_HARDWARE_MODE=simulated refuse dans le service de production' >&2; exit 78; }"
 ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/web_app.py
 Restart=on-failure
 RestartSec=3

@@ -1,0 +1,10 @@
+# Dependances directes du runtime Skull principal (Python 3.11 / ARM64)
+Adafruit-Blinka
+adafruit-circuitpython-pca9685
+Flask
+gunicorn==22.0.0
+numpy
+pydub
+simpleaudio
+sounddevice
+soundfile

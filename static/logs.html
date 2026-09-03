@@ -347,7 +347,7 @@
 
                 this.eventSource.onerror = () => {
                     this.updateConnectionStatus(false);
-                    setTimeout(() => this.startStreaming(), 5000); // Reconnect after 5s
+                    // EventSource reconnects natively using the server retry value.
                 };
             }
 

@@ -1,0 +1,9 @@
+{
+  "keyframes": {
+    "jaw_deg": [{"time": 0.0, "angle": 0}],
+    "neckYaw": [],
+    "eyeLeftYaw": [],
+    "eyeRightYaw": []
+  },
+  "metadata": {"duration": 0}
+}

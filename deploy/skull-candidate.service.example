@@ -1,0 +1,21 @@
+[Unit]
+Description=Skull candidate runtime (validation only)
+After=network-online.target bluetooth.service
+Wants=network-online.target bluetooth.service
+
+[Service]
+Type=simple
+User=skull
+Group=skull
+WorkingDirectory=/opt/skull-candidate
+Environment=PYTHONUNBUFFERED=1
+Environment=SKULL_HARDWARE_MODE=simulated
+Environment=SKULL_WSGI_BIND=127.0.0.1:5002
+Environment=VIRTUAL_ENV=/opt/skull-candidate/.venv
+Environment=PATH=/opt/skull-candidate/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/opt/skull-candidate/config/bluetooth_device.env
+ExecStart=/opt/skull-candidate/.venv/bin/gunicorn --config /opt/skull-candidate/gunicorn.conf.py wsgi_entry:app
+Restart=no
+
+# Deliberately no [Install] section: this candidate is never enabled
+# automatically. Activate it only during a confirmed validation window.

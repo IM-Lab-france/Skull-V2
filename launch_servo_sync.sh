@@ -10,6 +10,11 @@ set -euo pipefail
 APP_DIR=$(dirname "$(readlink -f "$0")")
 cd "$APP_DIR"
 
+if [ "${SKULL_HARDWARE_MODE:-production}" != "production" ]; then
+  echo "SKULL_HARDWARE_MODE=simulated refuse par le lanceur de production" >&2
+  exit 78
+fi
+
 if [ ! -d .venv ]; then
   echo "==> Creating virtualenv"
   python3 -m venv .venv

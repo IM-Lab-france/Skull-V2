@@ -3,38 +3,102 @@ Système de logging pour les commandes servo et analyse de synchronisation.
 Crée des logs détaillés avec timestamps et statistiques de performance.
 """
 
+import json
 import logging
+import os
 import time
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, List, Optional
-import json
-from datetime import datetime
+
+
+DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_LOG_BACKUP_COUNT = 5
+DEFAULT_STATS_RETENTION = 100
+LOG_DIR_MODE = 0o750
+LOG_FILE_MODE = 0o640
+
+
+def _positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 class ServoLogger:
-    def __init__(self, log_dir: str = "logs"):
+    def __init__(
+        self,
+        log_dir: str = "logs",
+        *,
+        max_bytes: int | None = None,
+        backup_count: int | None = None,
+        stats_retention: int | None = None,
+        logger_name: str = "servo_commands",
+    ):
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
+        self.max_bytes = _positive_int(
+            max_bytes
+            if max_bytes is not None
+            else os.environ.get("SKULL_LOG_MAX_BYTES"),
+            DEFAULT_LOG_MAX_BYTES,
+        )
+        self.backup_count = _positive_int(
+            backup_count
+            if backup_count is not None
+            else os.environ.get("SKULL_LOG_BACKUP_COUNT"),
+            DEFAULT_LOG_BACKUP_COUNT,
+        )
+        self.stats_retention = _positive_int(
+            stats_retention
+            if stats_retention is not None
+            else os.environ.get("SKULL_STATS_RETENTION"),
+            DEFAULT_STATS_RETENTION,
+        )
+        self.storage_available = True
+        self._file_handler: RotatingFileHandler | None = None
+
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            self._set_mode(self.log_dir, LOG_DIR_MODE)
+        except OSError:
+            self.storage_available = False
 
         # Créer un logger spécifique pour les servos
-        self.logger = logging.getLogger("servo_commands")
+        self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False
 
         # Éviter les doublons de handlers
         if not self.logger.handlers:
-            # Handler pour fichier avec rotation
-            log_file = (
-                self.log_dir / f"servo_commands_{datetime.now().strftime('%Y%m%d')}.log"
-            )
-            file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-            file_handler.setLevel(logging.INFO)
-
             # Format détaillé avec timestamp précis
             formatter = logging.Formatter(
                 "%(asctime)s.%(msecs)03d | %(message)s", datefmt="%H:%M:%S"
             )
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
+            if self.storage_available:
+                log_file = self._current_log_path()
+                try:
+                    file_handler = RotatingFileHandler(
+                        log_file,
+                        mode="a",
+                        maxBytes=self.max_bytes,
+                        backupCount=self.backup_count,
+                        encoding="utf-8",
+                    )
+                    file_handler.setLevel(logging.INFO)
+                    file_handler.setFormatter(formatter)
+                    self._file_handler = file_handler
+                    self.logger.addHandler(file_handler)
+                    self._set_mode(log_file, LOG_FILE_MODE)
+                except OSError:
+                    self.storage_available = False
+            if not self.storage_available:
+                fallback = logging.StreamHandler()
+                fallback.setLevel(logging.INFO)
+                fallback.setFormatter(formatter)
+                self.logger.addHandler(fallback)
 
         # Tracking pour analyse
         self.session_start_time: Optional[float] = None
@@ -43,6 +107,17 @@ class ServoLogger:
         self.last_servo_command_time: Optional[float] = None
         self.servo_commands: List[Dict] = []
         self.current_session: Optional[str] = None
+
+    @staticmethod
+    def _set_mode(path: Path, mode: int) -> None:
+        """Best-effort least-privilege mode; Windows ignores POSIX modes."""
+        try:
+            os.chmod(path, mode)
+        except (OSError, NotImplementedError):
+            pass
+
+    def _current_log_path(self) -> Path:
+        return self.log_dir / f"servo_commands_{datetime.now().strftime('%Y%m%d')}.log"
 
     def start_session(self, session_name: str, audio_duration: float):
         """Démarre une nouvelle session de logging"""
@@ -247,12 +322,32 @@ class ServoLogger:
         # Ajouter timestamp pour le nom de fichier
         stats["timestamp"] = datetime.now().isoformat()
 
-        with open(stats_file, "w", encoding="utf-8") as f:
-            json.dump(stats, f, indent=2, ensure_ascii=False)
+        try:
+            with open(stats_file, "w", encoding="utf-8") as f:
+                json.dump(stats, f, indent=2, ensure_ascii=False)
+            self._set_mode(stats_file, LOG_FILE_MODE)
+            self._prune_session_stats()
+        except OSError as exc:
+            self.storage_available = False
+            self.logger.warning("SESSION_STATS_WRITE_UNAVAILABLE | reason=%s", type(exc).__name__)
+
+    def _prune_session_stats(self) -> None:
+        stats_files = sorted(
+            self.log_dir.glob("session_stats_*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in stats_files[self.stats_retention :]:
+            try:
+                stale.unlink()
+            except OSError as exc:
+                self.logger.warning(
+                    "SESSION_STATS_PRUNE_FAILED | reason=%s", type(exc).__name__
+                )
 
     def get_latest_log_file(self) -> Path:
         """Retourne le chemin du fichier de log actuel"""
-        return self.log_dir / f"servo_commands_{datetime.now().strftime('%Y%m%d')}.log"
+        return self._current_log_path()
 
 
 # Instance globale

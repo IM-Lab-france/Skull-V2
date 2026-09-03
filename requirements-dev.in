@@ -1,0 +1,2 @@
+# Dépendances de développement et de test uniquement.
+pytest>=8.0,<9.0

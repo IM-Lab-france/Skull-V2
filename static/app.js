@@ -112,6 +112,17 @@ const elBtTopStatusText = document.getElementById("bluetoothTopStatusText");
 const elBtScanBtn = document.getElementById("btScanBtn");
 const elBtDeviceSelect = document.getElementById("btDeviceSelect");
 const elBtPairBtn = document.getElementById("btPairBtn");
+const elBtTrustBtn = document.getElementById("btTrustBtn");
+const elBtConnectBtn = document.getElementById("btConnectBtn");
+const elBtSelectOutputBtn = document.getElementById("btSelectOutputBtn");
+const elBtTestAudioBtn = document.getElementById("btTestAudioBtn");
+const elBtOperationStatus = document.getElementById("btOperationStatus");
+const elBtStateDiscovered = document.getElementById("btStateDiscovered");
+const elBtStatePaired = document.getElementById("btStatePaired");
+const elBtStateTrusted = document.getElementById("btStateTrusted");
+const elBtStateConnected = document.getElementById("btStateConnected");
+const elBtStateAudio = document.getElementById("btStateAudio");
+const elBtStatePulse = document.getElementById("btStatePulse");
 
 const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
@@ -197,6 +208,10 @@ const elCbNeck = $("#cbNeck");
 
 const elCbJaw = $("#cbJaw");
 
+// Slider Volume Boucle (nouveau)
+const elLoopVolumeSlider = document.getElementById("loopVolumeSlider");
+const elLoopVolumeValue = document.getElementById("loopVolumeValue");
+
 let fileJson = null;
 
 let fileMp3 = null;
@@ -246,14 +261,65 @@ let randomModeState = {
   busy: false,
 };
 
+// Etat Volume Boucle (nouveau)
+let loopVolumeBusy = false;
+let loopVolumePending = null;
+let loopVolumeActive = false;
+let loopVolumeDebounce = null;
+
 // -------------------- Bluetooth pairing helpers --------------------
 let btScanBusy = false;
+let btOperationBusy = false;
+let bluetoothUiState = null;
+
+function btFlag(value) {
+  if (value === true) return "oui";
+  if (value === false) return "non";
+  return "inconnu";
+}
+
+function selectedBtAddress() {
+  return elBtDeviceSelect && elBtDeviceSelect.value
+    ? elBtDeviceSelect.value
+    : "";
+}
+
+function renderBluetoothUiState(state) {
+  bluetoothUiState = state && typeof state === "object" ? state : null;
+  const current = bluetoothUiState || {};
+  if (elBtStateDiscovered) elBtStateDiscovered.textContent = btFlag(current.discovered);
+  if (elBtStatePaired) elBtStatePaired.textContent = btFlag(current.paired);
+  if (elBtStateTrusted) elBtStateTrusted.textContent = btFlag(current.trusted);
+  if (elBtStateConnected) elBtStateConnected.textContent = btFlag(current.connected);
+  if (elBtStateAudio) elBtStateAudio.textContent = btFlag(current.audio_sink_capable);
+  if (elBtStatePulse) {
+    const pulse = current.pulse_sink || "inconnu";
+    elBtStatePulse.textContent = current.fallback_used
+      ? `${pulse} (secours explicite)`
+      : pulse;
+  }
+
+  const hasAddress = !!selectedBtAddress();
+  const paired = current.paired === true;
+  const trusted = current.trusted === true;
+  const connected = current.connected === true;
+  const audioReady = current.audio_sink_capable === true && !!current.pulse_sink;
+  const busy = btScanBusy || btOperationBusy;
+  if (elBtPairBtn) elBtPairBtn.disabled = busy || !hasAddress || paired;
+  if (elBtTrustBtn) elBtTrustBtn.disabled = busy || !hasAddress || !paired || trusted;
+  if (elBtConnectBtn) elBtConnectBtn.disabled = busy || !hasAddress || !paired || !trusted || connected;
+  if (elBtSelectOutputBtn) {
+    elBtSelectOutputBtn.disabled =
+      busy || !hasAddress || !connected || current.audio_sink_capable !== true;
+  }
+  if (elBtTestAudioBtn) elBtTestAudioBtn.disabled = busy || !hasAddress || !connected || !audioReady;
+}
 
 function setBtUiBusy(busy) {
   btScanBusy = !!busy;
   if (elBtScanBtn) elBtScanBtn.disabled = !!busy;
   if (elBtDeviceSelect) elBtDeviceSelect.disabled = !!busy;
-  if (elBtPairBtn) elBtPairBtn.disabled = !!busy || !(elBtDeviceSelect && elBtDeviceSelect.value);
+  renderBluetoothUiState(bluetoothUiState);
 }
 
 function populateBtDevicesList(devices) {
@@ -269,8 +335,19 @@ function populateBtDevicesList(devices) {
     opt.textContent = `${name} — ${mac}`;
     elBtDeviceSelect.appendChild(opt);
   });
+  bluetoothUiState = elBtDeviceSelect.value
+    ? {
+        address: elBtDeviceSelect.value,
+        discovered: true,
+        paired: null,
+        trusted: null,
+        connected: null,
+        audio_sink_capable: null,
+        pulse_sink: null,
+      }
+    : null;
   if (elBtPairBtn) {
-    elBtPairBtn.disabled = !elBtDeviceSelect.value;
+    renderBluetoothUiState(bluetoothUiState);
   }
 }
 
@@ -278,15 +355,22 @@ async function scanBtDevices() {
   if (!elBtScanBtn) return;
   setBtUiBusy(true);
   try {
-    const res = await fetch("/scan", { method: "POST" });
+    const res = await fetch("/bluetooth/scan", { method: "POST" });
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || `HTTP ${res.status}`);
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(
+        payload && payload.error && payload.error.message
+          ? payload.error.message
+          : `HTTP ${res.status}`
+      );
     }
-    const devices = await res.json();
+    const payload = await res.json();
+    const devices = payload && Array.isArray(payload.devices) ? payload.devices : [];
     populateBtDevicesList(devices);
     const count = Array.isArray(devices) ? devices.length : 0;
-    toast(count ? `${count} périphérique(s) trouvé(s)` : "Aucun périphérique trouvé");
+    toast(
+      count ? `${count} périphérique(s) trouvé(s)` : "Aucun périphérique trouvé"
+    );
   } catch (e) {
     toast(`Erreur scan Bluetooth: ${e && e.message ? e.message : e}`, true);
   } finally {
@@ -295,27 +379,40 @@ async function scanBtDevices() {
 }
 
 async function pairBtSelected() {
-  if (!elBtDeviceSelect || !elBtDeviceSelect.value) return;
-  const mac = elBtDeviceSelect.value;
-  setBtUiBusy(true);
+  const mac = selectedBtAddress();
+  if (!mac) return;
+  await runBluetoothOperation("pair", { address: mac });
+}
+
+async function runBluetoothOperation(operation, body) {
+  if (btOperationBusy) return;
+  btOperationBusy = true;
+  renderBluetoothUiState(bluetoothUiState);
   try {
-    const res = await fetch("/pair", {
+    const res = await fetch(`/bluetooth/${operation}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mac }),
+      body: JSON.stringify(body),
     });
     const payload = await res.json().catch(() => ({}));
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "state")) {
+      renderBluetoothUiState(payload.state);
+      applyBluetoothStatus(payload.state);
+    }
     if (!res.ok) {
-      const msg = (payload && (payload.error || payload.message)) || `HTTP ${res.status}`;
+      const msg = payload && payload.error && payload.error.message
+        ? payload.error.message
+        : `HTTP ${res.status}`;
       throw new Error(msg);
     }
-    toast(`Appairage demandé pour ${mac}`);
-    // Rafraîchir le statut global (mettra à jour l'état Bluetooth)
-    updateStatus();
+    toast(`${operation} Bluetooth terminé`);
   } catch (e) {
-    toast(`Échec appairage: ${e && e.message ? e.message : e}`, true);
+    const message = e && e.message ? e.message : "Opération Bluetooth impossible";
+    if (elBtOperationStatus) elBtOperationStatus.textContent = message;
+    toast(`Échec ${operation} Bluetooth: ${message}`, true);
   } finally {
-    setBtUiBusy(false);
+    btOperationBusy = false;
+    renderBluetoothUiState(bluetoothUiState);
   }
 }
 
@@ -329,10 +426,7 @@ function normalizeEsp32ButtonCount(value) {
   if (!Number.isFinite(num) || num <= 0) {
     return ESP32_DEFAULT_BUTTON_COUNT;
   }
-  return Math.min(
-    ESP32_DEFAULT_BUTTON_COUNT,
-    Math.max(1, Math.floor(num))
-  );
+  return Math.min(ESP32_DEFAULT_BUTTON_COUNT, Math.max(1, Math.floor(num)));
 }
 
 let esp32Config = {
@@ -730,8 +824,7 @@ function describeLoopStatus(status) {
 }
 
 function refreshLoopControls() {
-  const hasFile =
-    elLoopFile && elLoopFile.files && elLoopFile.files.length > 0;
+  const hasFile = elLoopFile && elLoopFile.files && elLoopFile.files.length > 0;
 
   if (elLoopUploadBtn) {
     elLoopUploadBtn.disabled = loopUploadInFlight || !hasFile;
@@ -753,6 +846,12 @@ function refreshLoopControls() {
     elLoopToggleBtn.classList.remove("success", "warning");
     elLoopToggleBtn.classList.add(enabled ? "warning" : "success");
     elLoopToggleBtn.classList.toggle("is-busy", loopToggleInFlight);
+  }
+
+  // Activer/désactiver le slider volume boucle selon présence audio
+  if (elLoopVolumeSlider) {
+    const enabled = !!(loopState && loopState.has_audio);
+    elLoopVolumeSlider.disabled = !enabled || loopVolumeBusy;
   }
 }
 
@@ -817,6 +916,16 @@ function applyLoopStatus(status) {
     }
   }
 
+  // MAJ du slider volume depuis le status (si dispo)
+  if (
+    loopState &&
+    Object.prototype.hasOwnProperty.call(loopState, "volume_percent")
+  ) {
+    setLoopVolumeSliderValue(loopState.volume_percent, true);
+  } else if (!loopState || !loopState.has_audio) {
+    setLoopVolumeSliderValue(0, true);
+  }
+
   refreshLoopControls();
 }
 
@@ -866,8 +975,7 @@ async function uploadLoopFile() {
     }
 
     if (!res.ok || (data && data.error)) {
-      const message =
-        data && data.error ? data.error : `HTTP ${res.status}`;
+      const message = data && data.error ? data.error : `HTTP ${res.status}`;
       toast(`Echec import boucle: ${message}`, true);
       return;
     }
@@ -921,8 +1029,7 @@ async function toggleLoopState() {
     }
 
     if (!res.ok || (data && data.error)) {
-      const message =
-        data && data.error ? data.error : `HTTP ${res.status}`;
+      const message = data && data.error ? data.error : `HTTP ${res.status}`;
       toast(`Echec mise a jour boucle: ${message}`, true);
       return;
     }
@@ -965,14 +1072,52 @@ elBtScanBtn?.addEventListener("click", () => {
 });
 
 elBtDeviceSelect?.addEventListener("change", () => {
-  if (elBtPairBtn) {
-    elBtPairBtn.disabled = !elBtDeviceSelect.value || btScanBusy;
-  }
+  bluetoothUiState = elBtDeviceSelect.value
+    ? {
+        address: elBtDeviceSelect.value,
+        discovered: true,
+        paired: null,
+        trusted: null,
+        connected: null,
+        audio_sink_capable: null,
+        pulse_sink: null,
+      }
+    : null;
+  renderBluetoothUiState(bluetoothUiState);
 });
 
 elBtPairBtn?.addEventListener("click", () => {
   if (!btScanBusy) pairBtSelected();
 });
+
+elBtTrustBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("trust", { address });
+});
+
+elBtConnectBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("connect", { address });
+});
+
+elBtSelectOutputBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("select-output", { address });
+});
+
+elBtTestAudioBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) {
+    runBluetoothOperation("test-audio", {
+      address,
+      confirm: true,
+      duration_ms: 500,
+      volume: 5,
+    });
+  }
+});
+
+renderBluetoothUiState(null);
 
 const deleteButtonDefaultLabel =
   elDeleteSession?.textContent || "Supprimer la session";
@@ -1204,7 +1349,9 @@ function rebuildSessionSelect(sessionNames, preferredValue, previousValue) {
   const targetValue = preferredValue ?? previousValue ?? null;
 
   const sortSessions = (items) =>
-    items.slice().sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+    items
+      .slice()
+      .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
 
   categoryOrder.forEach((categoryKey) => {
     const names = sortSessions(grouped.get(categoryKey) || []);
@@ -1352,7 +1499,11 @@ function updateEntryCategory(entry, session, category) {
 
 function updateCachedPlaylistCategories(session, category) {
   if (playlistCurrentData) {
-    playlistCurrentData = updateEntryCategory(playlistCurrentData, session, category);
+    playlistCurrentData = updateEntryCategory(
+      playlistCurrentData,
+      session,
+      category
+    );
   }
 
   if (Array.isArray(playlistQueueData) && playlistQueueData.length) {
@@ -1422,7 +1573,9 @@ async function handleCategoryAdd() {
     if (created) {
       setCategoryStatus(`Cat\u00E9gorie "${storedName}" ajout\u00E9e`);
     } else {
-      setCategoryStatus(`Cat\u00E9gorie "${storedName}" d\u00E9j\u00E0 disponible`);
+      setCategoryStatus(
+        `Cat\u00E9gorie "${storedName}" d\u00E9j\u00E0 disponible`
+      );
     }
 
     elCategoryAddInput.value = "";
@@ -1442,7 +1595,12 @@ async function handleCategoryAdd() {
   }
 }
 
-async function persistSessionCategory(select, session, nextValue, previousValue) {
+async function persistSessionCategory(
+  select,
+  session,
+  nextValue,
+  previousValue
+) {
   if (!select || !session) {
     return;
   }
@@ -1598,7 +1756,11 @@ async function fetchSessions(options = {}) {
     sessionCategories = categoriesMap;
     availableCategories = sanitizeCategoryList(data.categories);
 
-    rebuildSessionSelect(sessionNames, preferred ?? previousValue, previousValue);
+    rebuildSessionSelect(
+      sessionNames,
+      preferred ?? previousValue,
+      previousValue
+    );
 
     populateEsp32ButtonOptions();
 
@@ -2349,6 +2511,71 @@ function clampVolumeSliderValue(value) {
   return Math.min(max, Math.max(min, Math.round(raw)));
 }
 
+// ------- Helpers Volume BOUCLE (0–100%) -------
+function clampLoopVolumeValue(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+function setLoopVolumeSliderValue(value, force = false) {
+  if (!elLoopVolumeSlider) return;
+  if (!force && loopVolumeActive) return;
+  const v = clampLoopVolumeValue(value);
+  elLoopVolumeSlider.value = String(v);
+  if (elLoopVolumeValue) elLoopVolumeValue.textContent = `${v}%`;
+}
+
+function scheduleLoopVolumeSet(value) {
+  const v = clampLoopVolumeValue(value);
+  loopVolumePending = v;
+  if (loopVolumeDebounce) clearTimeout(loopVolumeDebounce);
+  loopVolumeDebounce = setTimeout(() => {
+    loopVolumeDebounce = null;
+    triggerPendingLoopVolumeSet();
+  }, 150);
+}
+
+function triggerPendingLoopVolumeSet() {
+  if (loopVolumeBusy || loopVolumePending === null) return;
+  const v = loopVolumePending;
+  loopVolumePending = null;
+  sendLoopVolume(v);
+}
+
+async function sendLoopVolume(percent) {
+  if (loopVolumeBusy) return;
+  loopVolumeBusy = true;
+  try {
+    const res = await fetch("/loop/volume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // ⬇️ le serveur veut { volume: ... } et non { value: ... }
+      body: JSON.stringify({ volume: clampLoopVolumeValue(percent) }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || payload?.error) {
+      const msg = payload?.error || `HTTP ${res.status}`;
+      toast(`Volume boucle: ${msg}`, true);
+      return;
+    }
+    // Le serveur peut renvoyer un volume appliqué (ex: normalisé)
+    const applied =
+      typeof payload.volume_percent === "number"
+        ? clampLoopVolumeValue(payload.volume_percent)
+        : typeof payload.volume === "number"
+        ? clampLoopVolumeValue(payload.volume)
+        : clampLoopVolumeValue(percent);
+
+    setLoopVolumeSliderValue(applied, true);
+  } catch (err) {
+    toast("Erreur réseau /loop/volume", true);
+  } finally {
+    loopVolumeBusy = false;
+    triggerPendingLoopVolumeSet(); // applique une valeur en attente si besoin
+  }
+}
+
 function setVolumeSliderValue(value, force = false) {
   if (!elVolumeSlider) return;
   if (!force && volumeSliderActive) return;
@@ -2399,7 +2626,17 @@ function applyBluetoothStatus(info) {
   let sliderTarget = null;
 
   if (info && typeof info === "object") {
-    if (info.connected === true) {
+    const connectionState = info.connection_state || "unknown";
+    if (connectionState === "reconnecting") {
+      statusClass += " is-connecting";
+      text = "Bluetooth : reconnexion en cours";
+      topState = "connecting";
+    } else if (connectionState === "degraded") {
+      statusClass += " is-degraded";
+      text = "Bluetooth : état dégradé";
+      topState = "degraded";
+      if (info.connected !== true) sliderTarget = 0;
+    } else if (info.connected === true) {
       statusClass += " is-connected";
 
       let volumeSuffix = "";
@@ -2414,7 +2651,10 @@ function applyBluetoothStatus(info) {
         sliderTarget = info.volume_percent;
       }
 
-      text = "Bluetooth : connecte" + volumeSuffix;
+      text =
+        connectionState === "audio_ready"
+          ? "Bluetooth : audio pret" + volumeSuffix
+          : "Bluetooth : connecte" + volumeSuffix;
 
       topState = "online";
     } else if (info.connected === false) {
@@ -2455,6 +2695,10 @@ function applyBluetoothStatus(info) {
         ? "online"
         : topState === "offline"
         ? "offline"
+        : topState === "connecting"
+        ? "connecting"
+        : topState === "degraded"
+        ? "degraded"
         : "unknown";
 
     elBtTopStatus.className = `${base} ${stateClass}`;
@@ -2637,9 +2881,7 @@ async function sendVolumeAction(action, value) {
       toast(message, true);
     } else {
       const reportedVolume =
-        payload && typeof payload.volume === "number"
-          ? payload.volume
-          : null;
+        payload && typeof payload.volume === "number" ? payload.volume : null;
 
       if (action === "mute") {
         setVolumeSliderValue(0, true);
@@ -3216,16 +3458,21 @@ async function refreshEsp32Status(options = {}) {
     return;
   }
 
-  const { silent = false } = options;
+  const { silent = false, manual = false } = options;
   esp32Busy.status = true;
 
   try {
-    const res = await fetch("/esp32/status");
+    const res = await fetch(manual ? "/esp32/status/check" : "/esp32/status", {
+      method: manual ? "POST" : "GET",
+    });
     const data = await res.json();
 
     if (res.ok && data && data.reachable) {
       esp32StatusSnapshot = data.status || {};
-      setEsp32Reachability(true, "En ligne");
+      setEsp32Reachability(
+        true,
+        data.supervision?.source === "manual" ? "Test manuel : en ligne" : "En ligne"
+      );
 
       setEsp32Badge(elEsp32RelayState, esp32StatusSnapshot.relay);
       setEsp32Badge(elEsp32AutoRelayState, esp32StatusSnapshot.autoRelay);
@@ -3317,8 +3564,7 @@ async function fetchEsp32Buttons(options = {}) {
     }
 
     if (!res.ok) {
-      const errorText =
-        data?.error || `HTTP ${res.status}`;
+      const errorText = data?.error || `HTTP ${res.status}`;
       if (!silent) {
         toast(`ESP32 boutons: ${errorText}`, true);
       }
@@ -3506,9 +3752,8 @@ async function handleEsp32ButtonSave(buttonIndex) {
   }
 
   const { select, saveBtn } = entry;
-  const categoryValue = select && typeof select.value === "string"
-    ? select.value.trim()
-    : "";
+  const categoryValue =
+    select && typeof select.value === "string" ? select.value.trim() : "";
 
   esp32Busy.buttons = true;
 
@@ -3550,7 +3795,9 @@ async function handleEsp32ButtonSave(buttonIndex) {
 
       if (data && data.reachable === false && data.error) {
         toast(
-          `ESP32 bouton ${buttonIndex + 1}: ${data.error} (non applique sur l'ESP32)`,
+          `ESP32 bouton ${buttonIndex + 1}: ${
+            data.error
+          } (non applique sur l'ESP32)`,
           true
         );
       } else {
@@ -3741,7 +3988,7 @@ function initEsp32Section() {
         toast("Activer l'ESP32 avant de tester la connexion", true);
         return;
       }
-      refreshEsp32Status();
+      refreshEsp32Status({ manual: true });
     });
   }
 
@@ -3889,6 +4136,41 @@ window.addEventListener("load", () => {
     );
   }
 
+  // Slider Volume Boucle
+  if (elLoopVolumeSlider) {
+    // valeur initiale
+    const init = Number(elLoopVolumeSlider.value);
+    setLoopVolumeSliderValue(Number.isFinite(init) ? init : 0, true);
+
+    const endLoopSlider = () => {
+      loopVolumeActive = false;
+    };
+
+    elLoopVolumeSlider.addEventListener("input", (e) => {
+      loopVolumeActive = true;
+      const v = clampLoopVolumeValue(e.target.value);
+      setLoopVolumeSliderValue(v, true);
+      scheduleLoopVolumeSet(v);
+    });
+
+    elLoopVolumeSlider.addEventListener("change", (e) => {
+      const v = clampLoopVolumeValue(e.target.value);
+      setLoopVolumeSliderValue(v, true);
+      if (loopVolumeDebounce) {
+        clearTimeout(loopVolumeDebounce);
+        loopVolumeDebounce = null;
+      }
+      loopVolumePending = v;
+      triggerPendingLoopVolumeSet();
+      endLoopSlider();
+    });
+
+    ["pointerup", "pointercancel", "mouseup", "touchend", "blur"].forEach(
+      (evt) => {
+        elLoopVolumeSlider.addEventListener(evt, endLoopSlider);
+      }
+    );
+  }
   if (elShuffleAllBtn) {
     elShuffleAllBtn.addEventListener("click", () => {
       triggerShuffleAll();

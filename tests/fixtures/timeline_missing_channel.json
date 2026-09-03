@@ -1,0 +1,6 @@
+{
+  "timeline": [
+    {"time": 0.0, "motors": {"jawOpening": 50}},
+    {"time": 0.1, "motors": {"jawOpening": 50}}
+  ]
+}
