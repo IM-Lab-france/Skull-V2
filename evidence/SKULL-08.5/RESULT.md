@@ -42,6 +42,10 @@ injoignable : le port `8123` ne répond ni depuis le Skull ni depuis le PC.
 La création du nouveau webhook et la preuve ancien refusé/nouveau accepté sont
 donc impossibles sans rétablir cet accès.
 
+Le Skull est désormais joignable en SSH sur `192.168.40.20`. Depuis cette
+adresse, la candidate reste active et `servo-sync.service` reste inactif ; le
+consommateur domotique reste fermé ou filtré sur les ports testés.
+
 Le relevé distant en lecture seule du 3 septembre 2026 confirme que
 `/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
 inspecté ne contient que les paramètres Bluetooth. La référence fonctionnelle

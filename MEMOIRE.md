@@ -6,7 +6,8 @@ Dernière mise à jour : 3 septembre 2026.
 
 - Dépôt principal local : `C:\Skull-V2`.
 - Dépôt GitHub : `IM-Lab-france/Skull-V2`.
-- Raspberry de production : hôte `skull`, IPv4 legacy `192.168.1.116`.
+- Raspberry de production : hôte `skull`, IPv4 actuelle `192.168.40.20` ;
+  l’ancienne adresse legacy était `192.168.1.116`.
 - Système : Debian 12 ARM64 sur Raspberry Pi.
 - Déploiement : `/opt/skull`, utilisateur de service `skull`.
 - Interfaces : port 5000 principal, port 5050 playlist.
