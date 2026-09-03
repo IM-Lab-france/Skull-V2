@@ -21,6 +21,9 @@
 - `SmokeRotationPlan` impose deux références distinctes, masque les références
   dans son diagnostic et fixe l’ordre consommateur → producteur → vérification
   → retrait de l’ancien secret.
+- Le runbook [smoke-secret-rotation-runbook.md](../../docs/smoke-secret-rotation-runbook.md)
+  fixe la garde d’approbation, la fenêtre de test et le rollback sans exposer
+  de valeur sensible.
 - Le plan reste bloqué tant que la double acceptation n’est pas confirmée par
   le système distant.
 - Les anciens JSON et `.env` sont lus en copie locale ; une valeur webhook est
