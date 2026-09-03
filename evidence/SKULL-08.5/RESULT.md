@@ -36,6 +36,12 @@ producteur et le retrait de l’ancien secret nécessitent une confirmation
 explicite, un mécanisme approuvé de gestion des secrets et l’accès au
 consommateur domotique. Aucun de ces changements réels n’a été effectué.
 
+La confirmation de l’utilisateur a été reçue le 3 septembre 2026. Le
+consommateur HTTP interne déduit de l’ancien endpoint reste toutefois
+injoignable : le port `8123` ne répond ni depuis le Skull ni depuis le PC.
+La création du nouveau webhook et la preuve ancien refusé/nouveau accepté sont
+donc impossibles sans rétablir cet accès.
+
 Le relevé distant en lecture seule du 3 septembre 2026 confirme que
 `/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
 inspecté ne contient que les paramètres Bluetooth. La référence fonctionnelle
@@ -44,11 +50,11 @@ secret généré hors chat et la fenêtre de test ne sont donc pas établis.
 
 Pour débloquer cette fiche, il faut confirmer séparément :
 
-1. que le consommateur domotique accepte temporairement l’ancien et le nouveau
-   secret ;
-2. que le nouveau secret a été généré et stocké hors chat, dépôt Git et
-   historique shell ;
-3. la fenêtre de test et le rollback vers l’ancienne référence.
+1. rétablir l’accès à l’interface ou à l’API approuvée du consommateur
+   domotique ;
+2. préparer l’acceptation temporaire de l’ancien et du nouveau secret ;
+3. générer et stocker le nouveau secret hors chat, dépôt Git et historique
+   shell, puis confirmer la fenêtre de test et le rollback.
 
 ## Vérifications
 

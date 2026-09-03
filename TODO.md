@@ -287,8 +287,9 @@ Exécution atomique :
 ## Prochaine action
 
 `SKULL-08.7` est validée sur la candidate `5000`. `SKULL-08.5` reste
-`BLOQUÉE` jusqu’à confirmation du consommateur domotique, génération hors
-chat du nouveau secret et définition de la fenêtre de test/rollback.
+`BLOQUÉE` : la confirmation est reçue, mais le consommateur domotique HTTP
+interne ne répond pas sur son port de gestion ; il faut rétablir cet accès
+avant de créer et tester le nouveau webhook.
 Le lien final
 `/opt/skull/current` et l’unité indépendante de la version restent dans la
 phase 10. `SKULL-08.6` reste toutefois partielle ; la phase
