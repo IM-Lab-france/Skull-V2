@@ -1,0 +1,87 @@
+# Exemple neutre. Les références de secret pointent vers un fournisseur,
+# jamais vers la valeur du secret.
+[runtime]
+mode = "production"
+app_version = "dev"
+
+[http]
+bind_host = "127.0.0.1"
+port = 5000
+request_timeout_s = 5.0
+
+[hardware]
+pca9685_address = 64
+frequency_hz = 50
+
+[hardware.servos.jaw]
+channel = 0
+min_deg = 110.0
+max_deg = 185.0
+neutral_deg = 145.0
+offset_deg = 0.0
+enabled = true
+
+[hardware.servos.eye_left]
+channel = 1
+min_deg = 60.0
+max_deg = 120.0
+neutral_deg = 90.0
+offset_deg = -14.0
+enabled = true
+
+[hardware.servos.eye_right]
+channel = 2
+min_deg = 60.0
+max_deg = 120.0
+neutral_deg = 90.0
+offset_deg = 0.0
+enabled = true
+
+[hardware.servos.neck_pan]
+channel = 3
+min_deg = 0.0
+max_deg = 180.0
+neutral_deg = 90.0
+offset_deg = 0.0
+enabled = true
+
+[audio]
+library_dir = "data"
+volume_max = 127
+output = "local"
+
+[bluetooth]
+address = ""
+name = ""
+auto_reconnect = true
+max_attempts = 3
+retry_initial_s = 1.0
+retry_max_s = 30.0
+fallback_output = "local"
+
+[esp32]
+host = ""
+port = 80
+enabled = false
+fallback_host = ""
+
+[smoke]
+enabled = false
+endpoint_ref = "env:SKULL_SMOKE_WEBHOOK_URL"
+timeout_s = 2.0
+
+[storage]
+code_dir = "/opt/skull/current"
+config_file = "/etc/skull/config.toml"
+secrets_file = "/etc/skull/secrets.env"
+data_dir = "/var/lib/skull"
+log_dir = "/var/log/skull"
+
+[logging]
+level = "INFO"
+max_bytes = 10485760
+backup_count = 5
+
+[security]
+allowed_env = ["SKULL_RUNTIME_MODE", "SKULL_LOG_LEVEL", "SKULL_SMOKE_WEBHOOK_REF"]
+redact_configuration = true
