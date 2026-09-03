@@ -46,6 +46,11 @@ La validation hors matériel est disponible par `python -m config.validate
 config/skull.example.toml` ; sa sortie est redigée et inclut la provenance des
 valeurs non sensibles.
 
+`config.secrets.resolve_secret` ne résout qu’une référence `env:NAME` ou
+`file:/chemin/absolu`. Le contenu retourné est destiné au consommateur runtime
+et n’est ni affiché ni inclus dans une erreur. Les permissions du fichier réel
+et la rotation restent à démontrer sur la cible, hors de cette phase locale.
+
 La rotation du secret fumée reste `BLOQUÉE` sans confirmation explicite et sans
 accès au consommateur domotique. La création d’enregistrements DNS reste
 réservée à une phase réseau approuvée ; cette phase ne modifie donc aucun DNS
