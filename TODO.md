@@ -286,9 +286,12 @@ Exécution atomique :
 
 ## Prochaine action
 
-`SKULL-08.7` est validée sur la candidate `5000`. Le lien final
+`SKULL-08.7` est validée sur la candidate `5000`. `SKULL-08.5` reste
+`BLOQUÉE` jusqu’à confirmation du consommateur domotique, génération hors
+chat du nouveau secret et définition de la fenêtre de test/rollback.
+Le lien final
 `/opt/skull/current` et l’unité indépendante de la version restent dans la
-phase 10. `SKULL-08.5` et `SKULL-08.6` restent toutefois partielles ; la phase
+phase 10. `SKULL-08.6` reste toutefois partielle ; la phase
 9 ne doit donc pas être lancée avant leur clôture ou une décision écrite dans
 `MEMOIRE.md`. Pour Luna, ne confier qu’un identifiant à la fois, conformément à
 [LUNA.md](LUNA.md).

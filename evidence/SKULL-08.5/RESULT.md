@@ -1,9 +1,9 @@
 # SKULL-08.5 — rotation du secret fumée
 
 - Date : 3 septembre 2026, Europe/Paris
-- Statut : `PARTIEL`
+- Statut : `BLOQUÉ`
 - Portée : inventaire des producteurs/consommateurs et préparation locale
-  d’une rotation sans valeur sensible.
+  d’une rotation sans valeur sensible ; aucune rotation réelle exécutée.
 
 ## Inventaire
 
@@ -36,7 +36,24 @@ producteur et le retrait de l’ancien secret nécessitent une confirmation
 explicite, un mécanisme approuvé de gestion des secrets et l’accès au
 consommateur domotique. Aucun de ces changements réels n’a été effectué.
 
+Le relevé distant en lecture seule du 3 septembre 2026 confirme que
+`/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
+inspecté ne contient que les paramètres Bluetooth. La référence fonctionnelle
+du consommateur domotique, sa capacité de double acceptation, le nouveau
+secret généré hors chat et la fenêtre de test ne sont donc pas établis.
+
+Pour débloquer cette fiche, il faut confirmer séparément :
+
+1. que le consommateur domotique accepte temporairement l’ancien et le nouveau
+   secret ;
+2. que le nouveau secret a été généré et stocké hors chat, dépôt Git et
+   historique shell ;
+3. la fenêtre de test et le rollback vers l’ancienne référence.
+
 ## Vérifications
 
 - Tests phase 8 ciblés : `23 passed` après ajout du plan et de ses tests.
-- Aucun secret réel, URL webhook complète, appel réseau ou écriture distante.
+- Tests ciblés relancés : `13 passed` (`test_smoke_rotation.py`,
+  `test_secrets.py`, `test_migration.py`).
+- Aucun secret réel, URL webhook complète, appel de déclenchement ou écriture
+  distante.
