@@ -197,6 +197,10 @@ const elCbNeck = $("#cbNeck");
 
 const elCbJaw = $("#cbJaw");
 
+// Slider Volume Boucle (nouveau)
+const elLoopVolumeSlider = document.getElementById("loopVolumeSlider");
+const elLoopVolumeValue = document.getElementById("loopVolumeValue");
+
 let fileJson = null;
 
 let fileMp3 = null;
@@ -246,6 +250,12 @@ let randomModeState = {
   busy: false,
 };
 
+// Etat Volume Boucle (nouveau)
+let loopVolumeBusy = false;
+let loopVolumePending = null;
+let loopVolumeActive = false;
+let loopVolumeDebounce = null;
+
 // -------------------- Bluetooth pairing helpers --------------------
 let btScanBusy = false;
 
@@ -253,7 +263,9 @@ function setBtUiBusy(busy) {
   btScanBusy = !!busy;
   if (elBtScanBtn) elBtScanBtn.disabled = !!busy;
   if (elBtDeviceSelect) elBtDeviceSelect.disabled = !!busy;
-  if (elBtPairBtn) elBtPairBtn.disabled = !!busy || !(elBtDeviceSelect && elBtDeviceSelect.value);
+  if (elBtPairBtn)
+    elBtPairBtn.disabled =
+      !!busy || !(elBtDeviceSelect && elBtDeviceSelect.value);
 }
 
 function populateBtDevicesList(devices) {
@@ -286,7 +298,9 @@ async function scanBtDevices() {
     const devices = await res.json();
     populateBtDevicesList(devices);
     const count = Array.isArray(devices) ? devices.length : 0;
-    toast(count ? `${count} périphérique(s) trouvé(s)` : "Aucun périphérique trouvé");
+    toast(
+      count ? `${count} périphérique(s) trouvé(s)` : "Aucun périphérique trouvé"
+    );
   } catch (e) {
     toast(`Erreur scan Bluetooth: ${e && e.message ? e.message : e}`, true);
   } finally {
@@ -306,7 +320,8 @@ async function pairBtSelected() {
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = (payload && (payload.error || payload.message)) || `HTTP ${res.status}`;
+      const msg =
+        (payload && (payload.error || payload.message)) || `HTTP ${res.status}`;
       throw new Error(msg);
     }
     toast(`Appairage demandé pour ${mac}`);
@@ -329,10 +344,7 @@ function normalizeEsp32ButtonCount(value) {
   if (!Number.isFinite(num) || num <= 0) {
     return ESP32_DEFAULT_BUTTON_COUNT;
   }
-  return Math.min(
-    ESP32_DEFAULT_BUTTON_COUNT,
-    Math.max(1, Math.floor(num))
-  );
+  return Math.min(ESP32_DEFAULT_BUTTON_COUNT, Math.max(1, Math.floor(num)));
 }
 
 let esp32Config = {
@@ -730,8 +742,7 @@ function describeLoopStatus(status) {
 }
 
 function refreshLoopControls() {
-  const hasFile =
-    elLoopFile && elLoopFile.files && elLoopFile.files.length > 0;
+  const hasFile = elLoopFile && elLoopFile.files && elLoopFile.files.length > 0;
 
   if (elLoopUploadBtn) {
     elLoopUploadBtn.disabled = loopUploadInFlight || !hasFile;
@@ -753,6 +764,12 @@ function refreshLoopControls() {
     elLoopToggleBtn.classList.remove("success", "warning");
     elLoopToggleBtn.classList.add(enabled ? "warning" : "success");
     elLoopToggleBtn.classList.toggle("is-busy", loopToggleInFlight);
+  }
+
+  // Activer/désactiver le slider volume boucle selon présence audio
+  if (elLoopVolumeSlider) {
+    const enabled = !!(loopState && loopState.has_audio);
+    elLoopVolumeSlider.disabled = !enabled || loopVolumeBusy;
   }
 }
 
@@ -817,6 +834,16 @@ function applyLoopStatus(status) {
     }
   }
 
+  // MAJ du slider volume depuis le status (si dispo)
+  if (
+    loopState &&
+    Object.prototype.hasOwnProperty.call(loopState, "volume_percent")
+  ) {
+    setLoopVolumeSliderValue(loopState.volume_percent, true);
+  } else if (!loopState || !loopState.has_audio) {
+    setLoopVolumeSliderValue(0, true);
+  }
+
   refreshLoopControls();
 }
 
@@ -866,8 +893,7 @@ async function uploadLoopFile() {
     }
 
     if (!res.ok || (data && data.error)) {
-      const message =
-        data && data.error ? data.error : `HTTP ${res.status}`;
+      const message = data && data.error ? data.error : `HTTP ${res.status}`;
       toast(`Echec import boucle: ${message}`, true);
       return;
     }
@@ -921,8 +947,7 @@ async function toggleLoopState() {
     }
 
     if (!res.ok || (data && data.error)) {
-      const message =
-        data && data.error ? data.error : `HTTP ${res.status}`;
+      const message = data && data.error ? data.error : `HTTP ${res.status}`;
       toast(`Echec mise a jour boucle: ${message}`, true);
       return;
     }
@@ -1204,7 +1229,9 @@ function rebuildSessionSelect(sessionNames, preferredValue, previousValue) {
   const targetValue = preferredValue ?? previousValue ?? null;
 
   const sortSessions = (items) =>
-    items.slice().sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+    items
+      .slice()
+      .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
 
   categoryOrder.forEach((categoryKey) => {
     const names = sortSessions(grouped.get(categoryKey) || []);
@@ -1352,7 +1379,11 @@ function updateEntryCategory(entry, session, category) {
 
 function updateCachedPlaylistCategories(session, category) {
   if (playlistCurrentData) {
-    playlistCurrentData = updateEntryCategory(playlistCurrentData, session, category);
+    playlistCurrentData = updateEntryCategory(
+      playlistCurrentData,
+      session,
+      category
+    );
   }
 
   if (Array.isArray(playlistQueueData) && playlistQueueData.length) {
@@ -1422,7 +1453,9 @@ async function handleCategoryAdd() {
     if (created) {
       setCategoryStatus(`Cat\u00E9gorie "${storedName}" ajout\u00E9e`);
     } else {
-      setCategoryStatus(`Cat\u00E9gorie "${storedName}" d\u00E9j\u00E0 disponible`);
+      setCategoryStatus(
+        `Cat\u00E9gorie "${storedName}" d\u00E9j\u00E0 disponible`
+      );
     }
 
     elCategoryAddInput.value = "";
@@ -1442,7 +1475,12 @@ async function handleCategoryAdd() {
   }
 }
 
-async function persistSessionCategory(select, session, nextValue, previousValue) {
+async function persistSessionCategory(
+  select,
+  session,
+  nextValue,
+  previousValue
+) {
   if (!select || !session) {
     return;
   }
@@ -1598,7 +1636,11 @@ async function fetchSessions(options = {}) {
     sessionCategories = categoriesMap;
     availableCategories = sanitizeCategoryList(data.categories);
 
-    rebuildSessionSelect(sessionNames, preferred ?? previousValue, previousValue);
+    rebuildSessionSelect(
+      sessionNames,
+      preferred ?? previousValue,
+      previousValue
+    );
 
     populateEsp32ButtonOptions();
 
@@ -2349,6 +2391,71 @@ function clampVolumeSliderValue(value) {
   return Math.min(max, Math.max(min, Math.round(raw)));
 }
 
+// ------- Helpers Volume BOUCLE (0–100%) -------
+function clampLoopVolumeValue(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+function setLoopVolumeSliderValue(value, force = false) {
+  if (!elLoopVolumeSlider) return;
+  if (!force && loopVolumeActive) return;
+  const v = clampLoopVolumeValue(value);
+  elLoopVolumeSlider.value = String(v);
+  if (elLoopVolumeValue) elLoopVolumeValue.textContent = `${v}%`;
+}
+
+function scheduleLoopVolumeSet(value) {
+  const v = clampLoopVolumeValue(value);
+  loopVolumePending = v;
+  if (loopVolumeDebounce) clearTimeout(loopVolumeDebounce);
+  loopVolumeDebounce = setTimeout(() => {
+    loopVolumeDebounce = null;
+    triggerPendingLoopVolumeSet();
+  }, 150);
+}
+
+function triggerPendingLoopVolumeSet() {
+  if (loopVolumeBusy || loopVolumePending === null) return;
+  const v = loopVolumePending;
+  loopVolumePending = null;
+  sendLoopVolume(v);
+}
+
+async function sendLoopVolume(percent) {
+  if (loopVolumeBusy) return;
+  loopVolumeBusy = true;
+  try {
+    const res = await fetch("/loop/volume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // ⬇️ le serveur veut { volume: ... } et non { value: ... }
+      body: JSON.stringify({ volume: clampLoopVolumeValue(percent) }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || payload?.error) {
+      const msg = payload?.error || `HTTP ${res.status}`;
+      toast(`Volume boucle: ${msg}`, true);
+      return;
+    }
+    // Le serveur peut renvoyer un volume appliqué (ex: normalisé)
+    const applied =
+      typeof payload.volume_percent === "number"
+        ? clampLoopVolumeValue(payload.volume_percent)
+        : typeof payload.volume === "number"
+        ? clampLoopVolumeValue(payload.volume)
+        : clampLoopVolumeValue(percent);
+
+    setLoopVolumeSliderValue(applied, true);
+  } catch (err) {
+    toast("Erreur réseau /loop/volume", true);
+  } finally {
+    loopVolumeBusy = false;
+    triggerPendingLoopVolumeSet(); // applique une valeur en attente si besoin
+  }
+}
+
 function setVolumeSliderValue(value, force = false) {
   if (!elVolumeSlider) return;
   if (!force && volumeSliderActive) return;
@@ -2637,9 +2744,7 @@ async function sendVolumeAction(action, value) {
       toast(message, true);
     } else {
       const reportedVolume =
-        payload && typeof payload.volume === "number"
-          ? payload.volume
-          : null;
+        payload && typeof payload.volume === "number" ? payload.volume : null;
 
       if (action === "mute") {
         setVolumeSliderValue(0, true);
@@ -3317,8 +3422,7 @@ async function fetchEsp32Buttons(options = {}) {
     }
 
     if (!res.ok) {
-      const errorText =
-        data?.error || `HTTP ${res.status}`;
+      const errorText = data?.error || `HTTP ${res.status}`;
       if (!silent) {
         toast(`ESP32 boutons: ${errorText}`, true);
       }
@@ -3506,9 +3610,8 @@ async function handleEsp32ButtonSave(buttonIndex) {
   }
 
   const { select, saveBtn } = entry;
-  const categoryValue = select && typeof select.value === "string"
-    ? select.value.trim()
-    : "";
+  const categoryValue =
+    select && typeof select.value === "string" ? select.value.trim() : "";
 
   esp32Busy.buttons = true;
 
@@ -3550,7 +3653,9 @@ async function handleEsp32ButtonSave(buttonIndex) {
 
       if (data && data.reachable === false && data.error) {
         toast(
-          `ESP32 bouton ${buttonIndex + 1}: ${data.error} (non applique sur l'ESP32)`,
+          `ESP32 bouton ${buttonIndex + 1}: ${
+            data.error
+          } (non applique sur l'ESP32)`,
           true
         );
       } else {
@@ -3889,6 +3994,41 @@ window.addEventListener("load", () => {
     );
   }
 
+  // Slider Volume Boucle
+  if (elLoopVolumeSlider) {
+    // valeur initiale
+    const init = Number(elLoopVolumeSlider.value);
+    setLoopVolumeSliderValue(Number.isFinite(init) ? init : 0, true);
+
+    const endLoopSlider = () => {
+      loopVolumeActive = false;
+    };
+
+    elLoopVolumeSlider.addEventListener("input", (e) => {
+      loopVolumeActive = true;
+      const v = clampLoopVolumeValue(e.target.value);
+      setLoopVolumeSliderValue(v, true);
+      scheduleLoopVolumeSet(v);
+    });
+
+    elLoopVolumeSlider.addEventListener("change", (e) => {
+      const v = clampLoopVolumeValue(e.target.value);
+      setLoopVolumeSliderValue(v, true);
+      if (loopVolumeDebounce) {
+        clearTimeout(loopVolumeDebounce);
+        loopVolumeDebounce = null;
+      }
+      loopVolumePending = v;
+      triggerPendingLoopVolumeSet();
+      endLoopSlider();
+    });
+
+    ["pointerup", "pointercancel", "mouseup", "touchend", "blur"].forEach(
+      (evt) => {
+        elLoopVolumeSlider.addEventListener(evt, endLoopSlider);
+      }
+    );
+  }
   if (elShuffleAllBtn) {
     elShuffleAllBtn.addEventListener("click", () => {
       triggerShuffleAll();

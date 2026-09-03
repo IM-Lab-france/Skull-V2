@@ -19,7 +19,7 @@ Le script realise automatiquement :
 - installation / mise a jour des paquets systeme indispensables (git, python3, ffmpeg, pulseaudio, bluetooth, etc.) ;
 - activation de l'I2C et configuration de `bluetoothctl` avec demande d'appairage et memorisation de l'enceinte ;
 - clonage / mise a jour du code Skull-V2 dans `/opt/skull` et creation de l'environnement Python ;
-- generation / activation du service systemd `servo-sync.service` (logs et reconnexion Bluetooth integrees).
+- generation / activation du service systemd `servo-sync.service` (logs bornes et reconnexion Bluetooth a la demande).
 
 Si vous devez relancer l'installation, vous pouvez remettre a zero le fichier `config/bluetooth_device.env` pour choisir une autre enceinte, ou reexecuter simplement le script qui vous proposera la selection des peripheriques.
 
@@ -42,7 +42,7 @@ Astuce : pour passer l'etape d'appairage Bluetooth (par exemple en installation 
   - contrôle Play/Pause/Resume/Stop, affichage de l’état courant ;
   - réglage des canaux actifs & offsets permanents (persistés dans `config/`) ;
   - accès aux logs et statistiques.
-- **Journalisation avancée** : `logger.py` produit des logs quotidiens + fichiers JSON de stats (durées, dérive, cadence de commandes…)
+- **Journalisation avancée** : `logger.py` produit des logs quotidiens rotatifs + fichiers JSON de stats (durées, dérive, cadence de commandes…)
 - **Gaze tracking (optionnel)** : `gaze_receiver.py` écoute un flux UDP (`127.0.0.1:5005`) et `SyncPlayer` peut se laisser piloter (cou/yeux) par ces commandes.
 - **Interface publique** (`public_interface.py`) : file d’attente visiteurs, WebSocket vers le serveur principal, cooldown par utilisateur ; se lance indépendamment.
 
@@ -150,7 +150,15 @@ Les angles en pourcentage (`jawOpening` 0-100) sont convertis en degrés automat
 
 - `config/pitch_offsets.json` : offsets sauvegardés à chaque POST `/pitch`, rechargés au démarrage.
 - `config/channels_state.json` : état des cases à cocher (yeux/cou/mâchoire), rechargé au démarrage.
-- `logs/` : fichiers journaliers et statistiques (`session_stats_*.json`).
+- `logs/` : fichiers journaliers rotatifs et statistiques (`session_stats_*.json`).
+- La limite par défaut est de 10 MiB pour le fichier courant, avec 5 rotations
+  conservées (environ 60 MiB maximum pour le journal servo) ; les statistiques
+  conservent les 100 dernières sessions. Les paramètres sont
+  `SKULL_LOG_MAX_BYTES`, `SKULL_LOG_BACKUP_COUNT` et `SKULL_STATS_RETENTION`.
+- Sous Linux, le répertoire de logs est créé en `0750` et les fichiers en
+  `0640`, avec le propriétaire du service. Si le stockage devient indisponible,
+  l’application continue sur le journal de secours standard et signale la perte
+  de persistance sans interrompre le runtime.
 - `data/` : dossiers de sessions utilisateur.
 
 ## Interface publique (optionnelle)
@@ -184,11 +192,33 @@ Les scripts front-end (`static/app.js`) affichent un toast & badge OFFLINE si `/
 - PulseAudio doit tourner sous le même utilisateur que le service (`systemctl --user` recommandé).
 - Si vous utilisez une enceinte Bluetooth, définissez le sink par défaut (`pactl set-default-sink ...`).
 - Ajoutez `pcm.!default pulse` / `ctl.!default pulse` dans `/etc/asound.conf` pour rediriger ALSA vers PulseAudio.
-- Exportez `PLAYLIST_BT_DEVICE_ADDR=AA:BB:CC:DD:EE:FF` (adresse MAC) pour que le serveur tente une reconnexion `bluetoothctl connect` avant chaque lecture et lors des commandes volume.
+- Exportez `PLAYLIST_BT_DEVICE_ADDR=AA:BB:CC:DD:EE:FF` (adresse MAC) pour que
+  le serveur tente une reconnexion `bluetoothctl connect` lors des opérations
+  qui en ont besoin (lecture, volume et état). La connexion n’est plus une
+  précondition `ExecStartPre` : l’application peut démarrer enceinte éteinte.
+
+## Timeouts et erreurs externes
+
+- Les commandes `bluetoothctl`, `curl` et systemd utilisent un timeout total
+  borné.
+- Les appels HTTP ESP32 et playlist utilisent un timeout de socket/lecture et
+  des limites de connexion configurées par environnement ; aucune URL webhook,
+  clé ou valeur de secret n’est renvoyée dans les erreurs applicatives.
+- Les appels vers l’ESP32 restent désactivés tant que la configuration n’est
+  pas activée et valide.
+
+## Candidate parallèle
+
+La candidate WSGI locale se lance sur `127.0.0.1:5002` avec un seul worker via
+`launch_wsgi.sh`. L’unité `deploy/skull-candidate.service.example` est un
+modèle de validation, dans un chemin distinct, en mode simulé et sans activation
+systemd automatique. La matrice des contrats legacy est conservée dans
+`evidence/SKULL-05.6/ROUTE-MATRIX.md`.
 
 ## Développement
 
-- Activez le mode debug Flask en exportant `FLASK_DEBUG=1` avant de lancer `web_app.py`.
+- En production, utilisez `launch_wsgi.sh` ou le service systemd ; le lancement
+  applicatif force `debug=False` et désactive le reloader.
 - Le code respecte Python ≥ 3.9. Utilisez `ruff`/`black` pour garder un style cohérent.
 - Front-end : JS vanilla (`static/app.js`), CSS (`static/style.css`). L’interface est entièrement statique, aucun bundler requis.
 - Les tests matériels ne peuvent être simulés : l’application échoue si les librairies Adafruit ne trouvent pas de bus I²C.

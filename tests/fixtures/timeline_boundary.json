@@ -1,0 +1,10 @@
+{
+  "keyframes": {
+    "jaw_deg": [
+      {"time": -1.0, "angle": 10},
+      {"time": 0.0, "angle": 20},
+      {"time": 1.0, "angle": 30}
+    ]
+  },
+  "metadata": {"duration": 1.0}
+}

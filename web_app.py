@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import random
 import re
 import shutil
 import shlex
@@ -26,7 +25,8 @@ import tempfile
 import time
 import traceback
 import threading
-from itertools import count
+import atexit
+import signal
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -43,9 +43,15 @@ from flask import (
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from pydub import AudioSegment
-from sync_player import SyncPlayer
-from loop_player import LoopPlayer
 from logger import servo_logger
+from runtime_factory import resolve_runtime_mode
+from runtime_lock import RuntimeProcessLock
+from api.legacy import create_legacy_blueprint
+from api.v1 import V1Context, create_v1_blueprint
+from domain.errors import InvalidInputError
+from domain.playlist import PlaybackStateStore, PlaylistStore, RandomSessionSelector
+from domain.session_catalog import SessionCatalog
+from services import LegacyPlaybackService
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -57,11 +63,239 @@ ESP32_CONFIG_PATH = CONFIG_DIR / "esp32_settings.json"
 SESSION_CATEGORIES_PATH = CONFIG_DIR / "session_categories.json"
 ESP32_BUTTON_ASSIGNMENTS_PATH = CONFIG_DIR / "esp32_button_categories.json"
 LOOP_AUDIO_DIR = CONFIG_DIR / "loop_audio"
+APP_VERSION = os.environ.get("SKULL_APP_VERSION", "dev")
+LOG_STREAM_WINDOW_SECONDS = max(
+    0.1, min(5.0, float(os.environ.get("SKULL_LOG_STREAM_WINDOW_SECONDS", "0.5")))
+)
+LOG_STREAM_POLL_INTERVAL = max(
+    0.05, min(1.0, float(os.environ.get("SKULL_LOG_STREAM_POLL_INTERVAL", "0.1")))
+)
 
+ACCUEIL_WEBHOOK_URL = (
+    os.environ.get(
+        "PLAYLIST_ACCUEIL_WEBHOOK",
+        os.environ.get("SKULL_SMOKE_WEBHOOK_URL", ""),
+    ).strip()
+    or ""
+)
+ACCUEIL_WEBHOOK_TIMEOUT = float(
+    os.environ.get("PLAYLIST_ACCUEIL_WEBHOOK_TIMEOUT", "2.0")
+)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-player = SyncPlayer()
-loop_player = LoopPlayer(LOOP_AUDIO_DIR)
+legacy_api = create_legacy_blueprint()
+
+
+class _LazyRuntimeComponent:
+    """Compatibility proxy that creates hardware only during explicit startup."""
+
+    def __init__(self, component_name: str) -> None:
+        object.__setattr__(self, "_component_name", component_name)
+
+    def _resolve(self):
+        return _runtime_component(self._component_name)
+
+    def __getattr__(self, name: str):
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value) -> None:
+        if name == "_component_name":
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._resolve(), name, value)
+
+
+_runtime_state_lock = threading.RLock()
+_runtime_player = None
+_runtime_loop_player = None
+_runtime_process_lock: Optional[RuntimeProcessLock] = None
+_runtime_initialized = False
+_runtime_cleaned = False
+
+player = _LazyRuntimeComponent("player")
+loop_player = _LazyRuntimeComponent("loop_player")
+
+
+def _runtime_component(name: str):
+    """Return one initialized runtime component through the compatibility proxy."""
+    initialize_runtime()
+    component = _runtime_player if name == "player" else _runtime_loop_player
+    if component is None:  # pragma: no cover - defensive invariant
+        raise RuntimeError("Skull runtime component is not initialized")
+    return component
+
+
+def _default_runtime_lock() -> RuntimeProcessLock:
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    lock_path = os.environ.get(
+        "SKULL_RUNTIME_LOCK_PATH",
+        str(Path(runtime_dir) / "skull-runtime.lock"),
+    )
+    timeout = float(os.environ.get("SKULL_RUNTIME_LOCK_TIMEOUT", "2.0"))
+    return RuntimeProcessLock(lock_path, timeout=timeout)
+
+
+def initialize_runtime(
+    *,
+    acquire_process_lock: bool = False,
+    sync_player_cls=None,
+    loop_player_cls=None,
+    process_lock=None,
+):
+    """Validate configuration and initialize both runtime components once."""
+    global _runtime_player, _runtime_loop_player
+    global _runtime_process_lock, _runtime_initialized, _runtime_cleaned
+
+    with _runtime_state_lock:
+        if _runtime_initialized:
+            return _runtime_player, _runtime_loop_player
+        if _runtime_cleaned:
+            raise RuntimeError("Skull runtime was already cleaned up")
+
+        # Validate the mode before importing or constructing hardware modules.
+        selected_mode = resolve_runtime_mode()
+        if sync_player_cls is None or loop_player_cls is None:
+            from sync_player import SyncPlayer
+            from loop_player import LoopPlayer
+
+            sync_player_cls = sync_player_cls or SyncPlayer
+            loop_player_cls = loop_player_cls or LoopPlayer
+
+        acquired_lock = None
+        created_player = None
+        created_loop_player = None
+        try:
+            if acquire_process_lock and selected_mode == "production":
+                acquired_lock = process_lock or _default_runtime_lock()
+                acquired_lock.acquire()
+
+            created_player = sync_player_cls()
+            created_loop_player = loop_player_cls(LOOP_AUDIO_DIR)
+            setattr(created_player, "channels", player_channels)
+            created_player.set_on_track_finished(_handle_track_finished)
+
+            _runtime_player = created_player
+            _runtime_loop_player = created_loop_player
+            _runtime_process_lock = acquired_lock
+            _runtime_initialized = True
+            return _runtime_player, _runtime_loop_player
+        except Exception:
+            _cleanup_component(created_loop_player, prefer_cleanup=False)
+            _cleanup_component(created_player, prefer_cleanup=True)
+            if acquired_lock is not None:
+                acquired_lock.release()
+            raise
+
+
+def _cleanup_component(component, *, prefer_cleanup: bool) -> None:
+    if component is None:
+        return
+    method_name = "cleanup" if prefer_cleanup else "stop"
+    method = getattr(component, method_name, None)
+    if callable(method):
+        try:
+            method()
+        except Exception:
+            try:
+                servo_logger.logger.exception("RUNTIME_CLEANUP_FAILED")
+            except Exception:
+                pass
+
+
+def _legacy_playback_service() -> LegacyPlaybackService:
+    """Build the compatibility service from the current runtime components."""
+    return LegacyPlaybackService(audio=player, loop=loop_player)
+
+
+def cleanup_runtime() -> None:
+    """Stop runtime resources once and release the cross-process lock."""
+    global _runtime_process_lock, _runtime_cleaned
+
+    with _runtime_state_lock:
+        if _runtime_cleaned:
+            return
+        _runtime_cleaned = True
+        current_player = _runtime_player
+        current_loop_player = _runtime_loop_player
+        current_lock = _runtime_process_lock
+
+        try:
+            _cleanup_component(current_loop_player, prefer_cleanup=False)
+        finally:
+            try:
+                _cleanup_component(current_player, prefer_cleanup=True)
+            finally:
+                if current_lock is not None:
+                    current_lock.release()
+                    _runtime_process_lock = None
+
+
+atexit.register(cleanup_runtime)
+
+
+def _install_shutdown_handlers() -> None:
+    def _handle_shutdown(signum, _frame) -> None:
+        cleanup_runtime()
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
+
+def _health_mode() -> tuple[Optional[str], bool]:
+    """Return a public mode label and whether the configuration is valid."""
+    try:
+        selected = resolve_runtime_mode()
+    except Exception:
+        return None, False
+    return ("simulated" if selected == "simulated" else "real"), True
+
+
+def _health_snapshot(*, live: bool) -> tuple[dict[str, object], int]:
+    mode, config_ok = _health_mode()
+    checks: dict[str, bool] = {"configuration": config_ok}
+    if live:
+        checks["process"] = True
+        return {
+            "status": "ok",
+            "version": APP_VERSION,
+            "mode": mode,
+            "checks": checks,
+        }, 200
+
+    runtime_ok = (
+        _runtime_initialized
+        and _runtime_player is not None
+        and _runtime_loop_player is not None
+    )
+    checks.update(
+        {
+            "runtime_initialized": _runtime_initialized,
+            "player": _runtime_player is not None,
+            "loop_player": _runtime_loop_player is not None,
+        }
+    )
+    ready = config_ok and runtime_ok
+    return {
+        "status": "ready" if ready else "not_ready",
+        "version": APP_VERSION,
+        "mode": mode,
+        "checks": checks,
+    }, (200 if ready else 503)
+
+
+@legacy_api.route("/health/live", methods=["GET"])
+def health_live():
+    """Report that HTTP is alive without touching runtime components."""
+    snapshot, status_code = _health_snapshot(live=True)
+    return jsonify(snapshot), status_code
+
+
+@legacy_api.route("/health/ready", methods=["GET"])
+def health_ready():
+    """Report readiness only after configuration and runtime initialization."""
+    snapshot, status_code = _health_snapshot(live=False)
+    return jsonify(snapshot), status_code
 
 VOLUME_TIMEOUT = float(os.environ.get("PLAYLIST_VOLUME_TIMEOUT", "5"))
 VOLUME_STEP = int(os.environ.get("PLAYLIST_VOLUME_STEP", "8"))
@@ -73,7 +307,13 @@ if not _VOLUME_CMD_BASE:
 
 ESP32_DEFAULT_CONFIG = {"host": "", "port": 80, "enabled": False}
 ESP32_BUTTON_COUNT = 3
-ESP32_HTTP_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
+ESP32_TOTAL_TIMEOUT = float(os.environ.get("PLAYLIST_ESP32_TIMEOUT", "3.0"))
+ESP32_CONNECT_TIMEOUT = float(
+    os.environ.get("PLAYLIST_ESP32_CONNECT_TIMEOUT", "1.0")
+)
+# ``urllib`` exposes one socket timeout. Use the stricter ceiling so both the
+# connection limit and the request-wide limit remain enforced at this layer.
+ESP32_HTTP_TIMEOUT = min(ESP32_CONNECT_TIMEOUT, ESP32_TOTAL_TIMEOUT)
 
 VOLUME_ACTIONS = {"up", "down", "mute", "set"}
 
@@ -124,9 +364,7 @@ BLUETOOTH_RESTART_TIMEOUT = float(
 def _client_request_metadata() -> dict[str, str]:
     """Extract request origin details for logging."""
     forwarded_for = request.headers.get("X-Forwarded-For", "")
-    primary_forward = (
-        forwarded_for.split(",")[0].strip() if forwarded_for else None
-    )
+    primary_forward = forwarded_for.split(",")[0].strip() if forwarded_for else None
     remote_addr = primary_forward or request.remote_addr or ""
     user_agent = request.headers.get("User-Agent") or ""
     return {
@@ -152,6 +390,24 @@ def _clean_bt_output(text: str) -> str:
         return ""
     text = text.replace("\n", "\n")
     text = _ANSI_RE.sub("", text)
+    return text
+
+
+def _redact_sensitive_text(value: object) -> str:
+    """Keep diagnostics useful without copying credentials into logs/HTTP."""
+    text = str(value)
+    if ACCUEIL_WEBHOOK_URL:
+        text = text.replace(ACCUEIL_WEBHOOK_URL, "<redacted-webhook-url>")
+    text = re.sub(
+        r"(?i)(https?://)([^/\s:@]+):([^@\s/]+)@",
+        r"\1<redacted-credentials>@",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(token|secret|password|passwd|api[_-]?key)(\s*[=:]\s*)[^\s,;]+",
+        r"\1\2<redacted>",
+        text,
+    )
     return text
 
 
@@ -246,7 +502,9 @@ def _bluetooth_info(address: str) -> dict[str, Any] | None:
     return {"connected": connected, "paired": paired, "trusted": trusted, "raw": stdout}
 
 
-def _wait_bt_flag(address: str, key: str, desired: bool, timeout_s: float, interval: float = 0.5) -> bool:
+def _wait_bt_flag(
+    address: str, key: str, desired: bool, timeout_s: float, interval: float = 0.5
+) -> bool:
     """Poll bluetoothctl info until key (connected/paired/trusted) matches desired or timeout."""
     deadline = time.time() + max(0.1, float(timeout_s))
     while time.time() < deadline:
@@ -339,7 +597,9 @@ def _set_transport_volume(
     return True, volume, proc
 
 
-def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bool, str, int | None]:
+def _run_volume_action(
+    action: str, target_value: int | None = None
+) -> tuple[bool, str, int | None]:
     try:
         transport, list_proc = _pick_transport_path()
     except FileNotFoundError as exc:
@@ -358,7 +618,11 @@ def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bo
         if not transport:
             if detail:
                 servo_logger.logger.warning("VOLUME_NO_TRANSPORT | output=%s", detail)
-            return False, "Aucun transport bluetooth actif (peripherique connecte ?)", None
+            return (
+                False,
+                "Aucun transport bluetooth actif (peripherique connecte ?)",
+                None,
+            )
 
     try:
         current, history = _get_transport_volume(transport)
@@ -478,92 +742,12 @@ def _run_volume_action(action: str, target_value: int | None = None) -> tuple[bo
 # --- Channels (default: all enabled)
 CHANNELS_DEFAULT = {"eye_left": True, "eye_right": True, "neck": True, "jaw": True}
 player_channels = CHANNELS_DEFAULT.copy()
-# expose to player if it supports it
-setattr(player, "channels", player_channels)
 
 
-# --- Playlist (in-memory) ---
-class PlaylistManager:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._queue: list[dict[str, Any]] = []
-        self._id_seq = count(1)
-
-    def add(self, session: str) -> tuple[dict[str, Any], int]:
-        with self._lock:
-            item = {
-                "id": next(self._id_seq),
-                "session": session,
-                "added_at": time.time(),
-                "retries": 0,
-            }
-            self._queue.append(item)
-            return item.copy(), len(self._queue)
-
-    def snapshot(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [item.copy() for item in self._queue]
-
-    def pop_next(self) -> Optional[dict[str, Any]]:
-        with self._lock:
-            if not self._queue:
-                return None
-            item = self._queue.pop(0)
-            return item.copy()
-
-    def remove(self, item_id: int) -> Optional[dict[str, Any]]:
-        with self._lock:
-            for idx, item in enumerate(self._queue):
-                if item["id"] == item_id:
-                    removed = self._queue.pop(idx)
-                    return removed.copy()
-        return None
-
-    def purge_session(self, session: str) -> list[dict[str, Any]]:
-        """Remove every queued entry matching the given session name."""
-        removed: list[dict[str, Any]] = []
-        with self._lock:
-            kept: list[dict[str, Any]] = []
-            for item in self._queue:
-                if item.get("session") == session:
-                    removed.append(item.copy())
-                else:
-                    kept.append(item)
-            self._queue = kept
-        return removed
-
-    def move(self, item_id: int, offset: int) -> str:
-        with self._lock:
-            for idx, item in enumerate(self._queue):
-                if item["id"] == item_id:
-                    new_idx = max(0, min(len(self._queue) - 1, idx + offset))
-                    if new_idx == idx:
-                        return "noop"
-                    self._queue.pop(idx)
-                    self._queue.insert(new_idx, item)
-                    return "moved"
-        return "not_found"
-
-    def push_front(self, item: dict[str, Any]) -> None:
-        with self._lock:
-            self._queue.insert(0, item.copy())
-
-    def clear(self) -> None:
-        with self._lock:
-            self._queue.clear()
-
-    def size(self) -> int:
-        with self._lock:
-            return len(self._queue)
-
-    def has_items(self) -> bool:
-        with self._lock:
-            return bool(self._queue)
-
-
+# --- Playlist and current playback entry (domain façade) ---
+PlaylistManager = PlaylistStore
 playlist = PlaylistManager()
-_current_entry_lock = threading.Lock()
-_current_entry: Optional[dict[str, Any]] = None
+_playback_state = PlaybackStateStore()
 
 
 # Keep ESP32 relay active for a brief window while the next track loads
@@ -575,20 +759,16 @@ _last_finish_reason: Optional[str] = None
 
 
 def _set_current_entry(entry: Optional[dict[str, Any]]) -> None:
-    global _current_entry
-    with _current_entry_lock:
-        _current_entry = entry.copy() if entry else None
+    _playback_state.set_current(entry)
 
 
 def _get_current_entry() -> Optional[dict[str, Any]]:
-    with _current_entry_lock:
-        if _current_entry is None:
-            return None
-        return _current_entry.copy()
+    return _playback_state.get_current()
 
 
 _random_lock = threading.Lock()
-_RANDOM_EXCLUDED_NAMES = {"accueil"}
+_RANDOM_EXCLUDED_NAMES = {"Accueil"}
+_random_selector = RandomSessionSelector()
 _random_enabled = False
 _random_last_pick: Optional[dict[str, Any]] = None
 
@@ -599,39 +779,22 @@ def _normalize_session_name(name: str) -> str:
 
 def _list_session_names() -> list[str]:
     try:
-        entries = sorted(DATA_DIR.iterdir(), key=lambda p: p.name.lower())
-    except FileNotFoundError:
-        return []
+        return list(SessionCatalog(DATA_DIR).list_names())
     except Exception as exc:
         servo_logger.logger.warning("SESSION_LIST_FAILED | error=%s", exc)
         return []
 
-    sessions: list[str] = []
-    for entry in entries:
-        if entry.is_dir():
-            sessions.append(entry.name)
-    return sessions
-
 
 def _eligible_random_sessions(additional_excludes: Iterable[str] = ()) -> list[str]:
-    excluded = {_normalize_session_name(name) for name in _RANDOM_EXCLUDED_NAMES}
-    for name in additional_excludes:
-        if name:
-            excluded.add(_normalize_session_name(name))
-
-    candidates: list[str] = []
-    for session_name in _list_session_names():
-        if _normalize_session_name(session_name) in excluded:
-            continue
-        candidates.append(session_name)
-    return candidates
+    excluded = list(_RANDOM_EXCLUDED_NAMES) + list(additional_excludes)
+    return list(_random_selector.eligible(_list_session_names(), excluded))
 
 
 def _pick_random_session(additional_excludes: Iterable[str] = ()) -> Optional[str]:
     candidates = _eligible_random_sessions(additional_excludes)
     if not candidates:
         return None
-    return random.choice(candidates)
+    return _random_selector.choose(candidates)
 
 
 def _is_random_mode_enabled() -> bool:
@@ -671,38 +834,69 @@ def _record_random_pick(selected: str, requested: Optional[str]) -> None:
 
 def _resolve_existing_session_dir(session_name: str) -> Path:
     """Return the session directory ensuring it is inside DATA_DIR."""
-    if not session_name:
-        raise ValueError("Nom de session invalide")
-    data_root = DATA_DIR.resolve()
-    try:
-        candidate = (DATA_DIR / session_name).resolve(strict=False)
-    except Exception as exc:
-        raise ValueError("Nom de session invalide") from exc
-    if candidate.parent != data_root:
-        raise ValueError("Nom de session invalide")
-    if not candidate.exists() or not candidate.is_dir():
-        raise FileNotFoundError(session_name)
-    return candidate
+    return SessionCatalog(DATA_DIR).resolve(session_name)
 
 
 def _ensure_session_exists(session_name: str) -> Path:
     try:
-        session_dir = _resolve_existing_session_dir(session_name)
+        return SessionCatalog(DATA_DIR).require_playable(session_name)
     except FileNotFoundError:
-        raise ValueError(f"Session introuvable: {session_name}")
-
-    json_files = list(session_dir.glob("*.json"))
-    mp3_files = list(session_dir.glob("*.mp3"))
-    if not json_files:
-        raise ValueError("Fichier JSON introuvable dans la session")
-    if not mp3_files:
-        raise ValueError("Fichier MP3 introuvable dans la session")
-    return session_dir
+        raise InvalidInputError(f"Session introuvable: {session_name}") from None
 
 
 def _start_session(
     session_name: str, source: str, item_id: Optional[int] = None
 ) -> bool:
+    def _maybe_trigger_accueil_webhook(name: str) -> None:
+        if not ACCUEIL_WEBHOOK_URL:
+            return
+        if _normalize_session_name(name) != "accueil":
+            return
+        curl_cmd = [
+            "curl",
+            "-sS",
+            "-X",
+            "POST",
+            ACCUEIL_WEBHOOK_URL,
+        ]
+        try:
+            completed = subprocess.run(
+                curl_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=ACCUEIL_WEBHOOK_TIMEOUT,
+                check=False,
+            )
+            if completed.returncode == 0:
+                servo_logger.logger.info("ACCUEIL_WEBHOOK_TRIGGERED | session=%s", name)
+            else:
+                servo_logger.logger.warning(
+                    "ACCUEIL_WEBHOOK_FAILED | session=%s | code=%s | stderr=%s",
+                    name,
+                    completed.returncode,
+                    _redact_sensitive_text(
+                        completed.stderr.decode("utf-8", errors="ignore")
+                    ),
+                )
+        except subprocess.TimeoutExpired:
+            servo_logger.logger.warning(
+                "ACCUEIL_WEBHOOK_TIMEOUT | session=%s | timeout=%.1fs",
+                name,
+                ACCUEIL_WEBHOOK_TIMEOUT,
+            )
+        except FileNotFoundError:
+            servo_logger.logger.error(
+                "ACCUEIL_WEBHOOK_CURL_MISSING | session=%s | cmd=%s",
+                name,
+                " ".join(_redact_sensitive_text(part) for part in curl_cmd),
+            )
+        except Exception as exc:
+            servo_logger.logger.warning(
+                "ACCUEIL_WEBHOOK_UNEXPECTED_ERROR | session=%s | type=%s",
+                name,
+                type(exc).__name__,
+            )
+
     try:
         session_dir = _ensure_session_exists(session_name)
     except ValueError as exc:
@@ -721,33 +915,14 @@ def _start_session(
             return False
 
     try:
-        player.load(session_dir)
+        _legacy_playback_service().start(session_dir)
     except Exception as exc:
         servo_logger.logger.error(
             f"PLAYLIST_START_FAILED | session={session_name} | error={exc}"
         )
         return False
 
-    suppressed = False
-    try:
-        loop_player.suppress_for_session()
-        suppressed = True
-    except Exception:
-        servo_logger.logger.exception("LOOP_SUPPRESS_FAILED")
-
-    try:
-        player.play()
-    except Exception as exc:
-        if suppressed:
-            try:
-                loop_player.release_suppression(delay=0.0)
-            except Exception:
-                servo_logger.logger.exception("LOOP_SUPPRESS_RELEASE_FAILED")
-        servo_logger.logger.error(
-            f"PLAYLIST_START_FAILED | session={session_name} | error={exc}"
-        )
-        return False
-
+    _maybe_trigger_accueil_webhook(session_name)
     _set_current_entry(
         {
             "session": session_name,
@@ -767,6 +942,20 @@ def _start_next_from_playlist() -> None:
         next_item = playlist.pop_next()
         if not next_item:
             return
+        session_name = next_item.get("session")
+        if session_name and _normalize_session_name(session_name) == "accueil":
+            queue_cleared = False
+            try:
+                queue_cleared = playlist.has_items()
+            except Exception:
+                queue_cleared = False
+            if queue_cleared:
+                playlist.clear()
+            servo_logger.logger.info(
+                "ACCUEIL_PRIORITY_PLAYLIST | cleared_queue=%s | next_id=%s",
+                queue_cleared,
+                next_item.get("id"),
+            )
         if _start_session(next_item["session"], "playlist", next_item["id"]):
             return
         retries = int(next_item.get("retries", 0)) + 1
@@ -821,9 +1010,6 @@ def _handle_track_finished(
 
     if reason in {"completed", "skip", "error"}:
         threading.Thread(target=_start_next_from_playlist, daemon=True).start()
-
-
-player.set_on_track_finished(_handle_track_finished)
 
 
 def _clamp_pitch_offset(value: float) -> float:
@@ -1056,9 +1242,7 @@ def _load_button_assignments_locked() -> list[str]:
 def _save_button_assignments_locked(assignments: Iterable[str]) -> list[str]:
     sanitized = _sanitize_button_assignments(list(assignments))
     try:
-        _write_json_atomic(
-            ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": sanitized}
-        )
+        _write_json_atomic(ESP32_BUTTON_ASSIGNMENTS_PATH, {"assignments": sanitized})
     except Exception:
         servo_logger.logger.exception("ESP32_BUTTON_ASSIGNMENTS_SAVE_FAILED")
     return sanitized
@@ -1133,7 +1317,7 @@ def _resolve_session_candidate(value: str) -> tuple[str, Optional[str]]:
         raise ValueError("Session vide")
     matching = _sessions_for_category(candidate)
     if matching:
-        return random.choice(matching), candidate
+        return _random_selector.choose(matching), candidate
     return candidate, None
 
 
@@ -1150,14 +1334,51 @@ def _enqueue_or_play_session(
 
     context = log_context or {}
     context_bits = " | ".join(f"{k}={v}" for k, v in context.items() if v is not None)
+    log_suffix = f" | {context_bits}" if context_bits else ""
+
+    normalized_session = _normalize_session_name(session_name)
+    is_accueil = normalized_session == "accueil"
+    queue_cleared = False
+    forced_replace = False
 
     try:
         status_info = player.status()
     except Exception:
         status_info = {}
     is_running = bool(status_info.get("running"))
+    was_running = is_running
 
-    if is_running:
+    if is_accueil:
+        try:
+            queue_cleared = playlist.has_items()
+        except Exception:
+            queue_cleared = False
+        if queue_cleared:
+            playlist.clear()
+
+        if was_running:
+            previous_session = status_info.get("session")
+            try:
+                _legacy_playback_service().stop(reason="replace")
+                forced_replace = True
+            except Exception:
+                servo_logger.logger.exception(
+                    "ACCUEIL_FORCE_STOP_FAILED | requested=%s", session_name
+                )
+            finally:
+                _set_current_entry(None)
+            is_running = False
+
+        servo_logger.logger.info(
+            "ACCUEIL_PRIORITY | cleared_queue=%s | stop_attempted=%s | stop_succeeded=%s | source=%s%s",
+            queue_cleared,
+            was_running,
+            forced_replace,
+            source,
+            log_suffix,
+        )
+
+    if is_running and not is_accueil:
         item, position = playlist.add(session_name)
         enriched_item = _enrich_entry_with_category(item)
         category_label = requested_category or _get_session_category(session_name)
@@ -1391,28 +1612,28 @@ def _esp32_request(
             method,
             path,
             exc.code,
-            body[:200],
+            _redact_sensitive_text(body[:200]),
         )
-        message = f"Erreur HTTP ESP32 ({exc.code})"
-        if body:
-            message = f"{message}: {body.strip()[:200]}"
-        raise ESP32CommunicationError(message) from exc
+        raise ESP32CommunicationError(f"Erreur HTTP ESP32 ({exc.code})") from exc
     except URLError as exc:
         reason = getattr(exc, "reason", exc)
         servo_logger.logger.warning(
             "ESP32_UNREACHABLE | method=%s | path=%s | reason=%s",
             method,
             path,
-            reason,
+            type(reason).__name__,
         )
-        raise ESP32CommunicationError(f"Connexion impossible ({reason})") from exc
+        raise ESP32CommunicationError("Connexion ESP32 indisponible.") from exc
     except ESP32ConfigError:
         raise
     except Exception as exc:
-        servo_logger.logger.exception(
-            "ESP32_UNEXPECTED_ERROR | method=%s | path=%s", method, path
+        servo_logger.logger.warning(
+            "ESP32_UNEXPECTED_ERROR | method=%s | path=%s | type=%s",
+            method,
+            path,
+            type(exc).__name__,
         )
-        raise ESP32CommunicationError(str(exc)) from exc
+        raise ESP32CommunicationError("Communication ESP32 impossible.") from exc
 
 
 def save_pitch_offsets() -> None:
@@ -1487,7 +1708,7 @@ def _esp32_response_error(message: str, reason: str = "error") -> Dict[str, Any]
     return {"reachable": False, "error": message, "reason": reason}
 
 
-@app.route("/esp32/config", methods=["GET"])
+@legacy_api.route("/esp32/config", methods=["GET"])
 def esp32_get_config():
     config = load_esp32_config()
     payload = dict(config)
@@ -1495,7 +1716,7 @@ def esp32_get_config():
     return jsonify(payload)
 
 
-@app.route("/esp32/config", methods=["POST"])
+@legacy_api.route("/esp32/config", methods=["POST"])
 def esp32_update_config():
     body = request.get_json(silent=True) or {}
     try:
@@ -1507,7 +1728,7 @@ def esp32_update_config():
     return jsonify(payload)
 
 
-@app.route("/esp32/status")
+@legacy_api.route("/esp32/status")
 def esp32_status():
     try:
         status_payload = _esp32_request("/api/status", method="GET")
@@ -1518,7 +1739,7 @@ def esp32_status():
         return jsonify(_esp32_response_error(str(exc), reason="network"))
 
 
-@app.route("/esp32/relay", methods=["POST"])
+@legacy_api.route("/esp32/relay", methods=["POST"])
 def esp32_set_relay():
     body = request.get_json(silent=True) or {}
     if "on" not in body:
@@ -1535,7 +1756,7 @@ def esp32_set_relay():
         return jsonify({"success": False, "reachable": False, "error": str(exc)})
 
 
-@app.route("/esp32/auto-relay", methods=["POST"])
+@legacy_api.route("/esp32/auto-relay", methods=["POST"])
 def esp32_set_auto_relay():
     body = request.get_json(silent=True) or {}
     if "enabled" not in body:
@@ -1552,7 +1773,7 @@ def esp32_set_auto_relay():
         return jsonify({"success": False, "reachable": False, "error": str(exc)})
 
 
-@app.route("/esp32/button-config", methods=["GET"])
+@legacy_api.route("/esp32/button-config", methods=["GET"])
 def esp32_button_config():
     assignments = _load_button_assignments()
     categories = _button_category_options()
@@ -1587,7 +1808,7 @@ def esp32_button_config():
         return jsonify(error)
 
 
-@app.route("/esp32/button-config", methods=["POST"])
+@legacy_api.route("/esp32/button-config", methods=["POST"])
 def esp32_set_button_config():
     body = request.get_json(silent=True) or {}
     if "button" not in body:
@@ -1664,14 +1885,12 @@ def esp32_set_button_config():
     return jsonify(response_payload)
 
 
-@app.route("/esp32/button/<int:button_index>/play", methods=["POST"])
+@legacy_api.route("/esp32/button/<int:button_index>/play", methods=["POST"])
 def esp32_button_play(button_index: int):
     if button_index < 0 or button_index >= ESP32_BUTTON_COUNT:
         return (
             jsonify(
-                {
-                    "error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1})."
-                }
+                {"error": f"Index bouton hors limites (0-{ESP32_BUTTON_COUNT - 1})."}
             ),
             400,
         )
@@ -1708,14 +1927,17 @@ def esp32_button_play(button_index: int):
 
     sessions = _sessions_for_category(category)
     if not sessions:
-        return jsonify(
-            {
-                "error": f"Aucune session disponible pour la categorie '{category}'.",
-                "category": category,
-            }
-        ), 404
+        return (
+            jsonify(
+                {
+                    "error": f"Aucune session disponible pour la categorie '{category}'.",
+                    "category": category,
+                }
+            ),
+            404,
+        )
 
-    chosen_session = random.choice(sessions)
+    chosen_session = _random_selector.choose(sessions)
     payload, status_code = _trigger_session_for_button(
         chosen_session, button_index, category
     )
@@ -1726,7 +1948,7 @@ def esp32_button_play(button_index: int):
     return jsonify(payload), status_code
 
 
-@app.route("/esp32/restart", methods=["POST"])
+@legacy_api.route("/esp32/restart", methods=["POST"])
 def esp32_restart():
     try:
         payload = _esp32_request("/api/restart", method="POST", json_payload={})
@@ -1766,19 +1988,19 @@ def _sanitize_loop_filename(filename: str) -> str:
     return cleaned[:80]
 
 
-@app.route("/")
+@legacy_api.route("/")
 def index():
     return render_template("index.html")
 
 
-@app.route("/favicon.ico")
+@legacy_api.route("/favicon.ico")
 def favicon():
     return send_from_directory(
         app.static_folder, "SkullPlayer.png", mimetype="image/png"
     )
 
 
-@app.route("/upload", methods=["POST"])
+@legacy_api.route("/upload", methods=["POST"])
 def upload():
     try:
         files = request.files
@@ -1856,7 +2078,7 @@ def upload():
         return jsonify({"error": f"Erreur lors de l'upload: {str(e)}"}), 500
 
 
-@app.route("/loop/status")
+@legacy_api.route("/loop/status")
 def loop_status():
     try:
         return jsonify(loop_player.status())
@@ -1865,7 +2087,7 @@ def loop_status():
         return jsonify({"error": str(exc)}), 500
 
 
-@app.route("/loop/enable", methods=["POST"])
+@legacy_api.route("/loop/enable", methods=["POST"])
 def loop_enable():
     payload = request.get_json(silent=True) or {}
     if "enabled" not in payload:
@@ -1884,7 +2106,7 @@ def loop_enable():
     return jsonify(status)
 
 
-@app.route("/loop/upload", methods=["POST"])
+@legacy_api.route("/loop/upload", methods=["POST"])
 def loop_upload():
     try:
         up_file = request.files.get("loop_mp3")
@@ -1937,7 +2159,46 @@ def loop_upload():
         return jsonify({"error": f"Echec upload boucle: {exc}"}), 500
 
 
-@app.route("/sessions")
+@legacy_api.route("/loop/volume", methods=["POST"])
+def loop_volume():
+    """
+    Régler le volume de la boucle.
+    Body JSON attendu:
+      { "volume": 0.7, "fade_ms": 600 }
+    Notes:
+      - volume peut aussi être en pourcentage (ex: 70 -> 0.7)
+      - fade_ms est optionnel (par défaut: self.fade_ms côté LoopPlayer)
+    """
+    payload = request.get_json(silent=True) or {}
+    if "volume" not in payload:
+        return jsonify({"error": "Champ 'volume' manquant"}), 400
+
+    raw_vol = payload.get("volume")
+    try:
+        vol = float(raw_vol)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Volume invalide"}), 400
+
+    # Autoriser 0..1 ou 0..100 (auto-détection)
+    if vol > 1.0:
+        # interpréter comme pourcentage si plausible
+        if 0.0 <= vol <= 100.0:
+            vol = vol / 100.0
+
+    # Clamp 0..1
+    vol = max(0.0, min(1.0, vol))
+
+    fade_ms = payload.get("fade_ms", None)
+    try:
+        loop_player.set_volume(vol, fade_ms=fade_ms)
+        st = loop_player.status()
+        return jsonify({"status": "ok", "loop": st})
+    except Exception as exc:
+        servo_logger.logger.exception("LOOP_VOLUME_ERROR")
+        return jsonify({"error": str(exc)}), 500
+
+
+@legacy_api.route("/sessions")
 def sessions():
     try:
         sessions_list = _list_session_names()
@@ -1956,7 +2217,7 @@ def sessions():
         return jsonify({"error": f"Erreur lors du listage: {str(e)}"}), 500
 
 
-@app.route("/api/sessions", methods=["GET"])
+@legacy_api.route("/api/sessions", methods=["GET"])
 def api_sessions():
     categories_data = _load_session_categories()
     mapping = categories_data["sessions"]
@@ -1999,9 +2260,7 @@ def api_sessions():
     meta = _client_request_metadata()
     current_entry = playlist_snapshot["current"]
     current_session = (
-        current_entry.get("session")
-        if isinstance(current_entry, dict)
-        else None
+        current_entry.get("session") if isinstance(current_entry, dict) else None
     )
     queue_length = original_queue_length
     transition_state = "pending" if hold_active else "steady"
@@ -2022,7 +2281,7 @@ def api_sessions():
     )
 
 
-@app.route("/sessions/<session_name>/category", methods=["PUT"])
+@legacy_api.route("/sessions/<session_name>/category", methods=["PUT"])
 def set_session_category(session_name: str):
     try:
         _ensure_session_exists(session_name)
@@ -2044,7 +2303,7 @@ def set_session_category(session_name: str):
     )
 
 
-@app.route("/categories", methods=["GET", "POST"])
+@legacy_api.route("/categories", methods=["GET", "POST"])
 def categories():
     if request.method == "GET":
         data = _load_session_categories()
@@ -2071,7 +2330,7 @@ def categories():
     )
 
 
-@app.route("/sessions/<session_name>", methods=["DELETE"])
+@legacy_api.route("/sessions/<session_name>", methods=["DELETE"])
 def delete_session(session_name: str):
     """Supprime complètement une session et son répertoire."""
     try:
@@ -2093,7 +2352,7 @@ def delete_session(session_name: str):
         except Exception:
             status_info = {}
         try:
-            player.stop(reason="skip")
+            _legacy_playback_service().stop(reason="skip")
             stop_triggered = bool(status_info.get("running"))
         except Exception:
             servo_logger.logger.exception(
@@ -2146,7 +2405,7 @@ def delete_session(session_name: str):
     )
 
 
-@app.route("/play", methods=["POST"])
+@legacy_api.route("/play", methods=["POST"])
 def play():
     try:
         body = request.get_json(silent=True) or {}
@@ -2211,7 +2470,7 @@ def play():
         return jsonify({"error": f"Impossible de demarrer la lecture: {e}"}), 400
 
 
-@app.route("/api/enqueue", methods=["POST"])
+@legacy_api.route("/api/enqueue", methods=["POST"])
 def api_enqueue():
     body = request.get_json(silent=True) or {}
     meta = _client_request_metadata()
@@ -2254,7 +2513,11 @@ def api_enqueue():
     response_log = _format_log_payload(payload)
     if status_code >= 400:
         payload["success"] = False
-        logger_fn = servo_logger.logger.error if status_code >= 500 else servo_logger.logger.warning
+        logger_fn = (
+            servo_logger.logger.error
+            if status_code >= 500
+            else servo_logger.logger.warning
+        )
         logger_fn(
             "ESP32_ENQUEUE_RESPONSE | remote=%s | status=%s | session=%s | error=%s | payload=%s",
             meta["client_ip"],
@@ -2278,35 +2541,35 @@ def api_enqueue():
     return jsonify(payload), status_code
 
 
-@app.route("/pause", methods=["POST"])
+@legacy_api.route("/pause", methods=["POST"])
 def pause():
     try:
-        player.pause()
+        _legacy_playback_service().pause()
         return jsonify({"status": "paused"})
     except Exception as e:
         return jsonify({"error": f"Erreur pause: {e}"}), 500
 
 
-@app.route("/resume", methods=["POST"])
+@legacy_api.route("/resume", methods=["POST"])
 def resume():
     try:
-        player.resume()
+        _legacy_playback_service().resume()
         return jsonify({"status": "resumed"})
     except Exception as e:
         return jsonify({"error": f"Erreur resume: {e}"}), 500
 
 
-@app.route("/stop", methods=["POST"])
+@legacy_api.route("/stop", methods=["POST"])
 def stop():
     try:
-        player.stop()
+        _legacy_playback_service().stop()
         _set_current_entry(None)
         return jsonify({"status": "stopped"})
     except Exception as e:
         return jsonify({"error": f"Erreur stop: {e}"}), 500
 
 
-@app.route("/status")
+@legacy_api.route("/status")
 def status():
     try:
         # expose channels in status as well
@@ -2366,7 +2629,7 @@ def status():
         return jsonify({"error": f"Erreur status: {e}"}), 500
 
 
-@app.route("/random_mode", methods=["GET", "POST"])
+@legacy_api.route("/random_mode", methods=["GET", "POST"])
 def random_mode():
     if request.method == "GET":
         snapshot = _random_mode_snapshot()
@@ -2399,7 +2662,7 @@ def random_mode():
     return jsonify(snapshot)
 
 
-@app.route("/volume", methods=["POST"])
+@legacy_api.route("/volume", methods=["POST"])
 def volume():
     payload = request.get_json(silent=True) or {}
     action = (payload.get("action") or "").lower()
@@ -2426,7 +2689,7 @@ def volume():
     return jsonify(response), status
 
 
-@app.route("/playlist", methods=["GET", "POST"])
+@legacy_api.route("/playlist", methods=["GET", "POST"])
 def playlist_api():
     try:
         if request.method == "GET":
@@ -2485,7 +2748,7 @@ def playlist_api():
         return jsonify({"error": f"Erreur playlist: {e}"}), 500
 
 
-@app.route("/playlist/shuffle", methods=["POST"])
+@legacy_api.route("/playlist/shuffle", methods=["POST"])
 def playlist_shuffle():
     sessions = _eligible_random_sessions()
     if not sessions:
@@ -2494,10 +2757,10 @@ def playlist_shuffle():
             400,
         )
 
-    random.shuffle(sessions)
+    _random_selector.shuffle(sessions)
 
     try:
-        player.stop(reason="shuffle")
+        _legacy_playback_service().stop(reason="shuffle")
     except Exception:
         servo_logger.logger.exception("PLAYLIST_SHUFFLE_STOP_FAILED")
 
@@ -2520,14 +2783,12 @@ def playlist_shuffle():
             "status": "shuffled",
             "count": len(sessions),
             "sessions": sessions,
-            "playlist": _enrich_queue_with_categories(
-                playlist.snapshot(), mapping
-            ),
+            "playlist": _enrich_queue_with_categories(playlist.snapshot(), mapping),
         }
     )
 
 
-@app.route("/playlist/<int:item_id>", methods=["DELETE"])
+@legacy_api.route("/playlist/<int:item_id>", methods=["DELETE"])
 def playlist_delete(item_id: int):
     removed = playlist.remove(item_id)
     if not removed:
@@ -2539,7 +2800,7 @@ def playlist_delete(item_id: int):
     return jsonify({"status": "removed", "item": enriched})
 
 
-@app.route("/playlist/<int:item_id>/move", methods=["POST"])
+@legacy_api.route("/playlist/<int:item_id>/move", methods=["POST"])
 def playlist_move(item_id: int):
     body = request.get_json(silent=True) or {}
     direction = (body.get("direction") or "").lower()
@@ -2557,13 +2818,13 @@ def playlist_move(item_id: int):
     return jsonify({"status": "moved", "direction": direction})
 
 
-@app.route("/playlist/skip", methods=["POST"])
+@legacy_api.route("/playlist/skip", methods=["POST"])
 def playlist_skip():
     try:
         status_info = player.status()
         if status_info.get("running"):
             servo_logger.logger.info("PLAYLIST_SKIP_REQUEST | state=running")
-            player.stop(reason="skip")
+            _legacy_playback_service().stop(reason="skip")
             return jsonify({"status": "skipping"})
 
         servo_logger.logger.info("PLAYLIST_SKIP_REQUEST | state=idle")
@@ -2582,7 +2843,7 @@ def playlist_skip():
         return jsonify({"error": f"Erreur skip: {e}"}), 500
 
 
-@app.route("/service/restart", methods=["POST"])
+@legacy_api.route("/service/restart", methods=["POST"])
 def service_restart():
     """Restart the servo-sync systemd service from the web UI."""
     if not SERVICE_RESTART_CMD:
@@ -2635,7 +2896,7 @@ def service_restart():
     return jsonify({"status": "restarted"})
 
 
-@app.route("/bluetooth/restart", methods=["POST"])
+@legacy_api.route("/bluetooth/restart", methods=["POST"])
 def bluetooth_restart():
     """Restart the bluetooth systemd service from the web UI."""
     if not BLUETOOTH_RESTART_CMD:
@@ -2690,6 +2951,7 @@ def bluetooth_restart():
 
 # -------------------- Bluetooth pairing API --------------------
 
+
 def _parse_bt_devices_list(text: str) -> list[dict[str, str]]:
     devices: list[dict[str, str]] = []
     if not text:
@@ -2709,7 +2971,7 @@ def _parse_bt_devices_list(text: str) -> list[dict[str, str]]:
     return devices
 
 
-@app.route("/scan", methods=["POST"])
+@legacy_api.route("/scan", methods=["POST"])
 def bt_scan():
     try:
         _ = _bluetoothctl_script("power on")
@@ -2729,7 +2991,7 @@ def bt_scan():
     return jsonify(devices)
 
 
-@app.route("/pair", methods=["POST"])
+@legacy_api.route("/pair", methods=["POST"])
 def bt_pair():
     data = request.get_json(silent=True) or {}
     mac = (data.get("mac") or data.get("address") or "").strip()
@@ -2775,17 +3037,26 @@ def bt_pair():
             return jsonify({"error": "connect_timeout", "results": results}), 504
 
         flags = _bluetooth_info(mac) or {}
-        return jsonify({"results": results, "status": {k: flags.get(k) for k in ("paired", "trusted", "connected")}})
+        return jsonify(
+            {
+                "results": results,
+                "status": {k: flags.get(k) for k in ("paired", "trusted", "connected")},
+            }
+        )
     except subprocess.TimeoutExpired:
         return jsonify({"error": "bluetoothctl_timeout", "results": results}), 504
     except Exception as e:
         servo_logger.logger.exception("BT_PAIR_ERROR")
-        return jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}), 500
+        return (
+            jsonify({"error": f"Pair bluetooth impossible: {e}", "results": results}),
+            500,
+        )
+
 
 # -------------------- Channels API --------------------
 
 
-@app.route("/channels", methods=["GET", "POST"])
+@legacy_api.route("/channels", methods=["GET", "POST"])
 def channels():
     global player_channels
     try:
@@ -2837,7 +3108,7 @@ def channels():
         return jsonify({"error": f"Erreur channels: {e}"}), 500
 
 
-@app.route("/pitch", methods=["GET", "POST"])
+@legacy_api.route("/pitch", methods=["GET", "POST"])
 def pitch():
     """Gestion des offsets de pitch par servo"""
     try:
@@ -2873,7 +3144,7 @@ def pitch():
 
 
 # -------------------- Logs API --------------------
-@app.route("/logs")
+@legacy_api.route("/logs")
 def logs():
     """Retourne les logs servo en temps réel"""
     try:
@@ -2901,9 +3172,9 @@ def logs():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/logs/stream")
+@legacy_api.route("/logs/stream")
 def logs_stream():
-    """Stream des logs en temps réel via Server-Sent Events"""
+    """Serve a short SSE window so sync Gunicorn workers are not monopolized."""
 
     def generate():
         log_file = servo_logger.get_latest_log_file()
@@ -2916,20 +3187,32 @@ def logs_stream():
             with open(log_file, "r", encoding="utf-8") as f:
                 # Aller à la fin
                 f.seek(0, 2)
+                deadline = time.monotonic() + LOG_STREAM_WINDOW_SECONDS
+                yield "retry: 1000\n\n"
 
-                while True:
+                while time.monotonic() < deadline:
                     line = f.readline()
                     if line:
                         yield f"data: {line.rstrip()}\n\n"
                     else:
-                        time.sleep(0.1)  # Attendre nouvelles données
+                        yield ": keep-alive\n\n"
+                        remaining = deadline - time.monotonic()
+                        if remaining > 0:
+                            time.sleep(min(LOG_STREAM_POLL_INTERVAL, remaining))
         except Exception as e:
             yield f"data: Error reading log: {e}\n\n"
 
-    return Response(generate(), mimetype="text/plain")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
-@app.route("/logs/stats")
+@legacy_api.route("/logs/stats")
 def logs_stats():
     """Retourne les statistiques des dernières sessions"""
     try:
@@ -2957,13 +3240,13 @@ def logs_stats():
 
 
 # Serve uploaded files for debug
-@app.route("/data/<path:filename>")
+@legacy_api.route("/data/<path:filename>")
 def data_file(filename):
     return send_from_directory(DATA_DIR, filename)
 
 
 # Serve log files for download
-@app.route("/logs/download")
+@legacy_api.route("/logs/download")
 def logs_download():
     """Télécharge le fichier de log actuel"""
     try:
@@ -2975,7 +3258,94 @@ def logs_download():
         return f"Error: {e}", 500
 
 
-if __name__ == "__main__":
+def _v1_session_basename(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    text = str(value).replace("\\", "/").rstrip("/")
+    return text.rsplit("/", 1)[-1] or None
+
+
+def _v1_status_payload() -> dict[str, Any]:
+    raw_status = player.status()
+    loop_status = loop_player.status()
+    return {
+        "running": bool(raw_status.get("running")),
+        "paused": bool(raw_status.get("paused")),
+        "session": _v1_session_basename(raw_status.get("session")),
+        "playlist_size": playlist.size(),
+        "loop": {
+            "enabled": bool(loop_status.get("enabled")),
+            "playing": bool(loop_status.get("playing")),
+            "suppressed": bool(loop_status.get("suppressed")),
+        },
+    }
+
+
+def _v1_sessions_payload() -> dict[str, Any]:
+    categories_data = _load_session_categories()
+    mapping = categories_data["sessions"]
+    sessions = [
+        {"name": name, "category": mapping.get(name)}
+        for name in _list_session_names()
+    ]
+    return {"sessions": sessions, "categories": categories_data["categories"]}
+
+
+def _v1_inspect_session_payload(session_name: str) -> dict[str, Any]:
+    inspection = SessionCatalog(DATA_DIR).inspect(session_name)
+    return {
+        "name": inspection.name,
+        "playable": inspection.valid,
+        "issues": list(inspection.issues),
+        "files": {
+            "json_count": len(inspection.json_files),
+            "mp3_count": len(inspection.mp3_files),
+        },
+    }
+
+
+def _v1_playlist_item(entry: Any) -> Optional[dict[str, Any]]:
+    if not isinstance(entry, dict):
+        return None
+    item: dict[str, Any] = {}
+    for key in ("id", "session", "retries", "category", "pending", "transitioning"):
+        if key in entry:
+            item[key] = entry[key]
+    return item or None
+
+
+def _v1_playlist_payload(limit: int) -> dict[str, Any]:
+    categories_data = _load_session_categories()
+    mapping = categories_data["sessions"]
+    current = _enrich_entry_with_category(_get_current_entry(), mapping)
+    queue = _enrich_queue_with_categories(playlist.snapshot(), mapping)
+    return {
+        "current": _v1_playlist_item(current),
+        "queue": [
+            item
+            for item in (_v1_playlist_item(entry) for entry in queue[:limit])
+            if item is not None
+        ],
+        "queue_size": len(queue),
+    }
+
+
+v1_api = create_v1_blueprint(
+    V1Context(
+        get_status=_v1_status_payload,
+        list_sessions=_v1_sessions_payload,
+        inspect_session=_v1_inspect_session_payload,
+        get_playlist=_v1_playlist_payload,
+    )
+)
+
+
+app.register_blueprint(legacy_api)
+app.register_blueprint(v1_api, url_prefix="/api/v1")
+
+
+def main() -> None:
+    """Explicit production entry point; imports never launch hardware."""
     print("Servo Sync Player - Web Interface")
     print(f"Logs directory: {servo_logger.log_dir}")
     print(f"Current log file: {servo_logger.get_latest_log_file()}")
@@ -2985,4 +3355,10 @@ if __name__ == "__main__":
     print("  - /logs/stream : Real-time log stream")
     print("  - /logs/stats  : Session statistics")
     print("  - /logs/download : Download log file")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    initialize_runtime(acquire_process_lock=True)
+    _install_shutdown_handlers()
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+
+
+if __name__ == "__main__":
+    main()

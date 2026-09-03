@@ -1,0 +1,16 @@
+## main...origin/main
+ M launch_playlist_web.sh
+ M loop_player.py
+ M static/app.js
+ M static/playlist.css
+ M static/playlist.js
+ M static/style.css
+ M templates/index.html
+ M templates/playlist_only.html
+ M web_app.py
+?? .venv/
+?? .venv_playlist/
+?? logs/
+?? requirements.txt
+
+Les noms de fichiers de configuration sensible ont été exclus de cette copie.

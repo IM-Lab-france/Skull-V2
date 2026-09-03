@@ -1,0 +1,5 @@
+{
+  "host": "esp32-boutons.local",
+  "port": 80,
+  "enabled": false
+}

@@ -32,10 +32,18 @@ from logger import servo_logger
 
 # nouveau : import du récepteur gaze
 from gaze_receiver import GazeReceiver
+from domain.errors import NotFoundError
+from domain.models import PlaybackState
+from domain.state_machine import (
+    PlaybackStateMachine,
+    TransitionNotAllowedError,
+)
 
 
 class SyncPlayer:
     def __init__(self):
+        self._cleanup_lock = threading.Lock()
+        self._cleaned = False
         self.hw = Hardware()
         self.timeline: Optional[Timeline] = None
         self.audio: Optional[AudioSegment] = None
@@ -44,7 +52,9 @@ class SyncPlayer:
 
         self._running = threading.Event()
         self._paused = threading.Event()
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
+        self.state_machine = PlaybackStateMachine()
 
         self.session_dir: Optional[Path] = None
 
@@ -85,6 +95,24 @@ class SyncPlayer:
         self._on_track_finished: Optional[Callable[[str, Optional[str], Optional[str]], None]] = None
         self._stop_reason: Optional[str] = None
 
+    def _advance_state(self, event: str) -> bool:
+        """Mirror a legacy lifecycle callback in the explicit state machine.
+
+        The domain machine remains the authority for valid transitions.  A
+        late callback from a worker that is already stopping is harmless for
+        the legacy façade and is recorded only at debug level.
+        """
+        try:
+            self.state_machine.transition(event)
+        except TransitionNotAllowedError:
+            servo_logger.logger.debug(
+                "PLAYBACK_TRANSITION_IGNORED | event=%s | state=%s",
+                event,
+                self.state_machine.state.name,
+            )
+            return False
+        return True
+
     # ---------------- File loading ----------------
     def load(self, session_dir: str | Path):
         """
@@ -95,16 +123,16 @@ class SyncPlayer:
         self.session_dir = d
 
         if not d.exists() or not d.is_dir():
-            raise FileNotFoundError(f"Répertoire de session introuvable: {d}")
+            raise NotFoundError(f"Répertoire de session introuvable: {d}")
 
         # Chercher les fichiers JSON et MP3
         json_files = list(d.glob("*.json"))
         mp3_files = list(d.glob("*.mp3"))
 
         if not json_files:
-            raise FileNotFoundError(f"Aucun fichier JSON trouvé dans {d}")
+            raise NotFoundError(f"Aucun fichier JSON trouvé dans {d}")
         if not mp3_files:
-            raise FileNotFoundError(f"Aucun fichier MP3 trouvé dans {d}")
+            raise NotFoundError(f"Aucun fichier MP3 trouvé dans {d}")
 
         # Prendre le premier fichier de chaque type
         json_file = json_files[0]
@@ -377,8 +405,6 @@ class SyncPlayer:
 
         try:
             start_pos_ms = getattr(self, "_resume_from_ms", 0)
-            self._stop_reason = None
-
             if start_pos_ms:
                 segment = self.audio[start_pos_ms:]
                 self._play_obj = sa.play_buffer(
@@ -406,6 +432,7 @@ class SyncPlayer:
                 self._start_time = now
             self._running.set()
             self._paused.clear()
+            self._advance_state("started")
             if hasattr(self, "_resume_from_ms"):
                 delattr(self, "_resume_from_ms")
 
@@ -418,9 +445,10 @@ class SyncPlayer:
                 frame = frames[frame_idx]
 
                 while self._paused.is_set() and self._running.is_set():
-                    time.sleep(0.01)
+                    if self._stop_event.wait(0.01):
+                        break
                     self._start_time += 0.01
-                if not self._running.is_set():
+                if self._stop_event.is_set() or not self._running.is_set():
                     finish_reason = self._stop_reason or "stopped"
                     break
 
@@ -447,7 +475,9 @@ class SyncPlayer:
                         )
 
                 if delay > 0:
-                    time.sleep(delay)
+                    if self._stop_event.wait(delay):
+                        finish_reason = self._stop_reason or "stopped"
+                        break
 
                 tgt = {
                     "jaw": float(frame["jaw_deg"]),
@@ -529,6 +559,10 @@ class SyncPlayer:
             servo_logger.logger.exception(f"PLAYBACK_ERROR | {exc}")
         finally:
             try:
+                if self._play_obj and (
+                    finish_reason == "error" or self._stop_event.is_set()
+                ):
+                    self._play_obj.stop()
                 if self._play_obj:
                     self._play_obj.wait_done()
                     servo_logger.log_audio_end()
@@ -548,8 +582,19 @@ class SyncPlayer:
                             f"HIGH_SKIP_RATE | {skip_percentage:.1f}% frames skipped"
                         )
 
-                self.hw.neutral()
-                servo_logger.end_session()
+                try:
+                    self.hw.neutral()
+                except Exception as neutral_exc:
+                    servo_logger.logger.error(f"SAFE_OUTPUTS_ERROR | {neutral_exc}")
+                finally:
+                    servo_logger.end_session()
+
+                if finish_reason == "error":
+                    self._advance_state("failed")
+                elif finish_reason == "completed":
+                    self._advance_state("completed")
+                else:
+                    self._advance_state("stopped")
 
                 with self._lock:
                     stop_reason = self._stop_reason
@@ -577,16 +622,24 @@ class SyncPlayer:
     # ---------------- Public API ----------------
     def play(self):
         if self._thread and self._thread.is_alive():
-            self.stop()
+            self.stop(reason="replace")
+        if self.state_machine.state is PlaybackState.ERROR:
+            self._advance_state("reset")
         # start fresh
         if hasattr(self, "_resume_from_ms"):
             delattr(self, "_resume_from_ms")
+        self._stop_event.clear()
+        with self._lock:
+            self._stop_reason = None
+        self.state_machine.transition("start")
         servo_logger.logger.info("PLAYBACK_START")
         self._thread = threading.Thread(target=self._runner, daemon=True)
         self._thread.start()
 
     def pause(self):
         if self._running.is_set() and not self._paused.is_set():
+            if not self._advance_state("pause"):
+                return
             self._paused.set()
             # compute current audio position (timeline elapsed)
             self._pause_pos_ms = int((time.time() - self._start_time) * 1000)
@@ -599,8 +652,13 @@ class SyncPlayer:
 
     def resume(self):
         if self._paused.is_set():
+            if not self._advance_state("resume"):
+                return
             # mark resume position and relaunch runner thread from there
             self._paused.clear()
+            self._stop_event.clear()
+            with self._lock:
+                self._stop_reason = None
             self._resume_from_ms = int(self._pause_pos_ms)
             servo_logger.logger.info(
                 f"PLAYBACK_RESUME | From: {self._resume_from_ms/1000.0:.3f}s"
@@ -616,11 +674,13 @@ class SyncPlayer:
 
     def stop(self, reason: str = "stop"):
         servo_logger.logger.info(f"PLAYBACK_STOP | reason={reason}")
+        self._advance_state("stop")
         with self._lock:
             self._stop_reason = reason
 
         self._running.clear()
         self._paused.clear()
+        self._stop_event.set()
 
         if self._play_obj:
             try:
@@ -629,12 +689,36 @@ class SyncPlayer:
                 servo_logger.logger.warning(f"AUDIO_STOP_ERROR | {e}")
 
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-            if self._thread.is_alive():
-                servo_logger.logger.warning(
-                    "THREAD_STOP_TIMEOUT | Thread did not stop cleanly"
-                )
+            if self._thread is not threading.current_thread():
+                self._thread.join()
+        if self.state_machine.state is PlaybackState.STOPPING:
+            self._advance_state("stopped")
         self.hw.neutral()
+        servo_logger.end_session()
+
+    def cleanup(self) -> None:
+        """Release runtime resources once without commanding servo positions."""
+        with self._cleanup_lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+
+        self._running.clear()
+        self._paused.clear()
+        self._stop_event.set()
+        if self._play_obj:
+            try:
+                self._play_obj.stop()
+            except Exception as exc:
+                servo_logger.logger.warning(f"AUDIO_CLEANUP_ERROR | {exc}")
+        if self._thread and self._thread.is_alive():
+            if self._thread is not threading.current_thread():
+                self._thread.join()
+        self._gaze_thread_running.clear()
+        if self._gaze_thread.is_alive():
+            self._gaze_thread.join(timeout=0.5)
+        self.gaze.stop()
+        self.hw.cleanup()
         servo_logger.end_session()
 
 
@@ -662,6 +746,14 @@ class SyncPlayer:
 
     # ---------------- Cleanup on object deletion ----------------
     def __del__(self):
+        try:
+            self._stop_event.set()
+            self._running.clear()
+            self._paused.clear()
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=2.0)
+        except Exception:
+            pass
         try:
             # stop gaze thread
             self._gaze_thread_running.clear()

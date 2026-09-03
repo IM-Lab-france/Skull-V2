@@ -1,0 +1,8 @@
+{
+  "metadata": {"name": "synthetic-timeline"},
+  "timeline": [
+    {"time": 0.0, "motors": {"neckYaw": -10, "eyeLeftYaw": 5, "jawOpening": 0}},
+    {"time": 0.5, "motors": {"neckYaw": 0, "eyeLeftYaw": 0, "eyeRightYaw": 10, "jawOpening": 50}},
+    {"time": 1.0, "motors": {"neckYaw": 10, "eyeLeftYaw": -5, "eyeRightYaw": 0, "jawOpening": 100}}
+  ]
+}

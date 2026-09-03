@@ -1,0 +1,25 @@
+# /etc/systemd/system/servo-sync.service
+[Unit]
+Description=Servo Sync Player (Skull-V2)
+After=network-online.target bluetooth.service
+Wants=network-online.target bluetooth.service
+
+[Service]
+Type=simple
+User=skull
+Group=skull
+WorkingDirectory=/opt/skull
+Environment=PYTHONUNBUFFERED=1
+Environment=VIRTUAL_ENV=/opt/skull/.venv
+Environment=PATH=/opt/skull/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+EnvironmentFile=-/opt/skull/config/bluetooth_device.env
+ExecStartPre=/bin/sh -c "if [ -n \"${PLAYLIST_BT_DEVICE_ADDR:-}\" ]; then /usr/bin/bluetoothctl connect \"${PLAYLIST_BT_DEVICE_ADDR}\" >/dev/null 2>&1 || true; fi"
+ExecStart=/opt/skull/.venv/bin/python /opt/skull/web_app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

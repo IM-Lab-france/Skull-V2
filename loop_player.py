@@ -9,6 +9,7 @@ Modifications:
 - No MP3/upload logic.
 - `replace_audio(...)` kept for backward compatibility; it ignores args and
   simply reloads the fixed WAV source.
+- Adds user-controlled volume via set_volume(volume, fade_ms).
 """
 
 from __future__ import annotations
@@ -60,9 +61,12 @@ class LoopPlayer:
         self._user_enabled: bool = False
         self._suppression_count: int = 0
 
-        # Volume/fade state
-        self._vol: float = 0.0  # current volume [0..1]
-        self._vol_target: float = 0.0  # target volume [0..1]
+        # User volume (0..1), separated from runtime fade volume
+        self._user_gain: float = 1.0  # <-- NEW: user-controlled volume
+
+        # Volume/fade runtime state
+        self._vol: float = 0.0  # current effective volume [0..1]
+        self._vol_target: float = 0.0  # target effective volume [0..1]
         self._fade_samples_left: int = 0
         self._fade_step: float = 0.0
 
@@ -116,6 +120,7 @@ class LoopPlayer:
                 return False
             self._user_enabled = enabled
             if not enabled:
+                # Disable → fade to 0, keep user_gain unchanged
                 self._set_fade(target=0.0, fade_ms=fade_ms)
         servo_logger.logger.info("LOOP_ENABLED=%s", enabled)
         return True
@@ -166,6 +171,21 @@ class LoopPlayer:
             self._cancel_resume_timer_locked()
             self._suppression_count = 0
 
+    def set_volume(self, volume: float, fade_ms: Optional[int] = None) -> None:
+        """
+        Adjust the user volume of the loop (0.0 = mute, 1.0 = full) with optional fade.
+        This does NOT toggle enable/disable; it sets the target gain used when playing.
+        """
+        with self._lock:
+            vol = max(0.0, min(1.0, float(volume)))
+            self._user_gain = vol
+            # If we are supposed to play now, fade towards user gain, else keep target at 0
+            target = vol if self._should_play_locked() else 0.0
+            self._set_fade(target=target, fade_ms=fade_ms)
+        servo_logger.logger.info(
+            "LOOP_VOLUME_SET | user_gain=%.3f | fade_ms=%s", self._user_gain, fade_ms
+        )
+
     def status(self) -> dict[str, Any]:
         """Expose current loop state for the API."""
         with self._lock:
@@ -186,7 +206,10 @@ class LoopPlayer:
                 "playing": playing,
                 "has_audio": self._loop is not None,
                 "filename": filename,
-                "volume": round(self._vol, 3),
+                "volume": round(self._vol, 3),  # effective current volume
+                "user_volume": round(
+                    self._user_gain, 3
+                ),  # configured target when playing
                 "fade_active": self._fade_samples_left > 0,
                 "resuming_in": resume_in,
                 "samplerate": self._sr,
@@ -250,8 +273,8 @@ class LoopPlayer:
         )
 
     def _update_fade_target_if_needed_locked(self) -> None:
-        target = 1.0 if self._should_play_locked() else 0.0
-        # Only reprogram a fade if the target meaningfully changes
+        # If should play, target is user gain; otherwise, target is 0
+        target = self._user_gain if self._should_play_locked() else 0.0
         if abs(self._vol_target - target) > 1e-6:
             self._set_fade(target=target, fade_ms=self.fade_ms)
 
@@ -271,7 +294,7 @@ class LoopPlayer:
         self._channels = int(data.shape[1])
         self._n = int(data.shape[0])
         self._pos = 0
-        # Reset fades to silent until enabled
+        # Reset fades to silent until enabled; keep user gain unchanged
         self._vol = 0.0
         self._vol_target = 0.0
         self._fade_samples_left = 0
@@ -331,7 +354,7 @@ class LoopPlayer:
             return
 
         with self._lock:
-            # Update fade target based on current state
+            # Update fade target based on current state (uses user gain)
             self._update_fade_target_if_needed_locked()
 
             n = self._n
@@ -342,7 +365,6 @@ class LoopPlayer:
             fade_step = self._fade_step
 
         # Prepare output (avoid allocations in hot path: outdata is provided)
-        # We'll fill outdata in segments, handling wrap-around without concatenation.
         frames_remaining = frames
         write_index = 0
 
@@ -355,24 +377,19 @@ class LoopPlayer:
             if fade_left > 0:
                 steps = take if take < fade_left else fade_left
                 # ramp for 'steps'
-                # note: create ramp with np.arange; lightweight for small blocks
                 ramp = vol + fade_step * np.arange(steps, dtype=np.float32)
-                # clamp
                 np.clip(ramp, 0.0, 1.0, out=ramp)
-                # first 'steps' samples: apply ramp
                 outdata[write_index : write_index + steps, :] = (
                     seg[:steps] * ramp[:, None]
                 )
                 vol = float(ramp[-1])
                 fade_left -= steps
-                # tail if any: constant at vol_target
                 if take > steps:
                     outdata[write_index + steps : write_index + take, :] = (
                         seg[steps:take] * vol_target
                     )
                     vol = float(vol_target)
                     fade_left = 0
-                # else: fully consumed by ramp
             else:
                 # Constant volume
                 outdata[write_index : write_index + take, :] = seg * vol

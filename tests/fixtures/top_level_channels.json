@@ -1,0 +1,6 @@
+{
+  "jaw_deg": [{"time": 0.0, "angle": 0}, {"time": 0.05, "angle": 100}],
+  "neckYaw": [{"time": 0.0, "angle": -10}, {"time": 0.05, "angle": 10}],
+  "eyeLeftYaw": [{"time": 0.0, "angle": 5}, {"time": 0.05, "angle": -5}],
+  "eyeRightYaw": [{"time": 0.0, "angle": 0}, {"time": 0.05, "angle": 10}]
+}
