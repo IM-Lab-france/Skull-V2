@@ -1,9 +1,9 @@
 # SKULL-08.7 — déploiement de la configuration
 
 - Date : 3 septembre 2026, Europe/Paris
-- Statut : `PARTIEL`
-- Portée : préparation locale du validateur, de la candidate parallèle et du
-  rollback ; aucun déploiement réel.
+- Statut : `VALIDÉ`
+- Portée : déploiement contrôlé de la configuration TOML sur la candidate
+  existante, avec vérification de santé, permissions et retour arrière.
 
 ## Validé localement
 
@@ -33,12 +33,23 @@
 - Sauvegarde de rollback :
   `/var/backups/skull/skull-08.7-deploy-5000-20260903-162934/`.
 
-## Limites restantes
+## Critères de clôture
+
+- L’ancien runtime a été observé avant migration, puis la candidate a démarré
+  avec la configuration TOML sans initialisation matérielle lors de la
+  validation.
+- Les tentatives de déploiement échouées ont restauré automatiquement la
+  candidate précédente ; la sauvegarde finale de rollback est présente et les
+  données legacy ont été conservées.
+- Après le déploiement final, le service est resté actif, `live` et `ready` ont
+  répondu HTTP 200, et `servo-sync.service` est resté inactif.
+
+## Hors périmètre de SKULL-08.7
 
 - Le lien final `/opt/skull/current` et l’unité indépendante de la version
-  appartiennent à `SKULL-10` ; ils n’ont pas été créés prématurément.
+  appartiennent à `SKULL-10` ; ils ne sont pas des critères de cette fiche.
 - L’unité candidate porte encore le nom legacy `skull-candidate.service` et
   conserve son chemin de travail historique ; l’adoption complète de TOML
   comme source runtime unique sera validée avec les releases de la phase 10.
 - La rotation réelle du secret fumée et la résolution DNS réelle restent
-  respectivement couvertes par `SKULL-08.5` et la phase réseau.
+  respectivement couvertes par les tâches `SKULL-08.5` et `SKULL-08.6`.

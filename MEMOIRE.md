@@ -334,6 +334,13 @@ session.
   `pulse_sink` sans preuve PulseAudio. Aucun scan, appairage, connexion,
   changement de sink ou accès matériel n’a été effectué. Preuve dans
   `evidence/SKULL-07.1/RESULT.md`.
+- `SKULL-08.7` est validée : la configuration TOML et ses permissions sont
+  installées sur la candidate du Skull (`5000`), les healthchecks `live` et
+  `ready` répondent 200, et `servo-sync.service` reste inactif. Les tentatives
+  échouées ont restauré la candidate précédente ; la sauvegarde de rollback et
+  les données legacy sont conservées. Le lien `/opt/skull/current` et l’unité
+  indépendante de la version restent volontairement réservés à la phase 10.
+  Preuve dans `evidence/SKULL-08.7/RESULT.md`.
 
 ## Reprise lors d’une prochaine session
 

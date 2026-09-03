@@ -223,7 +223,9 @@ Exécution atomique :
 - [ ] Remplacer le secret du webhook actuel.
 - [ ] Remplacer progressivement les IP codées en dur par du DNS interne.
 - [ ] Séparer code, configuration, données et logs.
-- [ ] `VALIDATION` Démarrer avec ancienne puis nouvelle configuration.
+- [x] `VALIDATION` Démarrer avec ancienne puis nouvelle configuration —
+  `SKULL-08.7` validée : candidate active sur `5000`, TOML et permissions
+  vérifiés, healthchecks `live`/`ready` à 200 et rollback disponible.
 
 ## 9. Sécuriser les API
 
@@ -284,9 +286,9 @@ Exécution atomique :
 
 ## Prochaine action
 
-`SKULL-08.7` a été déployée partiellement sur la candidate `5000` : la
-configuration TOML et les permissions sont installées, mais le lien final
-`/opt/skull/current` et l’unité indépendante de la version restent à traiter
-dans la phase 10. Les opérations DNS et rotation de secret restent dans leurs
-phases approuvées. Pour Luna, ne confier qu’un identifiant à la fois,
-conformément à [LUNA.md](LUNA.md).
+`SKULL-08.7` est validée sur la candidate `5000`. Le lien final
+`/opt/skull/current` et l’unité indépendante de la version restent dans la
+phase 10. `SKULL-08.5` et `SKULL-08.6` restent toutefois partielles ; la phase
+9 ne doit donc pas être lancée avant leur clôture ou une décision écrite dans
+`MEMOIRE.md`. Pour Luna, ne confier qu’un identifiant à la fois, conformément à
+[LUNA.md](LUNA.md).
