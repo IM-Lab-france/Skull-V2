@@ -8,12 +8,25 @@ opens a socket, or touches a Raspberry Pi.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from types import MappingProxyType
 from typing import Any, Mapping
 
 
 class ConfigurationError(ValueError):
     """A safe, actionable configuration error without echoed values."""
+
+
+_DNS_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def _dns_name(value: str, path: str) -> str:
+    if not value:
+        return value
+    normalized = value.rstrip(".")
+    if any(part == "" or not _DNS_LABEL.fullmatch(part) for part in normalized.split(".")):
+        _fail(path, "nom DNS interne attendu, pas une adresse IP ou URL")
+    return normalized.lower()
 
 
 @dataclass(frozen=True)
@@ -268,7 +281,7 @@ def validate_raw(raw: Mapping[str, Any]) -> SkullConfig:
         _fail("bluetooth.retry_initial_s", "ne peut pas dépasser retry_max_s")
 
     esp32 = raw["esp32"]
-    esp32_cfg = Esp32Config(_string(esp32["host"], "esp32.host"), _int(esp32["port"], "esp32.port", 1, 65535), _bool(esp32["enabled"], "esp32.enabled"), _string(esp32["fallback_host"], "esp32.fallback_host"))
+    esp32_cfg = Esp32Config(_dns_name(_string(esp32["host"], "esp32.host"), "esp32.host"), _int(esp32["port"], "esp32.port", 1, 65535), _bool(esp32["enabled"], "esp32.enabled"), _string(esp32["fallback_host"], "esp32.fallback_host"))
     if esp32_cfg.enabled and not esp32_cfg.host:
         _fail("esp32.host", "obligatoire quand esp32.enabled est vrai")
 
