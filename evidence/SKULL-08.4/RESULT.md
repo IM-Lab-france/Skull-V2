@@ -20,10 +20,15 @@
   écrites dans le candidat, le rapport ou les diagnostics.
 - Une ancienne IP ESP32 devient uniquement un fallback explicite et désactivé,
   avec un blocage demandant un nom DNS.
+- Le sélecteur runtime reconnaît `SKULL_RUNTIME_MODE` avant l’alias legacy
+  `SKULL_HARDWARE_MODE`, sans initialiser d’adaptateur.
 
 ## Vérifications
 
-- `python -m pytest -q tests/config` : `18 passed`.
+- `python -m pytest -q tests/config tests/test_configuration_examples.py` :
+  `32 passed`.
+- Après intégration de la phase 7, `python -m pytest -q` : `270 passed`, un
+  avertissement externe connu de `pydub/audioop`.
 - `python -m compileall -q config tests/config` : OK.
 - `python -m config.validate config/skull.example.toml` : OK, sortie redigée.
 - Scan ciblé des nouveaux fichiers : aucune URL ou affectation directe de
@@ -40,6 +45,6 @@
 
 ## Rollback local
 
-Les changements sont isolés dans `codex/phase8-skull-2026`. La branche phase 7
-reste indépendante ; l’intégration devra appliquer les commits phase 7 puis
-phase 8, avant la suite complète des tests.
+Les changements sont consolidés dans `codex/phase8-skull-2026` après intégration
+séquentielle de la phase 7 (`7d6652e`) puis de la phase 8 (`2769e86`, `02ce0cb`,
+`6182bf5`). La branche phase 7 reste conservée séparément pour rollback.

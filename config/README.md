@@ -35,3 +35,8 @@ par le service de déploiement historique. Pour la nouvelle configuration, seule
 les variables documentées par `config.loader.ENV_FIELDS` sont autorisées. Le
 webhook fumée reste fourni hors Git par une référence `env:` ou `file:` ; aucune
 URL et aucun secret ne sont fournis ici.
+
+Le sélecteur runtime accepte désormais `SKULL_RUNTIME_MODE` en priorité, avec
+`SKULL_HARDWARE_MODE` conservé comme alias de coexistence. La sélection du mode
+ne construit aucun adaptateur et le mode simulé reste soumis à une valeur
+d’environnement explicite.
