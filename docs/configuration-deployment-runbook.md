@@ -44,6 +44,12 @@ sources legacy ni les données de lecture pour revenir en arrière.
 
 ## État actuel
 
-Le schéma, la migration et le validateur sont validés localement. Aucun chemin
-`/etc/skull`, service systemd, Raspberry Pi ou matériel réel n’a été écrit ou
-redémarré ; le déploiement reste en attente d’une autorisation distincte.
+Le schéma, la migration et le validateur sont validés. Après confirmation,
+`/etc/skull/config.toml` et le fichier de référence de secrets ont été installés
+sur le Raspberry ; la candidate existante a été redémarrée sur le port 5000 et
+ses healthchecks live/ready ont répondu HTTP 200. Le rollback est conservé sous
+`/var/backups/skull/skull-08.7-deploy-5000-20260903-162934/`.
+
+Le lien final `/opt/skull/current` et l’unité indépendante de la version sont
+explicitement reportés à la phase 10. La rotation du secret et la validation
+DNS réelle restent hors de ce déploiement.

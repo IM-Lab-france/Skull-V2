@@ -284,6 +284,9 @@ Exécution atomique :
 
 ## Prochaine action
 
-La prochaine action est `SKULL-07.2`, dans une exécution séparée. Pour Luna, ne
-confier qu’un identifiant à la fois, conformément à
-[LUNA.md](LUNA.md).
+`SKULL-08.7` a été déployée partiellement sur la candidate `5000` : la
+configuration TOML et les permissions sont installées, mais le lien final
+`/opt/skull/current` et l’unité indépendante de la version restent à traiter
+dans la phase 10. Les opérations DNS et rotation de secret restent dans leurs
+phases approuvées. Pour Luna, ne confier qu’un identifiant à la fois,
+conformément à [LUNA.md](LUNA.md).
