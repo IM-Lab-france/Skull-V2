@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +97,7 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
     if report_path is not None and Path(report_path).exists():
         raise ConfigurationError("Migration legacy: le rapport cible existe déjà")
     raw = {section: dict(values) for section, values in DEFAULT_RAW.items()}
-    report: dict[str, Any] = {"converted": [], "redacted": [], "unknown": [], "errors": []}
+    report: dict[str, Any] = {"converted": [], "redacted": [], "unknown": [], "blocking": [], "errors": []}
 
     channels = _load_json(source / "channels_state.json", report)
     if isinstance(channels, dict):
@@ -118,12 +119,37 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
 
     esp32 = _load_json(source / "esp32_settings.json", report)
     if isinstance(esp32, dict):
+        legacy_ip = False
         for key in ("host", "port", "enabled"):
             if key in esp32:
-                raw["esp32"][key] = esp32[key]
-                report["converted"].append(f"esp32.{key}")
+                if key == "host" and isinstance(esp32[key], str):
+                    try:
+                        ipaddress.ip_address(esp32[key])
+                    except ValueError:
+                        raw["esp32"][key] = esp32[key]
+                        report["converted"].append("esp32.host")
+                    else:
+                        legacy_ip = True
+                        raw["esp32"]["fallback_host"] = esp32[key]
+                        raw["esp32"]["host"] = ""
+                        raw["esp32"]["enabled"] = False
+                        report["converted"].append("esp32.fallback_host")
+                        report["blocking"].append("esp32.host: nom DNS requis avant activation")
+                elif key in {"port", "enabled"}:
+                    if not (key == "enabled" and legacy_ip):
+                        raw["esp32"][key] = esp32[key]
+                    report["converted"].append(f"esp32.{key}")
+                else:
+                    report["unknown"].append(f"esp32.{key}")
+        report["unknown"].extend(f"esp32.{key}" for key in sorted(set(esp32) - {"host", "port", "enabled"}))
+
+    for filename, namespace in (("esp32_button_categories.json", "button_categories"), ("session_categories.json", "session_categories")):
+        legacy = _load_json(source / filename, report)
+        if legacy is not None:
+            report["unknown"].append(f"{namespace}: destination absente du schéma phase 8")
 
     env = _load_env(source / "bluetooth_device.env", report)
+    env.update(_load_env(source / ".env", report))
     if "PLAYLIST_BT_DEVICE_ADDR" in env:
         raw["bluetooth"]["address"] = env["PLAYLIST_BT_DEVICE_ADDR"]
         report["converted"].append("bluetooth.address")
@@ -138,6 +164,7 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
     report["converted"].sort()
     report["redacted"].sort()
     report["unknown"].sort()
+    report["blocking"].sort()
     report["errors"].sort()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_render_toml(raw), encoding="utf-8", newline="\n")

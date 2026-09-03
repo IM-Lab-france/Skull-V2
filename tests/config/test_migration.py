@@ -42,3 +42,16 @@ def test_conversion_does_not_overwrite_existing_target(tmp_path) -> None:
     with pytest.raises(ConfigurationError, match="existe déjà"):
         convert_legacy_config(source, target)
     assert target.read_text(encoding="utf-8") == "keep"
+
+
+def test_legacy_ip_is_only_an_explicit_disabled_fallback(tmp_path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "esp32_settings.json").write_text(json.dumps({"host": "192.0.2.10", "port": 80, "enabled": True}), encoding="utf-8")
+    output = tmp_path / "candidate.toml"
+    report = convert_legacy_config(source, output)
+    text = output.read_text(encoding="utf-8")
+    assert 'host = ""' in text
+    assert 'fallback_host = "192.0.2.10"' in text
+    assert "enabled = false" in text
+    assert report["blocking"] == ["esp32.host: nom DNS requis avant activation"]
