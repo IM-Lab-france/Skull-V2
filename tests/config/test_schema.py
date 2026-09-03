@@ -74,3 +74,10 @@ def test_precedence_is_args_then_environment_then_file_then_defaults(tmp_path) -
 def test_maintenance_args_cannot_change_hardware(tmp_path) -> None:
     with pytest.raises(ConfigurationError, match="argument de maintenance interdit"):
         load_config(environ={}, maintenance_args={"hardware.frequency_hz": 400})
+
+
+def test_esp32_rejects_literal_ip_in_primary_endpoint(tmp_path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[esp32]\nhost = "192.0.2.10"\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="esp32.host"):
+        load_config(path, environ={})
