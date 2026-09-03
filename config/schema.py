@@ -7,7 +7,7 @@ opens a socket, or touches a Raspberry Pi.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import ipaddress
 import re
 from types import MappingProxyType
@@ -63,7 +63,7 @@ class ServoConfig:
 class HardwareConfig:
     pca9685_address: int = 0x40
     frequency_hz: int = 50
-    servos: Mapping[str, ServoConfig] = MappingProxyType({})
+    servos: Mapping[str, ServoConfig] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True)
