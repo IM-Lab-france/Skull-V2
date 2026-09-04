@@ -19,28 +19,35 @@ Sans ces confirmations, l’état reste `BLOQUÉ` et aucune écriture n’est fa
 ## Cibles
 
 - Producteur : Skull, déclenchement nommé `Accueil`.
-- Consommateur : service domotique derrière la référence webhook existante.
+- Consommateur : service domotique fumée, à distinguer de l’automatisation
+  `Sonnette` existante.
 - Configuration Skull : référence `smoke.endpoint_ref` dans
   `/etc/skull/config.toml`.
 - Secret : fournisseur `env:` ou fichier distinct `/etc/skull/secrets.env`,
   lisible uniquement par le compte de service.
 
+L’automatisation Home Assistant `Sonnette` et son action actuelle ne sont pas
+modifiées par `SKULL-08.5`. La gestion configurable des événements et actions,
+par exemple bouton → webhook fumée, relève de la phase 13.
+
 ## Séquence contrôlée
 
 1. Sauvegarder uniquement la configuration et les permissions, sans recopier
    la valeur du secret dans Git, les logs ou le chat.
-2. Préparer le consommateur domotique pour la double acceptation.
-3. Vérifier son état depuis son interface approuvée, sans afficher les
+2. Identifier le consommateur fumée, sans utiliser automatiquement le webhook
+   `Sonnette` comme substitut.
+3. Préparer ce consommateur pour la double acceptation.
+4. Vérifier son état depuis son interface approuvée, sans afficher les
    secrets.
-4. Installer la nouvelle référence côté Skull avec le propriétaire et le
+5. Installer la nouvelle référence côté Skull avec le propriétaire et le
    mode minimaux.
-5. Valider la configuration sans initialiser le matériel, puis redémarrer le
+6. Valider la configuration sans initialiser le matériel, puis redémarrer le
    service dans une fenêtre approuvée.
-6. Déclencher une seule session `Accueil` de test et vérifier l’événement côté
+7. Déclencher une seule session `Accueil` de test et vérifier l’événement côté
    domotique ; ne pas confondre réponse HTTP et effet physique fumée.
-7. Retirer l’ancienne acceptation côté consommateur et vérifier qu’elle est
+8. Retirer l’ancienne acceptation côté consommateur et vérifier qu’elle est
    refusée, puis vérifier que la nouvelle reste acceptée.
-8. Rechercher l’ancien identifiant dans les emplacements approuvés sans
+9. Rechercher l’ancien identifiant dans les emplacements approuvés sans
    imprimer sa valeur.
 
 ## Rollback

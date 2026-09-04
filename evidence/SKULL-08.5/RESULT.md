@@ -46,10 +46,11 @@ service Home Assistant n’est pas exposé directement sur `8123` mais passe par
 le proxy web.
 
 L’interface Home Assistant expose une automatisation `Sonnette` avec un
-déclencheur webhook local-only et une action `Lampe Bureau`. L’ancien endpoint
-du Skull ne peut pas être remplacé automatiquement : la cible observée est une
-action de sonnette, pas une action fumée. Une confirmation de périmètre est
-nécessaire avant toute modification afin de ne pas casser la sonnette.
+déclencheur webhook local-only et une action `Lampe Bureau`. Cette
+automatisation est explicitement hors périmètre de `SKULL-08.5` et ne doit pas
+être reconfigurée. L’ancien endpoint du Skull ne peut donc pas être utilisé
+comme preuve d’un consommateur fumée ; la gestion configurable événement →
+action, dont bouton → webhook fumée, est reportée à la phase 13.
 
 Le relevé distant en lecture seule du 3 septembre 2026 confirme que
 `/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
@@ -59,11 +60,13 @@ secret généré hors chat et la fenêtre de test ne sont donc pas établis.
 
 Pour débloquer cette fiche, il faut confirmer séparément :
 
-1. confirmer si le webhook `Sonnette`/`Lampe Bureau` est bien la cible à
-   traiter, ou indiquer l’automatisation fumée correcte ;
-2. préparer l’acceptation temporaire de l’ancien et du nouveau secret ;
+1. identifier un consommateur fumée distinct, sans modifier `Sonnette` ;
+2. préparer l’acceptation temporaire de l’ancien et du nouveau secret pour ce
+   consommateur ;
 3. générer et stocker le nouveau secret hors chat, dépôt Git et historique
-   shell, puis confirmer la fenêtre de test et le rollback.
+   shell, puis confirmer la fenêtre de test et le rollback ;
+4. déployer, tester ancien/nouveau, retirer l’ancien identifiant et vérifier
+   le rollback.
 
 ## Vérifications
 

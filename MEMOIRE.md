@@ -342,6 +342,10 @@ session.
   les données legacy sont conservées. Le lien `/opt/skull/current` et l’unité
   indépendante de la version restent volontairement réservés à la phase 10.
   Preuve dans `evidence/SKULL-08.7/RESULT.md`.
+- Décision du 4 septembre 2026 : `SKULL-08.5` ne reconfigure pas
+  l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
+  `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →
+  action, dont bouton → webhook fumée, sera traité en phase 13.
 
 ## Reprise lors d’une prochaine session
 
