@@ -366,6 +366,13 @@ session.
 - `SKULL-08.5` est annulée le 4 septembre 2026 : aucune rotation de secret et
   aucune modification de la sonnette ne seront faites dans cette fiche. La
   gestion configurable événement → action est suivie en phase 13.
+- `SKULL-08.4` est partielle le 4 septembre 2026 : la conversion d’une copie de
+  l’archive réelle legacy produit 13 entrées, sans erreur ni clé inconnue, avec
+  idempotence et protection contre l’écrasement vérifiées. L’alias `neck` est
+  converti vers `neck_pan`. Les deux JSON de catégories n’ont pas de destination
+  dans le schéma phase 8 et l’hôte historique de l’ESP32 reste bloqué jusqu’à
+  définition d’un nom DNS. Les sources et l’archive n’ont pas été modifiées et
+  aucun secret n’a été copié. Preuve dans `evidence/SKULL-08.4/RESULT.md`.
 
 ## Reprise lors d’une prochaine session
 

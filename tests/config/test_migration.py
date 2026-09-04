@@ -55,3 +55,28 @@ def test_legacy_ip_is_only_an_explicit_disabled_fallback(tmp_path) -> None:
     assert 'fallback_host = "192.0.2.10"' in text
     assert "enabled = false" in text
     assert report["blocking"] == ["esp32.host: nom DNS requis avant activation"]
+
+
+def test_legacy_neck_alias_is_converted_and_unmapped_json_is_blocking(tmp_path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "channels_state.json").write_text(
+        json.dumps({"neck": False}), encoding="utf-8"
+    )
+    (source / "esp32_button_categories.json").write_text(
+        json.dumps({"assignments": ["Accueil"]}), encoding="utf-8"
+    )
+    (source / "session_categories.json").write_text(
+        json.dumps({"categories": ["adulte"], "sessions": {}}), encoding="utf-8"
+    )
+
+    output = tmp_path / "candidate.toml"
+    report = convert_legacy_config(source, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert "channels.neck" in report["converted"]
+    assert "enabled = false" in text
+    assert report["blocking"] == [
+        "button_categories: destination absente du schéma phase 8",
+        "session_categories: destination absente du schéma phase 8",
+    ]

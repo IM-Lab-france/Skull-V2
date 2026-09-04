@@ -1,50 +1,68 @@
-# SKULL-08.4 — configuration et migration legacy
+# SKULL-08.4 — importer la configuration legacy
 
-- Date : 3 septembre 2026, Europe/Paris
-- Statut local : `PARTIEL`
-- Portée : inventaire, schéma TOML, précédence, migration locale et références
-  de secrets ; aucun Raspberry, service distant, DNS ou réseau sollicité.
+- Date : 4 septembre 2026, Europe/Paris
+- Statut : `PARTIEL`
+- Portée : conversion locale en lecture seule d’une copie de l’archive de
+  configuration legacy ; aucun accès au Raspberry, service, DNS, Bluetooth,
+  ESP32, sonnette ou réseau n’a été exécuté.
 
-## Validé localement
+## Résultat
 
-- Les sections `runtime`, `http`, `hardware`, `audio`, `bluetooth`, `esp32`,
-  `smoke`, `storage`, `logging` et `security` sont typées et immuables après
-  chargement.
-- Les clés inconnues, types invalides, plages invalides et contraintes servo
-  incohérentes sont refusés avant toute initialisation matérielle.
-- La précédence est unique : arguments de maintenance autorisés, variables
-  d’environnement documentées, TOML, puis défauts sûrs.
-- Le convertisseur lit les JSON et `.env` legacy sans les modifier, refuse une
-  cible existante, produit un TOML déterministe et signale les clés inconnues.
-- Les valeurs de webhook sont converties en référence et ne sont jamais
-  écrites dans le candidat, le rapport ou les diagnostics.
-- Une ancienne IP ESP32 devient uniquement un fallback explicite et désactivé,
-  avec un blocage demandant un nom DNS.
-- Le sélecteur runtime reconnaît `SKULL_RUNTIME_MODE` avant l’alias legacy
-  `SKULL_HARDWARE_MODE`, sans initialiser d’adaptateur.
+Le convertisseur séparé `config/migrate_legacy.py` lit les anciens JSON et
+fichiers dotenv, produit un TOML candidat déterministe et un rapport JSON. Il
+refuse toute cible déjà présente et ne modifie ni ne supprime les sources.
 
-## Vérifications
+Sur la copie extraite de l’archive locale `backups/SKULL-01.3/skull-runtime.tar.gz` :
 
-- `python -m pytest -q tests/config tests/test_configuration_examples.py` :
-  `32 passed`.
-- Après intégration de la phase 7, `python -m pytest -q` : `270 passed`, un
-  avertissement externe connu de `pydub/audioop`.
+- 13 entrées converties ;
+- 0 valeur redigée ;
+- 0 clé inconnue ;
+- 3 blocages explicitement rapportés ;
+- 0 erreur de lecture ou de validation.
+
+La compatibilité legacy `neck` est convertie vers la clé cible `neck_pan`.
+Les deux fichiers de catégories sont conservés comme blocages explicites car le
+schéma phase 8 ne définit pas encore leur destination :
+
+- `button_categories: destination absente du schéma phase 8` ;
+- `session_categories: destination absente du schéma phase 8`.
+
+L’adresse historique de l’ESP32 est conservée uniquement comme fallback
+désactivé ; son activation reste bloquée tant qu’un nom DNS n’est pas défini :
+
+- `esp32.host: nom DNS requis avant activation`.
+
+Aucune valeur secrète n’a été copiée dans le TOML, le rapport, les tests ou la
+preuve. Le webhook n’a pas été rotaté : `SKULL-08.5` est annulée et son modèle
+événement → action est reporté à la phase 13.
+
+## Vérifications d’acceptation
+
+- Conversion effectuée sur une copie extraite ; l’archive et les sources
+  legacy originales sont restées intactes.
+- Idempotence vérifiée : les deux TOML candidats sont identiques et les deux
+  rapports sont identiques.
+- Non-écrasement vérifié : une cible préexistante provoque une sortie 1 et son
+  contenu `KEEP` est conservé.
+- `python -m pytest -q tests/config` : `33 passed` ; avec
+  `tests/test_configuration_examples.py`, `36 passed`.
+- `python -m pytest -q` : `271 passed`, 1 avertissement externe connu lié à
+  `pydub/audioop`.
 - `python -m compileall -q config tests/config` : OK.
 - `python -m config.validate config/skull.example.toml` : OK, sortie redigée.
-- Scan ciblé des nouveaux fichiers : aucune URL ou affectation directe de
-  secret.
+- `git diff --check` : OK, avec seulement les avertissements Git de conversion
+  de fins de ligne Windows.
+- Contrôle du diff : 0 URL HTTP complète, 0 ligne d’affectation de secret et
+  aucune valeur secrète affichée.
 
-## Restant / blocages contrôlés
+## Limites et rollback
 
-- `SKULL-08.5` : la rotation du secret fumée et le test ancien/nouveau restent
-  bloqués jusqu’à confirmation explicite et accès au consommateur domotique.
-- `SKULL-08.6` : aucun enregistrement DNS n’est créé dans cette phase ; la
-  résolution réelle et les ACL restent à valider pendant la phase réseau.
-- `SKULL-08.7` : aucune écriture sous `/etc/skull`, permission réelle,
-  redémarrage ou rollback de service n’est exécuté.
+La tâche ne peut pas être déclarée complète tant que les deux destinations de
+catégories ne sont pas décidées et que le nom DNS de l’ESP32 n’est pas défini.
+Cette preuve ne valide donc ni l’activation runtime de l’ESP32 ni une migration
+de production.
 
-## Rollback local
-
-Les changements sont consolidés dans `codex/phase8-skull-2026` après intégration
-séquentielle de la phase 7 (`7d6652e`) puis de la phase 8 (`2769e86`, `02ce0cb`,
-`6182bf5`). La branche phase 7 reste conservée séparément pour rollback.
+Le rollback est assuré localement par la sélection de l’ancien chargeur et par
+la conservation des sources legacy. Aucun état distant n’a changé. Les
+modifications locales sont limitées au convertisseur, à son test et aux fichiers
+de pilotage de cette tâche.

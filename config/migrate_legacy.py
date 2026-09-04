@@ -17,6 +17,7 @@ LEGACY_JSON = {
     "esp32_button_categories.json": "button_categories",
     "session_categories.json": "session_categories",
 }
+SERVO_ALIASES = {"neck": "neck_pan"}
 
 
 def _load_json(path: Path, report: dict[str, Any]) -> Any:
@@ -102,8 +103,9 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
     channels = _load_json(source / "channels_state.json", report)
     if isinstance(channels, dict):
         for name, enabled in channels.items():
-            if name in raw["hardware"]["servos"] and isinstance(enabled, bool):
-                raw["hardware"]["servos"][name] = dict(raw["hardware"]["servos"][name], enabled=enabled)
+            target_name = SERVO_ALIASES.get(name, name)
+            if target_name in raw["hardware"]["servos"] and isinstance(enabled, bool):
+                raw["hardware"]["servos"][target_name] = dict(raw["hardware"]["servos"][target_name], enabled=enabled)
                 report["converted"].append(f"channels.{name}")
             else:
                 report["unknown"].append(f"channels.{name}")
@@ -111,8 +113,9 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
     offsets = _load_json(source / "pitch_offsets.json", report)
     if isinstance(offsets, dict):
         for name, offset in offsets.items():
-            if name in raw["hardware"]["servos"] and isinstance(offset, (int, float)) and not isinstance(offset, bool):
-                raw["hardware"]["servos"][name] = dict(raw["hardware"]["servos"][name], offset_deg=float(offset))
+            target_name = SERVO_ALIASES.get(name, name)
+            if target_name in raw["hardware"]["servos"] and isinstance(offset, (int, float)) and not isinstance(offset, bool):
+                raw["hardware"]["servos"][target_name] = dict(raw["hardware"]["servos"][target_name], offset_deg=float(offset))
                 report["converted"].append(f"pitch_offsets.{name}")
             else:
                 report["unknown"].append(f"pitch_offsets.{name}")
@@ -146,7 +149,7 @@ def convert_legacy_config(legacy_dir: str | Path, output_path: str | Path, repor
     for filename, namespace in (("esp32_button_categories.json", "button_categories"), ("session_categories.json", "session_categories")):
         legacy = _load_json(source / filename, report)
         if legacy is not None:
-            report["unknown"].append(f"{namespace}: destination absente du schéma phase 8")
+            report["blocking"].append(f"{namespace}: destination absente du schéma phase 8")
 
     env = _load_env(source / "bluetooth_device.env", report)
     env.update(_load_env(source / ".env", report))

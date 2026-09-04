@@ -229,7 +229,10 @@ Exécution atomique :
   validée : arguments de maintenance, environnement explicite, TOML puis
   défauts sûrs ; collisions et provenance testées ; preuve dans
   `evidence/SKULL-08.3/RESULT.md`.
-- [ ] Importer automatiquement les anciens JSON et `.env`.
+- [~] Importer automatiquement les anciens JSON et `.env` — `SKULL-08.4`
+  partielle : conversion réelle et idempotence validées, mais deux destinations
+  de catégories absentes du schéma et l’ancien hôte ESP32 sans DNS restent
+  bloquants ; preuve dans `evidence/SKULL-08.4/RESULT.md`.
 - [ ] Sortir le webhook fumée du code source.
 - [~] Remplacer le secret du webhook actuel — `SKULL-08.5` annulée : aucune
   reconfiguration de la sonnette ; la liaison événement → action fumée est
@@ -312,13 +315,13 @@ Exécution atomique :
 
 ## Prochaine action
 
-`SKULL-08.1`, `SKULL-08.2` et `SKULL-08.3` sont validées : l’inventaire
-clé-par-clé, la validation typée avant initialisation matérielle et la
-précédence unique sont consignés dans les preuves correspondantes. La
-prochaine tâche autorisée est `SKULL-08.4`. `SKULL-08.5` est `ANNULÉE` : aucune
-reconfiguration de la sonnette ni rotation de son webhook. La gestion
-configurable événement → action, dont bouton → webhook fumée, est inscrite en
-phase 13.
+`SKULL-08.1`, `SKULL-08.2` et `SKULL-08.3` sont validées. `SKULL-08.4` est
+`PARTIELLE` : la conversion locale, l’idempotence et le non-écrasement sont
+prouvés, mais les deux destinations de catégories et le nom DNS de l’ESP32
+restent à décider. `SKULL-08.5` est `ANNULÉE` : aucune reconfiguration de la
+sonnette ni rotation de son webhook. La gestion configurable événement → action,
+dont bouton → webhook fumée, est inscrite en phase 13. La prochaine tâche
+candidate est `SKULL-08.6` après traitement ou décision écrite sur ces blocages.
 Le lien final
 `/opt/skull/current` et l’unité indépendante de la version restent dans la
 phase 10. `SKULL-08.6` reste toutefois partielle ; la phase
