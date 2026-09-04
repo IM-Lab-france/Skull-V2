@@ -1,0 +1,4 @@
+# Dependances directes de playlist_web.py (Python 3.11 / ARM64)
+Flask
+gunicorn==22.0.0
+requests

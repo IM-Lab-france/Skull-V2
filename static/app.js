@@ -112,6 +112,17 @@ const elBtTopStatusText = document.getElementById("bluetoothTopStatusText");
 const elBtScanBtn = document.getElementById("btScanBtn");
 const elBtDeviceSelect = document.getElementById("btDeviceSelect");
 const elBtPairBtn = document.getElementById("btPairBtn");
+const elBtTrustBtn = document.getElementById("btTrustBtn");
+const elBtConnectBtn = document.getElementById("btConnectBtn");
+const elBtSelectOutputBtn = document.getElementById("btSelectOutputBtn");
+const elBtTestAudioBtn = document.getElementById("btTestAudioBtn");
+const elBtOperationStatus = document.getElementById("btOperationStatus");
+const elBtStateDiscovered = document.getElementById("btStateDiscovered");
+const elBtStatePaired = document.getElementById("btStatePaired");
+const elBtStateTrusted = document.getElementById("btStateTrusted");
+const elBtStateConnected = document.getElementById("btStateConnected");
+const elBtStateAudio = document.getElementById("btStateAudio");
+const elBtStatePulse = document.getElementById("btStatePulse");
 
 const elShuffleAllBtn = document.getElementById("shuffleAllBtn");
 
@@ -258,14 +269,57 @@ let loopVolumeDebounce = null;
 
 // -------------------- Bluetooth pairing helpers --------------------
 let btScanBusy = false;
+let btOperationBusy = false;
+let bluetoothUiState = null;
+
+function btFlag(value) {
+  if (value === true) return "oui";
+  if (value === false) return "non";
+  return "inconnu";
+}
+
+function selectedBtAddress() {
+  return elBtDeviceSelect && elBtDeviceSelect.value
+    ? elBtDeviceSelect.value
+    : "";
+}
+
+function renderBluetoothUiState(state) {
+  bluetoothUiState = state && typeof state === "object" ? state : null;
+  const current = bluetoothUiState || {};
+  if (elBtStateDiscovered) elBtStateDiscovered.textContent = btFlag(current.discovered);
+  if (elBtStatePaired) elBtStatePaired.textContent = btFlag(current.paired);
+  if (elBtStateTrusted) elBtStateTrusted.textContent = btFlag(current.trusted);
+  if (elBtStateConnected) elBtStateConnected.textContent = btFlag(current.connected);
+  if (elBtStateAudio) elBtStateAudio.textContent = btFlag(current.audio_sink_capable);
+  if (elBtStatePulse) {
+    const pulse = current.pulse_sink || "inconnu";
+    elBtStatePulse.textContent = current.fallback_used
+      ? `${pulse} (secours explicite)`
+      : pulse;
+  }
+
+  const hasAddress = !!selectedBtAddress();
+  const paired = current.paired === true;
+  const trusted = current.trusted === true;
+  const connected = current.connected === true;
+  const audioReady = current.audio_sink_capable === true && !!current.pulse_sink;
+  const busy = btScanBusy || btOperationBusy;
+  if (elBtPairBtn) elBtPairBtn.disabled = busy || !hasAddress || paired;
+  if (elBtTrustBtn) elBtTrustBtn.disabled = busy || !hasAddress || !paired || trusted;
+  if (elBtConnectBtn) elBtConnectBtn.disabled = busy || !hasAddress || !paired || !trusted || connected;
+  if (elBtSelectOutputBtn) {
+    elBtSelectOutputBtn.disabled =
+      busy || !hasAddress || !connected || current.audio_sink_capable !== true;
+  }
+  if (elBtTestAudioBtn) elBtTestAudioBtn.disabled = busy || !hasAddress || !connected || !audioReady;
+}
 
 function setBtUiBusy(busy) {
   btScanBusy = !!busy;
   if (elBtScanBtn) elBtScanBtn.disabled = !!busy;
   if (elBtDeviceSelect) elBtDeviceSelect.disabled = !!busy;
-  if (elBtPairBtn)
-    elBtPairBtn.disabled =
-      !!busy || !(elBtDeviceSelect && elBtDeviceSelect.value);
+  renderBluetoothUiState(bluetoothUiState);
 }
 
 function populateBtDevicesList(devices) {
@@ -281,8 +335,19 @@ function populateBtDevicesList(devices) {
     opt.textContent = `${name} — ${mac}`;
     elBtDeviceSelect.appendChild(opt);
   });
+  bluetoothUiState = elBtDeviceSelect.value
+    ? {
+        address: elBtDeviceSelect.value,
+        discovered: true,
+        paired: null,
+        trusted: null,
+        connected: null,
+        audio_sink_capable: null,
+        pulse_sink: null,
+      }
+    : null;
   if (elBtPairBtn) {
-    elBtPairBtn.disabled = !elBtDeviceSelect.value;
+    renderBluetoothUiState(bluetoothUiState);
   }
 }
 
@@ -290,12 +355,17 @@ async function scanBtDevices() {
   if (!elBtScanBtn) return;
   setBtUiBusy(true);
   try {
-    const res = await fetch("/scan", { method: "POST" });
+    const res = await fetch("/bluetooth/scan", { method: "POST" });
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || `HTTP ${res.status}`);
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(
+        payload && payload.error && payload.error.message
+          ? payload.error.message
+          : `HTTP ${res.status}`
+      );
     }
-    const devices = await res.json();
+    const payload = await res.json();
+    const devices = payload && Array.isArray(payload.devices) ? payload.devices : [];
     populateBtDevicesList(devices);
     const count = Array.isArray(devices) ? devices.length : 0;
     toast(
@@ -309,28 +379,40 @@ async function scanBtDevices() {
 }
 
 async function pairBtSelected() {
-  if (!elBtDeviceSelect || !elBtDeviceSelect.value) return;
-  const mac = elBtDeviceSelect.value;
-  setBtUiBusy(true);
+  const mac = selectedBtAddress();
+  if (!mac) return;
+  await runBluetoothOperation("pair", { address: mac });
+}
+
+async function runBluetoothOperation(operation, body) {
+  if (btOperationBusy) return;
+  btOperationBusy = true;
+  renderBluetoothUiState(bluetoothUiState);
   try {
-    const res = await fetch("/pair", {
+    const res = await fetch(`/bluetooth/${operation}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mac }),
+      body: JSON.stringify(body),
     });
     const payload = await res.json().catch(() => ({}));
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "state")) {
+      renderBluetoothUiState(payload.state);
+      applyBluetoothStatus(payload.state);
+    }
     if (!res.ok) {
-      const msg =
-        (payload && (payload.error || payload.message)) || `HTTP ${res.status}`;
+      const msg = payload && payload.error && payload.error.message
+        ? payload.error.message
+        : `HTTP ${res.status}`;
       throw new Error(msg);
     }
-    toast(`Appairage demandé pour ${mac}`);
-    // Rafraîchir le statut global (mettra à jour l'état Bluetooth)
-    updateStatus();
+    toast(`${operation} Bluetooth terminé`);
   } catch (e) {
-    toast(`Échec appairage: ${e && e.message ? e.message : e}`, true);
+    const message = e && e.message ? e.message : "Opération Bluetooth impossible";
+    if (elBtOperationStatus) elBtOperationStatus.textContent = message;
+    toast(`Échec ${operation} Bluetooth: ${message}`, true);
   } finally {
-    setBtUiBusy(false);
+    btOperationBusy = false;
+    renderBluetoothUiState(bluetoothUiState);
   }
 }
 
@@ -990,14 +1072,52 @@ elBtScanBtn?.addEventListener("click", () => {
 });
 
 elBtDeviceSelect?.addEventListener("change", () => {
-  if (elBtPairBtn) {
-    elBtPairBtn.disabled = !elBtDeviceSelect.value || btScanBusy;
-  }
+  bluetoothUiState = elBtDeviceSelect.value
+    ? {
+        address: elBtDeviceSelect.value,
+        discovered: true,
+        paired: null,
+        trusted: null,
+        connected: null,
+        audio_sink_capable: null,
+        pulse_sink: null,
+      }
+    : null;
+  renderBluetoothUiState(bluetoothUiState);
 });
 
 elBtPairBtn?.addEventListener("click", () => {
   if (!btScanBusy) pairBtSelected();
 });
+
+elBtTrustBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("trust", { address });
+});
+
+elBtConnectBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("connect", { address });
+});
+
+elBtSelectOutputBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) runBluetoothOperation("select-output", { address });
+});
+
+elBtTestAudioBtn?.addEventListener("click", () => {
+  const address = selectedBtAddress();
+  if (!btScanBusy && address) {
+    runBluetoothOperation("test-audio", {
+      address,
+      confirm: true,
+      duration_ms: 500,
+      volume: 5,
+    });
+  }
+});
+
+renderBluetoothUiState(null);
 
 const deleteButtonDefaultLabel =
   elDeleteSession?.textContent || "Supprimer la session";
@@ -2506,7 +2626,17 @@ function applyBluetoothStatus(info) {
   let sliderTarget = null;
 
   if (info && typeof info === "object") {
-    if (info.connected === true) {
+    const connectionState = info.connection_state || "unknown";
+    if (connectionState === "reconnecting") {
+      statusClass += " is-connecting";
+      text = "Bluetooth : reconnexion en cours";
+      topState = "connecting";
+    } else if (connectionState === "degraded") {
+      statusClass += " is-degraded";
+      text = "Bluetooth : état dégradé";
+      topState = "degraded";
+      if (info.connected !== true) sliderTarget = 0;
+    } else if (info.connected === true) {
       statusClass += " is-connected";
 
       let volumeSuffix = "";
@@ -2521,7 +2651,10 @@ function applyBluetoothStatus(info) {
         sliderTarget = info.volume_percent;
       }
 
-      text = "Bluetooth : connecte" + volumeSuffix;
+      text =
+        connectionState === "audio_ready"
+          ? "Bluetooth : audio pret" + volumeSuffix
+          : "Bluetooth : connecte" + volumeSuffix;
 
       topState = "online";
     } else if (info.connected === false) {
@@ -2562,6 +2695,10 @@ function applyBluetoothStatus(info) {
         ? "online"
         : topState === "offline"
         ? "offline"
+        : topState === "connecting"
+        ? "connecting"
+        : topState === "degraded"
+        ? "degraded"
         : "unknown";
 
     elBtTopStatus.className = `${base} ${stateClass}`;
@@ -3321,16 +3458,21 @@ async function refreshEsp32Status(options = {}) {
     return;
   }
 
-  const { silent = false } = options;
+  const { silent = false, manual = false } = options;
   esp32Busy.status = true;
 
   try {
-    const res = await fetch("/esp32/status");
+    const res = await fetch(manual ? "/esp32/status/check" : "/esp32/status", {
+      method: manual ? "POST" : "GET",
+    });
     const data = await res.json();
 
     if (res.ok && data && data.reachable) {
       esp32StatusSnapshot = data.status || {};
-      setEsp32Reachability(true, "En ligne");
+      setEsp32Reachability(
+        true,
+        data.supervision?.source === "manual" ? "Test manuel : en ligne" : "En ligne"
+      );
 
       setEsp32Badge(elEsp32RelayState, esp32StatusSnapshot.relay);
       setEsp32Badge(elEsp32AutoRelayState, esp32StatusSnapshot.autoRelay);
@@ -3846,7 +3988,7 @@ function initEsp32Section() {
         toast("Activer l'ESP32 avant de tester la connexion", true);
         return;
       }
-      refreshEsp32Status();
+      refreshEsp32Status({ manual: true });
     });
   }
 

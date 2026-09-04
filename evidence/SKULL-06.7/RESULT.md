@@ -4,38 +4,32 @@ Statut : `VALIDÉ`
 
 Date d’exécution : 3 septembre 2026, Europe/Paris
 
-## Périmètre
+## Résultat
 
-- Travail effectué uniquement dans le worktree local de production.
-- Aucun accès au Raspberry, aucun redémarrage et aucune action matérielle.
-- Les changements existants des tâches précédentes ont été conservés.
-- Aucun commit ni push effectué.
+Les endpoints historiques sont maintenant enregistrés par le blueprint
+`legacy` créé dans `api/legacy.py`. Les routes conservent leurs chemins,
+méthodes, paramètres, statuts et formes JSON ; aucune modification n’est
+requise côté boutons, sonnette ou clients existants.
 
-## Réalisation
-
-- Ajout de `api/legacy.py` et d’une fabrique de blueprint par application.
-- Toutes les routes historiques de `web_app.py` sont enregistrées par le
-  blueprint `legacy`, sans modifier leurs URLs, méthodes ou payloads.
-- Les appels de démarrage, pause, reprise, arrêt, remplacement et skip passent
-  par `LegacyPlaybackService` avec dépendances runtime explicites.
-- Les comportements spécifiques de playlist, boutons, sonnette et fumée sont
-  conservés dans la façade existante.
-- Aucun avertissement de dépréciation n’est ajouté aux clients legacy.
+Les appels de contrôle de lecture sont traduits vers
+`LegacyPlaybackService`, qui reçoit explicitement le lecteur et le contrôleur
+de boucle. Le service conserve l’ordre de chargement, suppression de boucle,
+lecture et libération sur erreur.
 
 ## Vérifications
 
-- Tests ciblés blueprint, façade et contrats legacy : 28 passés.
-- `python -m pytest -q` : 208 tests passés, 1 avertissement externe connu.
-- `python -m compileall -q .` : OK.
-- `git diff --check` : OK ; avertissements de fins de ligne Git existants.
-- Test de rechargement : aucun doublon de route.
-- Matrice de règles HTTP et snapshots legacy : inchangés.
-- Scan ciblé des secrets et URL sensibles : aucune valeur détectée.
+- Tests ciblés façade et contrats : 28 passés.
+- Suite complète : 208 tests passés, 1 avertissement externe connu.
+- Compilation Python : OK.
+- `git diff --check` : OK ; seuls les avertissements de fins de ligne Git
+  existants sont signalés.
+- Rechargement répété du module : aucun doublon de règle.
+- Aucun secret, webhook complet, adresse réseau, MAC ou contenu de production
+  n’est présent dans cette preuve.
 
-## Limites et suite
+## Limites
 
-- La façade reste techniquement dans `web_app.py`, mais sa frontière
-  d’enregistrement est désormais le blueprint dédié ; une extraction physique
-  des handlers n’est pas nécessaire pour préserver les clients.
-- Aucune validation physique ou client ESP32/sonnette n’est incluse.
-- Prochaine tâche autorisée : `SKULL-06.8`.
+- Les handlers restent dans `web_app.py` pour limiter le risque de régression ;
+  leur enregistrement est cependant isolé par blueprint.
+- Aucun Raspberry, service distant, bouton, sonnette ou matériel n’a été
+  sollicité.

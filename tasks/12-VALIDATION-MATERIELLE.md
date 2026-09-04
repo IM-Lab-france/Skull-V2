@@ -55,7 +55,7 @@ odeur, perte de contrôle, processus dupliqué ou impossibilité de couper.
 3. régler le volume au maximum convenu sans le dépasser ;
 4. jouer un fichier court connu ;
 5. tester pause, reprise et stop ;
-6. éteindre/rallumer la Bose SoundLink Mini II et répéter ;
+6. éteindre/rallumer le JBL et répéter ;
 7. confirmer auditivement le résultat avec l’utilisateur.
 
 ### Acceptation

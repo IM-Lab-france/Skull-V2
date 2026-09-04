@@ -18,7 +18,6 @@ tâche par exécution.
 | 10 | `10-RELEASES.md` | déploiement atomique et rollback |
 | 11 | `11-RESEAU-IOT.md` | migration réseau progressive |
 | 12 | `12-VALIDATION-MATERIELLE.md` | recette physique finale |
-| 13 | `13-ACTIONS-EVENEMENTS.md` | modèle événement → action sans secret |
 
 ## Dépendances
 
@@ -26,17 +25,11 @@ tâche par exécution.
 00 → 01 → 02 → 03 → 04 → 05 → 06
                            ├────→ 07
                            ├────→ 08 → 09
-                           ├────→ 10 → 11 → 12
-                           └────→ 13 → 12
+                           └────→ 10 → 11 → 12
 ```
 
 Les phases 07 et 08 peuvent être préparées en parallèle après la phase 05, mais
 leurs déploiements attendent la validation de la phase 06.
-
-L'état de référence et le worktree requis sont indiqués par l'« Audit de
-continuité » de `MEMOIRE.md`. La phase 8 n'est pas intégrée au `main` du dépôt
-de pilotage : son intégration est une tâche distincte qui exige revue, tests
-dans le worktree source et rollback.
 
 ## Points d’entrée du code actuel
 

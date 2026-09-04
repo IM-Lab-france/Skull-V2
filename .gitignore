@@ -1,9 +1,10 @@
 /.env
 /.vscode
-/__pycache__
+__pycache__/
+*.py[cod]
 data/*
+logs/*
 config/*
+!config/
 !config/*.example
-/backups/
-/evidence/**/raw/
-*.bak
+!config/README.md

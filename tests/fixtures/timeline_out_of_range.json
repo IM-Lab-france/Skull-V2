@@ -1,0 +1,6 @@
+{
+  "timeline": [
+    {"time": 0.0, "motors": {"neckYaw": 200, "eyeLeftYaw": -200, "jawOpening": -10}},
+    {"time": 0.0, "motors": {"neckYaw": -200, "eyeLeftYaw": 200, "jawOpening": 110}}
+  ]
+}

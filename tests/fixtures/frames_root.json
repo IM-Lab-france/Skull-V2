@@ -1,0 +1,7 @@
+{
+  "frames": [
+    {"timestamp_ms": 0, "jaw_deg": 0, "neck_pan_deg": -10},
+    {"timestamp_ms": 50, "jaw_deg": 50, "eye_left_deg": 5},
+    {"timestamp_ms": 100, "jaw_deg": 100, "eye_right_deg": 10}
+  ]
+}

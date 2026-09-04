@@ -64,30 +64,3 @@ SSH en lecture seule. Aucun `sudo` modifiant, aucune commande Bluetooth.
 Si l’OS, l’hôte ou les services diffèrent de `MEMOIRE.md`, mettre la tâche en
 `BLOQUÉ` et demander une décision avant la suite.
 
-## SKULL-00.3 — localiser le worktree de la tâche
-
-### Objectif
-
-Éviter de tester, modifier ou fusionner le mauvais arbre de travail.
-
-### Autorisation
-
-Lecture locale uniquement.
-
-### Étapes
-
-1. Exécuter `git worktree list --porcelain` depuis `C:\Skull-V2`.
-2. Comparer la tâche demandée avec la section « Audit de continuité » de
-   `MEMOIRE.md`.
-3. Pour une tâche de configuration phase 8, utiliser explicitement
-   `C:\Users\cedri\Documents\Codex\Skull-V2-phase8-2026` ; vérifier sa branche,
-   son statut et la présence de `tests/` avant toute commande de test.
-4. Pour la source de vérité issue de la production, utiliser seulement le
-   worktree `Skull-V2-production-2026` et ne jamais le réinitialiser.
-5. Consigner le chemin et le commit employés dans la preuve de la tâche.
-
-### Acceptation
-
-- le worktree cible, la branche et le commit sont identifiés avant modification ;
-- aucun test du dépôt de pilotage sans `tests/` n'est présenté comme validation ;
-- aucune fusion ou copie entre worktrees n'est effectuée sans tâche dédiée.

@@ -2,19 +2,27 @@
 
 - Date : 3 septembre 2026, Europe/Paris
 - Statut : `VALIDÉ`
-- Portée : sélection et vérification locale d’une sortie PulseAudio Bluetooth
-  dans le worktree candidat `Skull-V2-production-2026`.
+- Portée : sélection et vérification locale d’une sortie PulseAudio Bluetooth.
 - Autorisations : aucun accès distant, commande `pactl` réelle, changement de
   sink réel ou lecture audio.
+- Coexistence : les changements existants, notamment ceux de la phase 8, ont
+  été conservés ; aucun fichier de configuration de phase 8 n’a été modifié.
 
 ## Réalisation
 
-- La carte Bluetooth et le profil A2DP sont traités séparément de la liaison
-  Bluetooth.
-- Le sink est attendu de manière bornée, sélectionné par nom stable exact,
-  puis vérifié comme sink par défaut et non suspendu.
+- `PulseAudioOutputAdapter` utilise le runner commun avec liste d’arguments,
+  `shell=False`, timeout et sérialisation.
+- La carte Bluetooth est retrouvée par son identifiant exact, puis le profil
+  `a2dp-sink` est activé et vérifié comme profil actif.
+- Le sink est attendu avec un délai et un nombre de tentatives bornés.
+- Un unique sink correspondant à l’adresse Bluetooth est accepté ; son nom
+  stable est utilisé, jamais son index PulseAudio.
+- Le sink sélectionné est vérifié comme non suspendu et comme sink par défaut.
 - Aucun réglage de volume ou de mute n’est exécuté.
-- Le fallback local est désactivé par défaut et son activation est explicite.
+- Le fallback local est désactivé par défaut, configurable par environnement,
+  validé par identifiant exact et marqué `fallback_used` lorsqu’il est utilisé.
+- L’état IHM distingue désormais `connected`, profil Audio Sink et sink
+  PulseAudio ; un fallback ne peut pas être silencieux.
 
 ## Commandes de validation
 
@@ -26,17 +34,28 @@
 
 ## Résultats
 
-- `33 passed` sur les tests ciblés.
-- `237 passed` sur la suite complète, avec un avertissement externe connu
+- Tests ciblés : `35 passed`.
+- Suite complète : `239 passed`, un avertissement externe connu de
   `pydub`/`audioop`.
-- Aucun secret, accès distant, sink réel ou émission sonore n’a été utilisé.
+- Compilation Python, syntaxe JavaScript et contrôle du diff : OK.
+- Les tests couvrent profil A2DP absent, sink retardé, sink suspendu, sink par
+  défaut incorrect, fallback désactivé/explicite, injection par retour ligne,
+  absence de volume/mute et absence d’accès matériel.
 
 ## Écarts ou risques restants
 
-- La correspondance réelle des noms PulseAudio et les cycles de reconnexion
-  restent à valider sur le Raspberry dans les tâches dédiées.
+- Les commandes `pactl` n’ont pas été exécutées sur le Raspberry ; la
+  correspondance exacte des noms BlueZ/PulseAudio doit être confirmée pendant
+  la validation matérielle.
+- Les essais d’extinction/rallumage, de reconnexion et de lecture à faible
+  volume restent réservés aux tâches suivantes.
+- Le fallback local doit être fourni par la configuration de production, sans
+  être activé implicitement.
 
 ## Rollback
 
-- Retirer uniquement les changements de `SKULL-07.4` du worktree candidat après
-  revue du diff ; préserver les travaux parallèles et les appairages réels.
+- Retirer `PulseAudioOutputAdapter`, la configuration d’environnement de sortie
+  et les branchements IHM/tests relatifs à `SKULL-07.4` après revue du diff.
+- Restaurer uniquement la sélection précédente de sortie ; ne pas supprimer
+  d’appairage et ne pas modifier les fichiers de configuration de phase 8.
+- Aucun état distant, sink réel ou volume n’a été modifié.

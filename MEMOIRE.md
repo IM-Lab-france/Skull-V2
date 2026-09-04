@@ -2,41 +2,12 @@
 
 Dernière mise à jour : 4 septembre 2026.
 
-## Audit de continuité — 4 septembre 2026
-
-- Le dépôt de pilotage `C:\Skull-V2` reste sur `main` (`69cb37f`) avec ses
-  documents, preuves et journaux de continuité non committés. Il ne contient pas
-  la suite de tests : `python -m pytest -q` y collecte donc zéro test. Ce n'est
-  pas une régression de test, mais la conséquence de la séparation des
-  worktrees.
-- Le code modernisé, les tests et la configuration phase 8 sont dans
-  `C:\Users\cedri\Documents\Codex\Skull-V2-phase8-2026`, branche
-  `codex/phase8-skull-2026` (`873056e` au contrôle). La branche est propre ;
-  elle diffère de `main` par 234 fichiers et plus de 41 000 lignes. Une fusion
-  exige donc une revue et un plan de rollback dédiés, pas une opération de
-  reprise ordinaire.
-- Le worktree `C:\Users\cedri\Documents\Codex\Skull-V2-production-2026`,
-  branche `codex/production-skull-2026`, conserve la source de vérité dérivée
-  du commit de production. Il ne doit pas être supprimé ni réinitialisé.
-- `SKULL-08.7` est VALIDÉ sur la candidate distante : configuration TOML et
-  permissions vérifiées, candidate sur 5000, healthchecks `live`/`ready` 200 et
-  rollback disponible. `SKULL-08.4` et `SKULL-08.6` restent PARTIELLES ;
-  `SKULL-08.5` est ANNULÉE car la cible Home Assistant observée ne correspond
-  pas à l'action fumée attendue.
-- `SKULL-11.5` est PARTIEL : le Skull est sur `192.168.40.20`,
-  `skull.home.arpa` résout, les ACL minimales et les refus attendus sont
-  prouvés ; la continuité complète des clients legacy reste à démontrer.
-- La prochaine tâche autorisée est `SKULL-08.6`, dans le worktree phase 8.
-  Elle doit fermer ou qualifier explicitement les dépendances DNS restantes et
-  leurs modes de panne avant le début de la phase 9. La phase 13 a été créée
-  pour le modèle événement → action ; elle ne donne aucune autorisation de
-  modifier la sonnette ou la fumée.
-
 ## Situation observée
 
 - Dépôt principal local : `C:\Skull-V2`.
 - Dépôt GitHub : `IM-Lab-france/Skull-V2`.
-- Raspberry de production : hôte `skull`, IPv4 legacy `192.168.1.116`.
+- Raspberry de production : hôte `skull`, IPv4 actuelle `192.168.40.20` ;
+  l’ancienne adresse legacy était `192.168.1.116`.
 - Système : Debian 12 ARM64 sur Raspberry Pi.
 - Déploiement : `/opt/skull`, utilisateur de service `skull`.
 - Interfaces : port 5000 principal, port 5050 playlist.
@@ -76,60 +47,10 @@ Dernière mise à jour : 4 septembre 2026.
   demande de l’utilisateur.
 - `SINB238` a été identifié comme périphérique BLE sans profil audio ; il ne
   peut pas servir de sortie sonore.
-- Le JBL Quantum 360 a été détecté, appairé, approuvé et connecté pendant
-  l’essai historique.
-- La Bose SoundLink Mini II est désormais la sortie audio de validation
-  actuelle du Skull.
-- Un sink A2DP PulseAudio a été observé pour la Bose après correction de la
-  chaîne de connexion et de sélection de sortie.
-- Trois cycles extinction/rallumage de la Bose ont été validés ; un worker de
-  reconnexion autonome est maintenant déployé sur la candidate. Après ajout
-  réversible de l’activation systemd, la candidate revient seule après reboot
-  et `servo-sync.service` reste désactivé.
-
-## Correctif de reconnexion Bluetooth
-
-- `/status` ne lance plus de reconnexion synchrone ; il lit l’état et le
-  résultat observable du worker.
-- Le worker est unique, annulable, relance la politique bornée toutes les dix
-  secondes et sélectionne le sink seulement après connexion BlueZ et preuve
-  A2DP/PulseAudio.
-- Le délai demandé par le contrôleur est maintenant propagé à la commande
-  `bluetoothctl`, y compris sur le superviseur Linux `timeout`.
-- La candidate `/opt/skull-candidate` répond aux healthchecks, la Bose était
-  connectée et `audio_ready=true` après redémarrage contrôlé du service ; le
-  service legacy est resté inactif.
-- `SKULL-07.8` est validée : la reconnexion Bluetooth est exécutée par un
-  worker autonome hors du chemin HTTP, `/status` publie un état cache et
-  `connection_state` distingue reconnexion, dégradation, connexion et audio
-  prêt. Les tests de concurrence/annulation et la suite complète (`266
-  passed`) sont verts ; la candidate est active au boot et le service legacy
-  désactivé.
-- `SKULL-07.9` est validée : la supervision ESP32 utilise un superviseur
-  unique hors des routes HTTP, avec cache, backoff, circuit breaker,
-  sérialisation et annulation. `GET /esp32/status` ne sonde plus le firmware ;
-  `POST /esp32/status/check` est réservé au contrôle manuel. La candidate est
-  déployée et saine ; la configuration ESP32 reste désactivée, donc le polling
-  réel n’est pas lancé sans activation explicite. La suite compte `269 passed`.
-
-## Nettoyage Bluetooth du 3 septembre 2026
-
-- Le bond `JBL Quantum 360` a été supprimé du Skull.
-- Le périphérique BLE connu `SINB238`, non appairé, a également été supprimé.
-- Les deux anciennes sauvegardes `bluetooth_device.env.bak-*` ont été retirées
-  de la configuration active du Skull.
-- Vérification finale : la liste des périphériques connus et la liste des
-  périphériques appairés ne contiennent plus que `Bose Mini II SoundLink`.
-- Trois nouveaux cycles extinction/rallumage ont été validés après correction
-  de l’adresse active ; la Bose revient automatiquement avec `audio_ready=true`.
-- Un reboot complet avec la candidate activée a confirmé le retour autonome de
-  `skull-candidate.service` sur le port 5000, avec healthchecks HTTP 200 ;
-  `servo-sync.service` est resté désactivé. La Bose est restée la seule cible
-  appairée et connectée. Le sink A2DP est apparu après l’initialisation
-  PulseAudio ; l’émission faible volume a un retour technique nul et
-  l’utilisateur a confirmé avoir entendu trois bips. `SKULL-07.7` est validée.
-- Les mentions historiques dans les preuves et fixtures de test sont
-  conservées pour la traçabilité et ne sont pas des références runtime.
+- Le JBL Quantum 360 a été détecté, appairé, approuvé et connecté.
+- Skull est actuellement configuré pour le JBL Quantum 360.
+- Un sink A2DP PulseAudio a été observé pour le JBL.
+- La reconnexion après extinction et redémarrage reste à valider.
 
 ## Interactions entre équipements
 
@@ -414,44 +335,44 @@ session.
   `pulse_sink` sans preuve PulseAudio. Aucun scan, appairage, connexion,
   changement de sink ou accès matériel n’a été effectué. Preuve dans
   `evidence/SKULL-07.1/RESULT.md`.
-- `SKULL-07.2` est validée localement : `services/bluetooth_commands.py`
-  centralise l’exécution interactive sans shell, avec liste d’arguments,
-  timeout, normalisation/rédaction des sorties et verrou partagé. La façade
-  legacy et `BluetoothctlAdapter` valident les MAC strictement ; scans et
-  appairages multi-commandes sont sérialisés. Les tests couvrent injection,
-  timeout, sortie sensible et concurrence ; aucun accès Bluetooth réel n’a
-  été effectué. Le travail parallèle de la phase 8 n’a pas été modifié. Preuve
-  dans `evidence/SKULL-07.2/RESULT.md`.
-- `SKULL-07.3` est validée localement : l’IHM utilise une surface dédiée pour
-  scan, appairage, confiance, connexion, sélection de sortie et test audio.
-  Les états sont affichés séparément, les transitions pair/trust/connect ne
-  sont pas enchaînées, les opérations sont idempotentes et chaque réponse
-  rafraîchit l’état sans sortie technique brute. La sélection PulseAudio et le
-  son réel restent réservés aux tâches suivantes ; aucun accès distant ou
-  matériel n’a été effectué. Le travail parallèle de la phase 8 a été préservé.
-  Preuve dans `evidence/SKULL-07.3/RESULT.md`.
-- `SKULL-07.4` est validée localement : `PulseAudioOutputAdapter` sélectionne
-  le profil A2DP puis un sink Bluetooth identifié par son nom stable, attend
-  son apparition de manière bornée et vérifie qu’il est le sink par défaut et
-  non suspendu. Le profil Audio Sink est une preuve distincte de `connected` ;
-  aucun volume/mute n’est modifié. Le fallback local est désactivé par défaut
-  et son emploi est signalé. Les tests passent (`239 passed`) sans commande
-  `pactl` réelle, accès distant ou lecture audio ; le travail parallèle de la
-  phase 8 a été préservé. Preuve dans `evidence/SKULL-07.4/RESULT.md`.
-- `SKULL-07.5` est validée localement : `BluetoothReconnectController` lit
-  seulement l’adresse configurée, refuse les appareils non trusted, limite les
-  tentatives, applique un backoff progressif et interrompt l’attente à l’arrêt.
-  Aucun scan ni appairage automatique n’est lancé ; `connected` reste séparé
-  de `audio_ready`. La suite compte `245 passed`, sans accès distant ou
-  matériel réel ; le travail parallèle de la phase 8 a été préservé. Preuve
-  dans `evidence/SKULL-07.5/RESULT.md`.
-- `SKULL-07.6` est validée localement : les scénarios simulés couvrent scan
-  vide, JBL A2DP, BLE non audio, refus d’appairage, connexion sans sink, sink
-  retardé, disparition pendant lecture, timeout, reconnexion et arrêt pendant
-  attente. Les délais utilisent `SimulatedClock` sans attente réelle ; la
-  suite compte `255 passed`, sans accès distant, matériel ou Bluetooth réel.
-  Le travail parallèle de la phase 8 a été préservé. Preuve dans
-  `evidence/SKULL-07.6/RESULT.md`.
+- `SKULL-08.7` est validée : la configuration TOML et ses permissions sont
+  installées sur la candidate du Skull (`5000`), les healthchecks `live` et
+  `ready` répondent 200, et `servo-sync.service` reste inactif. Les tentatives
+  échouées ont restauré la candidate précédente ; la sauvegarde de rollback et
+  les données legacy sont conservées. Le lien `/opt/skull/current` et l’unité
+  indépendante de la version restent volontairement réservés à la phase 10.
+  Preuve dans `evidence/SKULL-08.7/RESULT.md`.
+- `SKULL-08.1` est validée le 4 septembre 2026 : les sources de configuration,
+  clés, défauts non sensibles, paramètres mécaniques, propriétaires et
+  destinations cibles sont inventoriés dans `docs/configuration-inventory.md`.
+  Les variables legacy et les dépendances réseau restantes sont distinguées,
+  sans secret ni valeur de webhook dans le dépôt. Preuve dans
+  `evidence/SKULL-08.1/RESULT.md`.
+- `SKULL-08.2` est validée le 4 septembre 2026 : `web_app.initialize_runtime()`
+  charge et valide le schéma typé avant tout import ou construction de matériel.
+  Les erreurs sont bornées, les diagnostics redigés et la configuration est
+  immuable après chargement. 271 tests passent ; aucun accès distant ou
+  matériel n’a été effectué. Preuve dans `evidence/SKULL-08.2/RESULT.md`.
+- `SKULL-08.3` est validée le 4 septembre 2026 : la précédence du chargeur est
+  explicitement fixée à arguments de maintenance, environnement autorisé,
+  TOML puis défauts sûrs. Les collisions, l’alias de mode, la provenance non
+  sensible et l’indépendance au répertoire courant sont testés. 271 tests
+  passent ; aucun accès distant ou matériel n’a été effectué. Preuve dans
+  `evidence/SKULL-08.3/RESULT.md`.
+- Décision du 4 septembre 2026 : `SKULL-08.5` ne reconfigure pas
+  l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
+  `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →
+  action, dont bouton → webhook fumée, sera traité en phase 13.
+- `SKULL-08.5` est annulée le 4 septembre 2026 : aucune rotation de secret et
+  aucune modification de la sonnette ne seront faites dans cette fiche. La
+  gestion configurable événement → action est suivie en phase 13.
+- `SKULL-08.4` est partielle le 4 septembre 2026 : la conversion d’une copie de
+  l’archive réelle legacy produit 13 entrées, sans erreur ni clé inconnue, avec
+  idempotence et protection contre l’écrasement vérifiées. L’alias `neck` est
+  converti vers `neck_pan`. Les deux JSON de catégories n’ont pas de destination
+  dans le schéma phase 8 et l’hôte historique de l’ESP32 reste bloqué jusqu’à
+  définition d’un nom DNS. Les sources et l’archive n’ont pas été modifiées et
+  aucun secret n’a été copié. Preuve dans `evidence/SKULL-08.4/RESULT.md`.
 
 ## Reprise lors d’une prochaine session
 
@@ -459,15 +380,8 @@ session.
 2. Lire `LUNA.md` et ne confier qu’un identifiant `SKULL-XX.Y` à la fois.
 3. Lire la section « Prochaine action » de `TODO.md`.
 4. Lire `OPERATIONS.md` avant toute connexion au Raspberry.
-5. Vérifier `git status` dans les trois worktrees sans rien réinitialiser ;
-   identifier explicitement celui qui contient la tâche confiée.
-6. Pour `SKULL-08.6`, se placer dans
-   `C:\Users\cedri\Documents\Codex\Skull-V2-phase8-2026`, lire entièrement
-   `tasks/08-CONFIGURATION.md`, puis les preuves `SKULL-08.6` et `SKULL-08.7`.
-7. Exécuter la suite de tests uniquement dans le worktree phase 8 ; ne pas
-   interpréter les zéro test du dépôt de pilotage comme une validation.
-8. Vérifier les services et `/status` sans lancer de session ; confirmer que la
-   candidate est le propriétaire attendu du port 5000 avant toute décision.
-9. Commencer par l'unique identifiant indiqué dans `TODO.md`. Demander
-   confirmation avant toute écriture distante, changement réseau, sauvegarde
-   avec arrêt ou intervention matérielle.
+5. Vérifier `git status` local et distant sans rien réinitialiser.
+6. Vérifier les services et `/status` sans lancer de session.
+7. Commencer par la prochaine tâche indiquée dans `TODO.md`, qui reste en
+   lecture seule tant qu’une fiche ne demande pas explicitement une écriture.
+8. Demander confirmation avant sauvegarde avec arrêt ou intervention matérielle.

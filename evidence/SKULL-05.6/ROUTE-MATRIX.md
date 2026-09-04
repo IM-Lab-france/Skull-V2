@@ -1,35 +1,35 @@
-# Matrice SKULL-05.6
+# SKULL-05.6 — matrice candidate / contrat legacy
 
-La candidate est comparée aux snapshots legacy de
-`tests/contract/http_legacy_snapshots.json` sur méthode, statut HTTP,
-`Content-Type`, clés obligatoires et types. Sont ignorés uniquement les
-identifiants client, horodatages, cooldowns, listes dépendantes du contenu et
-détails de sélection aléatoire.
+La candidate est comparée aux snapshots de contrat gelés dans
+`tests/contract/http_legacy_snapshots.json`. La comparaison porte sur la
+méthode, le statut HTTP, le `Content-Type`, les clés obligatoires et leurs
+types. Les valeurs variables explicitement ignorées sont les identifiants
+client, les horodatages, les cooldowns, les listes dépendantes du contenu et
+les détails de sélection aléatoire.
 
-Les 21 cas validés sont :
+| Cas legacy | Méthode | Statut | Content-Type | Schéma contrôlé |
+|---|---:|---:|---|---|
+| `/status` | GET | 200 | application/json | running bool, channels object, playlist_size int, loop object |
+| `/api/sessions` | GET | 200 | application/json | playlist object, categories list |
+| `/api/enqueue` invalide | POST | 400 | application/json | success bool, error str |
+| `/api/enqueue` valide | POST | 200 | application/json | success bool, requested str, session str |
+| `/play` invalide | POST | 400 | application/json | error str |
+| `/play` valide | POST | 200 | application/json | session str, random_mode object |
+| `/pause` | POST | 200 | application/json | status str |
+| `/resume` | POST | 200 | application/json | status str |
+| `/stop` | POST | 200 | application/json | status str |
+| `/playlist` lecture | GET | 200 | application/json | current nullable object, queue list |
+| `/playlist` ajout invalide | POST | 400 | application/json | error str |
+| `/playlist` ajout valide | POST | 201 | application/json | status str, item object, position int |
+| `/playlist/999` suppression | DELETE | 404 | application/json | error str |
+| `/playlist/999/move` invalide | POST | 400 | application/json | error str |
+| `/playlist/skip` | POST | 200 | application/json | status str |
+| `/categories` lecture | GET | 200 | application/json | categories list |
+| `/categories` création | POST | 201 | application/json | category str, categories list |
+| `/esp32/status` | GET | 200 | application/json | reachable bool |
+| `/esp32/relay` | POST | 200 | application/json | success bool, reachable bool, response object |
+| `/esp32/button-config` | GET | 200 | application/json | reachable bool, buttonCount int, assignments list, categories list |
 
-```text
-GET  /status                         200
-GET  /api/sessions                   200
-POST /api/enqueue (invalide)         400
-POST /api/enqueue (valide)           200
-POST /play (invalide)                400
-POST /play (valide)                  200
-POST /pause                          200
-POST /resume                         200
-POST /stop                           200
-GET  /playlist                       200
-POST /playlist (invalide)            400
-POST /playlist (valide)              201
-DELETE /playlist/999                 404
-POST /playlist/999/move (invalide)  400
-POST /playlist/skip                  200
-GET  /categories                     200
-POST /categories                     201
-GET  /esp32/status                   200
-POST /esp32/relay                    200
-GET  /esp32/button-config            200
-```
-
-Tous les cas utilisent client Flask et adaptateurs factices ; aucune action
-servo, audio, Bluetooth, relais ou requête distante n’est exécutée.
+Les 21 cas sont exécutés avec client Flask et adaptateurs factices. Aucun
+appel ne sort du poste et aucune action servo, audio, Bluetooth ou relais n’est
+déclenchée.

@@ -4,42 +4,31 @@ Statut : `VALIDÉ`
 
 Date d’exécution : 3 septembre 2026, Europe/Paris
 
-## Périmètre
+## Résultat
 
-- Travail effectué uniquement dans le worktree local de production.
-- Aucun accès au Raspberry, aucun redémarrage et aucune action matérielle.
-- Les changements existants des tâches précédentes ont été conservés.
-- Aucun commit ni push effectué.
+`adapters_runtime.py` ajoute les implémentations injectables des six
+frontières : PCA9685, audio legacy, Bluetooth/BlueZ, HTTP ESP32, webhook de
+fumée et gaze. Le module n’importe aucun client Raspberry et n’effectue aucun
+appel à l’import.
 
-## Réalisation
-
-- Ajout de `adapters_runtime.py` avec wrappers injectables pour PCA9685, audio,
-  Bluetooth/BlueZ, HTTP ESP32, fumée et gaze.
-- Aucun client matériel ou réseau n’est construit à l’import du module.
-- Le wrapper Bluetooth possède la construction des commandes et le parsing des
-  listes et états `bluetoothctl`.
-- Le wrapper ESP32 possède la construction HTTP, le décodage JSON et le
-  timeout borné.
-- Les détails techniques sont convertis en `InvalidInputError`,
-  `NotFoundError` ou `DependencyUnavailableError` sans retransmettre de
-  chemin, secret ou contenu sensible.
-- Ajout de `services/playback.py`, dont les six dépendances sont reçues par
-  constructeur ; le service conserve le comportement fumée non fatal de la
-  façade actuelle.
+`BluetoothctlAdapter` centralise la construction et le parsing des commandes
+Bluetooth. `ESP32HTTPAdapter` centralise URL, requêtes JSON et timeouts. Les
+erreurs techniques sont traduites en erreurs métier stables. `PlaybackService`
+reçoit ses adaptateurs par constructeur et orchestre le cycle de lecture sans
+singleton caché.
 
 ## Vérifications
 
-- Tests ciblés adaptateurs, service et régression état : 86 passés.
-- `python -m pytest -q` : 202 tests passés, 1 avertissement externe connu.
-- `python -m compileall -q .` : OK.
-- `git diff --check` : OK ; avertissements de fins de ligne Git existants.
-- Tests de panne indépendants : servo, audio, Bluetooth, ESP32, fumée et gaze.
-- Tests de contrats HTTP legacy : inclus dans la suite complète et verts.
-- Scan ciblé des secrets et URL sensibles : aucune valeur détectée.
+- Tests ciblés : 86 passés.
+- Suite complète : 202 tests passés, 1 avertissement externe connu.
+- Compilation Python : OK.
+- `git diff --check` : OK ; seuls les avertissements de fins de ligne Git
+  existants sont signalés.
+- Aucun secret, webhook complet, adresse réseau, MAC ou contenu de production
+  n’est présent dans cette preuve.
 
-## Limites et suite
+## Limites
 
-- La façade `web_app.py` conserve ses appels legacy pendant cette étape ; le
-  recâblage contrôlé des routes relève de `SKULL-06.7`.
-- Aucune validation physique n’est incluse.
-- Prochaine tâche autorisée : `SKULL-06.7`.
+- La façade web legacy n’est pas encore recâblée sur ces wrappers ; cela est
+  réservé à `SKULL-06.7`.
+- Aucun Raspberry, service distant ou matériel n’a été sollicité.

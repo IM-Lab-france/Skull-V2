@@ -6,33 +6,42 @@ Date d’exécution : 3 septembre 2026, Europe/Paris
 
 ## Périmètre
 
-- Exécution locale dans le worktree isolé de production.
-- Aucun accès distant ni action matérielle.
-- Aucun commit ni push effectué.
+- Travail effectué uniquement dans le worktree local de production.
+- Aucun accès au Raspberry, aucun redémarrage et aucune action matérielle.
+- Les changements existants des tâches précédentes ont été conservés.
 
-## Résultat
+## Réalisation
 
-Le catalogue de sessions a été isolé dans `domain/session_catalog.py`. Il
-découvre uniquement les répertoires directs, conserve leur visibilité legacy,
-et impose un ordre stable. L’inspection distingue les fichiers JSON et MP3,
-les absences, les JSON invalides, les fichiers partiellement écrits et les
-erreurs de lecture.
+- Création de `domain/session_catalog.py`, indépendant de Flask et des
+  bibliothèques matérielles.
+- Découverte limitée aux répertoires directs du catalogue.
+- Ordre stable des répertoires et des fichiers par nom insensible à la casse,
+  avec départage déterministe.
+- Inspection des fichiers JSON/MP3, sélection déterministe du premier fichier,
+  signalement des absences, JSON invalides, fichiers MP3 vides et erreurs de
+  lecture.
+- Les doublons restent acceptés comme dans le comportement caractérisé ; ils
+  sont exposés par les listes de fichiers et leur sélection est stable.
+- Les dossiers incomplets restent visibles dans le listing, mais sont refusés
+  au moment d’une opération nécessitant une session lisible.
+- Aucun fichier invalide n’est supprimé, réécrit ou corrigé automatiquement.
 
-Les doublons restent compatibles avec la caractérisation précédente : ils ne
-sont pas supprimés et le fichier sélectionné est déterminé par tri stable.
-Les opérations nécessitant une session jouable utilisent désormais le
-catalogue et retournent des erreurs déterministes.
+## Vérifications
 
-## Preuves
+- `python -m pytest -q tests/unit/test_session_catalog.py` : 6 tests passés.
+- Tests session et contrats legacy ciblés : 19 tests passés, 1 avertissement
+  externe connu.
+- `python -m pytest -q` : 100 tests passés, 1 avertissement externe connu.
+- `python -m compileall -q domain web_app.py timeline.py sync_player.py tests` : OK.
+- `git diff --check` : OK ; avertissements de fins de ligne Git existants,
+  aucune normalisation appliquée.
+- Aucun secret, webhook, adresse réseau, MAC ou contenu de production n’est
+  présent dans cette preuve.
 
-- Tests ciblés : 6 passés.
-- Tests session et contrats legacy : 19 passés.
-- Suite complète : 100 tests passés, 1 avertissement externe connu.
-- Compilation Python : OK.
-- `git diff --check` : OK ; seuls les avertissements de fins de ligne Git
-  existants sont signalés.
+## Limites et suite
 
-## Limites
-
-Les données de production n’ont pas été inspectées ni modifiées. Aucun
-comportement matériel, réseau ou HTTP approuvé n’a été exécuté.
+- Le catalogue conserve les dictionnaires legacy aux frontières de la façade.
+- La correction et la migration éventuelle des sessions invalides sont hors
+  périmètre et nécessiteront une décision séparée.
+- Aucune validation physique n’est incluse.
+- Prochaine tâche autorisée : `SKULL-06.3`.

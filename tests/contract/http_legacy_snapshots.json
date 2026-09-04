@@ -1,0 +1,22 @@
+{
+  "GET /status": {"status": 200, "required": {"running": "bool", "channels": "object", "playlist_size": "int", "loop": "object"}},
+  "GET /api/sessions": {"status": 200, "required": {"playlist": "object", "categories": "list"}},
+  "POST /api/enqueue invalid": {"status": 400, "required": {"success": "bool", "error": "str"}},
+  "POST /api/enqueue valid": {"status": 200, "required": {"success": "bool", "requested": "str", "session": "str"}},
+  "POST /play invalid": {"status": 400, "required": {"error": "str"}},
+  "POST /play valid": {"status": 200, "required": {"session": "str", "random_mode": "object"}},
+  "POST /pause": {"status": 200, "required": {"status": "str"}},
+  "POST /resume": {"status": 200, "required": {"status": "str"}},
+  "POST /stop": {"status": 200, "required": {"status": "str"}},
+  "GET /playlist": {"status": 200, "required": {"current": "nullable_object", "queue": "list"}},
+  "POST /playlist invalid": {"status": 400, "required": {"error": "str"}},
+  "POST /playlist valid": {"status": 201, "required": {"status": "str", "item": "object", "position": "int"}},
+  "DELETE /playlist/999": {"status": 404, "required": {"error": "str"}},
+  "POST /playlist/999/move invalid": {"status": 400, "required": {"error": "str"}},
+  "POST /playlist/skip": {"status": 200, "required": {"status": "str"}},
+  "GET /categories": {"status": 200, "required": {"categories": "list"}},
+  "POST /categories": {"status": 201, "required": {"category": "str", "categories": "list"}},
+  "GET /esp32/status": {"status": 200, "required": {"reachable": "bool"}},
+  "POST /esp32/relay": {"status": 200, "required": {"success": "bool", "reachable": "bool", "response": "object"}},
+  "GET /esp32/button-config": {"status": 200, "required": {"reachable": "bool", "buttonCount": "int", "assignments": "list", "categories": "list"}}
+}

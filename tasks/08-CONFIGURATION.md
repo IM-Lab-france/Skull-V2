@@ -107,6 +107,14 @@ Rotation du secret dans le Skull ou la domotique.
 6. Rechercher l’ancien identifiant dans Git, logs et sauvegardes textuelles sans
    jamais l’imprimer.
 
+La sonnette existante et son automatisation Home Assistant ne doivent pas être
+reconfigurées dans cette tâche. Si l’ancien endpoint observé correspond à la
+sonnette, il reste inchangé ; la configuration générique événement → action,
+dont un bouton pouvant déclencher la fumée, est reportée à la phase 13.
+
+Décision du 4 septembre 2026 : `SKULL-08.5` est annulée. Cette fiche ne
+déclenche aucune rotation et ne demande aucune modification de la sonnette.
+
 ### Acceptation
 
 - ancien secret refusé, nouveau accepté ;

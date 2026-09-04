@@ -21,8 +21,17 @@ LIBRARY_ROOT = (
     Path(os.environ.get("PLAYLIST_LIBRARY_DIR", "data")).expanduser().resolve()
 )
 COOLDOWN_SECONDS = int(os.environ.get("PLAYLIST_COOLDOWN", DEFAULT_COOLDOWN_SECONDS))
-FORWARD_TIMEOUT = float(os.environ.get("PLAYLIST_FORWARD_TIMEOUT", "10"))
-STATUS_TIMEOUT = float(os.environ.get("PLAYLIST_STATUS_TIMEOUT", "6"))
+FORWARD_TOTAL_TIMEOUT = float(os.environ.get("PLAYLIST_FORWARD_TIMEOUT", "10"))
+FORWARD_CONNECT_TIMEOUT = float(
+    os.environ.get("PLAYLIST_FORWARD_CONNECT_TIMEOUT", "2")
+)
+STATUS_TOTAL_TIMEOUT = float(os.environ.get("PLAYLIST_STATUS_TIMEOUT", "6"))
+STATUS_CONNECT_TIMEOUT = float(
+    os.environ.get("PLAYLIST_STATUS_CONNECT_TIMEOUT", "2")
+)
+# Backwards-compatible names for callers that imported the old scalar values.
+FORWARD_TIMEOUT = FORWARD_TOTAL_TIMEOUT
+STATUS_TIMEOUT = STATUS_TOTAL_TIMEOUT
 VOLUME_MAX = int(os.environ.get("PLAYLIST_VOLUME_MAX", "127"))
 
 VOLUME_ACTIONS = {"up", "down", "mute", "set"}
@@ -78,16 +87,17 @@ def _scan_available_sessions() -> list[dict[str, str]]:
 def _fetch_playlist_state() -> dict:
     try:
         response = requests.get(
-            f"{_backend_base_url()}/playlist", timeout=STATUS_TIMEOUT
+            f"{_backend_base_url()}/playlist",
+            timeout=(STATUS_CONNECT_TIMEOUT, STATUS_TOTAL_TIMEOUT),
         )
         if response.ok:
             payload = response.json()
             if isinstance(payload, dict):
                 return payload
             return {"data": payload}
-        return {"error": response.text, "status": response.status_code}
-    except Exception as exc:
-        return {"error": str(exc)}
+        return {"error": "Serveur principal indisponible", "status": response.status_code}
+    except requests.RequestException:
+        return {"error": "Serveur principal indisponible", "status": "unavailable"}
 
 
 def _resolve_client() -> tuple[str, bool]:
@@ -225,11 +235,11 @@ def api_volume() -> Response:
         upstream = requests.post(
             f"{_backend_base_url()}/volume",
             json=payload,
-            timeout=FORWARD_TIMEOUT,
+            timeout=(FORWARD_CONNECT_TIMEOUT, FORWARD_TOTAL_TIMEOUT),
         )
-    except requests.RequestException as exc:
+    except requests.RequestException:
         return _json(
-            {"error": f"Serveur principal indisponible: {exc}"},
+            {"error": "Serveur principal indisponible"},
             status=502,
         )
 
@@ -291,11 +301,11 @@ def api_enqueue() -> Response:
         upstream = requests.post(
             f"{_backend_base_url()}/play",
             json={"session": session},
-            timeout=FORWARD_TIMEOUT,
+            timeout=(FORWARD_CONNECT_TIMEOUT, FORWARD_TOTAL_TIMEOUT),
         )
-    except requests.RequestException as exc:
+    except requests.RequestException:
         return _json(
-            {"error": f"Serveur principal indisponible: {exc}"},
+            {"error": "Serveur principal indisponible"},
             status=502,
             client_id=client_id,
             set_cookie=created,
@@ -332,4 +342,4 @@ def api_enqueue() -> Response:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    app.run(host="0.0.0.0", port=5050, debug=False, use_reloader=False)

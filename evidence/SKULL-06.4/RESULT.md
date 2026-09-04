@@ -6,31 +6,41 @@ Date d’exécution : 3 septembre 2026, Europe/Paris
 
 ## Périmètre
 
-- Exécution locale dans le worktree isolé de production.
-- Aucun accès distant ni action matérielle.
-- Aucun commit ni push effectué.
+- Travail effectué uniquement dans le worktree local de production.
+- Aucun accès au Raspberry, aucun redémarrage et aucune action matérielle.
+- Les changements existants des tâches précédentes ont été conservés.
 
-## Résultat
+## Réalisation
 
-La playlist et l’état courant ont été extraits dans `domain/playlist.py`.
-Les opérations d’ajout, déplacement, suppression, saut, purge et remise en
-tête restent compatibles avec la façade legacy. La sélection aléatoire est
-injectable et l’unicité des identifiants est contrôlée.
+- Extraction de la file thread-safe dans `domain/playlist.py` via
+  `PlaylistStore`, avec façade `PlaylistManager` conservée dans `web_app.py`.
+- Ajout de `PlaybackStateStore` pour l’état courant, avec copies défensives.
+- Ajout de `RandomSessionSelector` avec fonctions `choice` et `shuffle`
+  injectables pour des tests déterministes.
+- Invariants explicites : identifiants uniques, position bornée, opérations
+  atomiques sous verrou et doublons de session conservés comme comportement
+  legacy.
+- Persistance JSON optionnelle, écrite par fichier temporaire, `fsync`, puis
+  remplacement atomique. Une erreur d’écriture laisse la file et le fichier
+  précédent inchangés ; un fichier corrompu n’est jamais réparé.
+- Le runtime web conserve la persistance désactivée par défaut et les formes
+  dictionnaire attendues par les routes legacy.
 
-Une persistance JSON facultative utilise un fichier temporaire et un
-remplacement atomique. Les scénarios d’écriture impossible et de fichier
-corrompu démontrent l’absence de perte ou de réparation destructive.
+## Vérifications
 
-## Preuves
+- `python -m pytest -q tests/unit/test_domain_playlist.py tests/unit/test_playlist_characterization.py tests/contract/test_http_legacy_contracts.py` : 21 tests passés.
+- `python -m pytest -q` : 116 tests passés, 1 avertissement externe connu.
+- `python -m compileall -q domain web_app.py tests` : OK.
+- `git diff --check` : OK ; avertissements de fins de ligne Git existants,
+  aucune normalisation appliquée.
+- Tests de corruption et d’échec de remplacement : fichier valide conservé.
+- Aucun secret, webhook, adresse réseau, MAC ou contenu de production n’est
+  présent dans cette preuve.
 
-- Tests ciblés : 21 passés.
-- Suite complète : 116 tests passés, 1 avertissement externe connu.
-- Compilation Python : OK.
-- `git diff --check` : OK ; seuls les avertissements de fins de ligne Git
-  existants sont signalés.
+## Limites et suite
 
-## Limites
-
-Les routes legacy conservent leurs dictionnaires et la persistance reste
-désactivée dans le runtime candidat. Aucun comportement HTTP, réseau ou
-matériel n’a été modifié volontairement.
+- L’état de lecture physique reste fourni par le lecteur legacy ; la machine à
+  états explicite relève de `SKULL-06.5`.
+- La persistance optionnelle n’est pas activée dans le service candidat.
+- Aucune validation physique n’est incluse.
+- Prochaine tâche autorisée : `SKULL-06.5`.

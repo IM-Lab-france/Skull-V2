@@ -8,7 +8,6 @@ fonctionnement et sans casser les équipements existants.
 La cible doit conserver :
 
 - les quatre servos et leur câblage PCA9685 actuel ;
-- la Bose SoundLink Mini II comme sortie audio de validation actuelle ;
 - les canaux `jaw`, `eye_left`, `eye_right`, `neck_pan` ;
 - les limites, offsets et positions neutres validés mécaniquement ;
 - les sessions MP3 + JSON et leurs formats de timeline ;
@@ -76,3 +75,4 @@ Le nouveau cœur sera indépendant de Flask, GPIO, Bluetooth et des adresses IP.
 Ces dépendances seront placées derrière des adaptateurs. Les routes legacy
 continueront d’appeler ce cœur, tandis qu’une API versionnée sera ajoutée pour
 les évolutions futures.
+

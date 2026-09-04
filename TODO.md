@@ -4,7 +4,7 @@
 
 - `[x]` terminé et observé ;
 - `[ ]` à faire ;
-- `[~]` partiellement réalisé, annulé ou en attente d'une condition explicitée ;
+- `[~]` annulé ou retiré du périmètre ;
 - `VALIDATION` signifie qu’une preuve est obligatoire avant de continuer ;
 - `CONFIRMATION` signifie qu’une action peut toucher la production ou le
   matériel.
@@ -23,8 +23,7 @@ Détails et preuves attendues : [tasks/00-REPRISE.md](tasks/00-REPRISE.md).
 - [x] Cartographier Skull, boutons, sonnette et fumée.
 - [x] Rédiger `OPERATIONS.md`.
 - [x] Rédiger `OBJECTIF.md`, `TODO.md` et `MEMOIRE.md`.
-- [x] Appairer et configurer la Bose SoundLink Mini II comme sortie audio
-  actuelle.
+- [x] Appairer et configurer le JBL Quantum 360 comme sortie audio actuelle.
 
 ## 1. Geler et sauvegarder la production — priorité immédiate
 
@@ -206,75 +205,43 @@ Exécution atomique :
 - [x] Distinguer clairement scan, appairage, confiance, connexion et A2DP —
   `SKULL-07.1` validée localement : modèle d’état explicite, UUID A2DP
   séparés des propriétés BlueZ et `pulse_sink` non déduit de `connected`.
-- [x] Sécuriser l’exécution des commandes Bluetooth — `SKULL-07.2` validée
-  localement : exécuteur commun sans shell, timeout, sortie normalisée,
-  erreurs rédigées, validation MAC et verrou contre les scans/appairages
-  concurrents.
-- [x] Séparer les opérations Bluetooth de l’IHM — `SKULL-07.3` validée
-  localement : routes explicites scan/pair/trust/connect/select-output/test-audio,
-  états indépendants, rafraîchissement après succès ou échec et erreurs
-  rédigées sans sortie brute. Preuve dans
-  `evidence/SKULL-07.3/RESULT.md`.
-- [x] Refuser les périphériques BLE sans profil `Audio Sink` — sélection
-  PulseAudio bloquée si le UUID Audio Sink n’est pas prouvé ; validé localement
-  dans `SKULL-07.4`.
-- [x] Sélectionner explicitement le sink PulseAudio — profil A2DP, nom stable,
-  sink par défaut et état non suspendu vérifiés localement dans `SKULL-07.4`.
-- [x] Ajouter une sortie audio locale de secours configurable — désactivée par
-  défaut et signalée explicitement lorsqu’elle est utilisée ; `SKULL-07.4`.
-- [x] Préparer une reconnexion contrôlée — adresse configurée uniquement,
-  `trusted` obligatoire, tentatives bornées, backoff progressif et annulation
-  interruptible ; `SKULL-07.5` validée localement.
-- [x] Couvrir les scénarios logiciels Bluetooth/audio — scan vide, A2DP, BLE
-  non audio, refus, sink retardé ou absent, disparition, timeout, reconnexion
-  et arrêt pendant attente ; `SKULL-07.6` validée localement.
-- [x] Découpler la reconnexion Bluetooth de l’IHM — `SKULL-07.8` validée :
-  worker autonome, état non bloquant publié à l’IHM, concurrence et
-  annulation couvertes, 266 tests passés, candidate active au boot et service
-  legacy désactivé.
-- [x] Découpler et temporiser la supervision ESP32 — `SKULL-07.9` validée :
-  état cache pour `/esp32/status`, contrôle manuel séparé, superviseur unique,
-  backoff, circuit breaker, sérialisation, annulation et 269 tests passés.
-  Le polling réel reste désactivé tant que la configuration ESP32 n’est pas
-  activée explicitement.
-- [x] Tester extinction/rallumage de la Bose SoundLink Mini II — trois cycles
-  validés.
-- [x] Tester reconnexion après redémarrage du Raspberry — la candidate est
-  activée au boot, `servo-sync.service` désactivé, et les healthchecks ainsi
-  que la reconnexion Bose ont été vérifiés après reboot.
-- [x] Tester une lecture à faible volume — émission de 3 secondes entendue par
-  l’utilisateur, trois bips confirmés.
-- [x] `VALIDATION` Démontrer une reconnexion autonome reproductible — candidate
-  active après reboot, Bose reconnectée et audio A2DP disponible.
+- [ ] Refuser les périphériques BLE sans profil `Audio Sink`.
+- [ ] Sélectionner explicitement le sink PulseAudio.
+- [ ] Ajouter une sortie audio locale de secours configurable.
+- [ ] Tester extinction/rallumage du JBL Quantum 360.
+- [ ] Tester reconnexion après redémarrage du Raspberry.
+- [ ] Tester une lecture à faible volume.
+- [ ] `VALIDATION` Démontrer une reconnexion autonome reproductible.
 
 ## 8. Centraliser configuration et secrets
 
 Exécution atomique :
 [tasks/08-CONFIGURATION.md](tasks/08-CONFIGURATION.md).
 
-État de référence : les travaux de cette phase sont dans le worktree
-`C:\Users\cedri\Documents\Codex\Skull-V2-phase8-2026`, branche
-`codex/phase8-skull-2026`. Ils ne sont pas encore intégrés à `main`.
-
-- [x] Créer une configuration typée et validée au démarrage — schéma, précédence
-  et tests disponibles dans le worktree phase 8.
-- [~] Importer automatiquement les anciens JSON et `.env` — convertisseur et
-  fixtures validés localement ; la migration de toutes les données réelles reste
-  à comparer avant clôture de `SKULL-08.4`.
-- [~] Sortir le webhook fumée du code source — la cible a été analysée ; la
-  liaison événement → action est désormais reportée à la phase 13.
-- [~] Remplacer le secret du webhook actuel — `SKULL-08.5` annulée le
-  4 septembre 2026 : aucune rotation ni modification de la sonnette, car le
-  webhook observé ne pilote pas la fumée attendue.
-- [~] Remplacer progressivement les IP codées en dur par du DNS interne —
-  `skull.home.arpa` est validé ; les autres dépendances et le comportement de
-  panne DNS restent à clôturer dans `SKULL-08.6`.
-- [~] Séparer code, configuration, données et logs — TOML et permissions sont
-  déployés sur la candidate ; `/opt/skull/current` et la séparation par release
-  restent en phase 10.
+- [x] Inventorier les sources, clés, paramètres matériels, propriétaires et
+  destinations cibles — `SKULL-08.1` validée ; preuve dans
+  `evidence/SKULL-08.1/RESULT.md`.
+- [x] Créer une configuration typée et validée au démarrage — `SKULL-08.2`
+  validée : le chargement précède toute initialisation matérielle, les erreurs
+  sont bornées et la configuration reste immuable ; preuve dans
+  `evidence/SKULL-08.2/RESULT.md`.
+- [x] Définir la précédence unique et les surcharges autorisées — `SKULL-08.3`
+  validée : arguments de maintenance, environnement explicite, TOML puis
+  défauts sûrs ; collisions et provenance testées ; preuve dans
+  `evidence/SKULL-08.3/RESULT.md`.
+- [~] Importer automatiquement les anciens JSON et `.env` — `SKULL-08.4`
+  partielle : conversion réelle et idempotence validées, mais deux destinations
+  de catégories absentes du schéma et l’ancien hôte ESP32 sans DNS restent
+  bloquants ; preuve dans `evidence/SKULL-08.4/RESULT.md`.
+- [ ] Sortir le webhook fumée du code source.
+- [~] Remplacer le secret du webhook actuel — `SKULL-08.5` annulée : aucune
+  reconfiguration de la sonnette ; la liaison événement → action fumée est
+  reportée à la phase 13.
+- [ ] Remplacer progressivement les IP codées en dur par du DNS interne.
+- [ ] Séparer code, configuration, données et logs.
 - [x] `VALIDATION` Démarrer avec ancienne puis nouvelle configuration —
-  `SKULL-08.7` validée sur la candidate port 5000 ; healthchecks 200 et
-  rollback disponible.
+  `SKULL-08.7` validée : candidate active sur `5000`, TOML et permissions
+  vérifiés, healthchecks `live`/`ready` à 200 et rollback disponible.
 
 ## 9. Sécuriser les API
 
@@ -304,34 +271,16 @@ Exécution atomique : [tasks/10-RELEASES.md](tasks/10-RELEASES.md).
 
 Exécution atomique : [tasks/11-RESEAU-IOT.md](tasks/11-RESEAU-IOT.md).
 
-- [x] Réserver l'adresse Skull et son nom DNS — `192.168.40.20` et
-  `skull.home.arpa`, preuve `SKULL-11.5`.
-- [x] Définir et appliquer les ACL minimales Skull — gestion vers 22/5000/5050,
-  Skull vers Home Assistant 8123, DNS/NTP dédiés ; preuve `SKULL-11.5`.
-- [x] Autoriser une coexistence temporaire legacy/IoT — profil legacy conservé
-  et rollback documenté ; preuve `SKULL-11.5`.
-- [~] Migrer le Skull avant les émetteurs — `SKULL-11.5` est PARTIEL : Skull
-  est sur le VLAN 40 et administrable, mais la continuité des clients legacy
-  n'est pas encore prouvée de bout en bout.
+- [ ] Réserver les nouvelles adresses et noms DNS.
+- [ ] Définir les ACL exactes documentées dans `OPERATIONS.md`.
+- [ ] Autoriser une coexistence temporaire legacy/IoT.
+- [ ] Migrer le Skull avant les émetteurs.
 - [ ] Migrer ensuite l’ESP32 boutons.
 - [ ] Migrer la sonnette.
 - [ ] Migrer le webhook fumée/domotique.
 - [ ] Harmoniser les 5 boutons firmware avec les 3 affectations serveur.
 - [ ] Retirer les règles legacy seulement après validation.
 - [ ] `VALIDATION` Tester chaque flux et chaque refus attendu.
-
-## 13. Nouvelles fonctionnalités — événements et actions
-
-Exécution atomique : [tasks/13-ACTIONS-EVENEMENTS.md](tasks/13-ACTIONS-EVENEMENTS.md).
-
-- [ ] `SKULL-13.1` Définir un modèle configurable événement → conditions →
-  actions, validé et journalisé sans secret.
-- [ ] `SKULL-13.2` Configurer les liaisons d'événements, sans reconfigurer la
-  sonnette existante.
-- [ ] `SKULL-13.3` Tester en simulation succès, erreurs, délais, reprises et
-  absence de boucle infinie avant tout effet matériel.
-- [ ] `VALIDATION` Démontrer une action configurée depuis un événement réel
-  après approbation et recette matérielle.
 
 ## 12. Validation matérielle finale
 
@@ -351,17 +300,31 @@ Exécution atomique :
 - [ ] Tester rollback de release.
 - [ ] `VALIDATION` Signer le procès-verbal de remise en service.
 
+## 13. Nouvelles fonctionnalités
+
+- [ ] `SKULL-13.1` Gestion des actions : définir un modèle configurable
+  événement → conditions → actions, avec validation et journalisation sans
+  secret.
+- [ ] `SKULL-13.2` Configurer les liaisons d’événements : permettre par
+  exemple à un bouton de déclencher la fumée via un webhook, sans reconfigurer
+  la sonnette existante.
+- [ ] `SKULL-13.3` Tester en simulation les succès, erreurs, délais, reprises
+  et absence de boucle infinie avant tout effet matériel.
+- [ ] `VALIDATION` Démontrer une action configurée depuis un événement réel
+  après approbation et recette matérielle.
+
 ## Prochaine action
 
-Avant toute nouvelle implémentation, traiter `SKULL-08.6` dans le worktree
-`C:\Users\cedri\Documents\Codex\Skull-V2-phase8-2026` : compléter la preuve
-DNS (dépendances restantes, sources autorisées, pannes bornées), puis décider
-explicitement de clôturer ou de conserver la phase PARTIELLE. Ne pas commencer
-la phase 9 avant cette décision, ni fusionner le worktree phase 8 dans `main`
-sans revue dédiée : il contient 234 fichiers et plus de 41 000 lignes de diff.
-
-La candidate actuellement en service est associée aux branches de travail et
-non au `main` local. Toute intervention distante exige le préflight de
-`LUNA.md`, une confirmation pour une écriture, et une vérification que
-`skull-candidate.service` reste le seul propriétaire du port 5000. Pour Luna,
-ne confier qu'un identifiant à la fois.
+`SKULL-08.1`, `SKULL-08.2` et `SKULL-08.3` sont validées. `SKULL-08.4` est
+`PARTIELLE` : la conversion locale, l’idempotence et le non-écrasement sont
+prouvés, mais les deux destinations de catégories et le nom DNS de l’ESP32
+restent à décider. `SKULL-08.5` est `ANNULÉE` : aucune reconfiguration de la
+sonnette ni rotation de son webhook. La gestion configurable événement → action,
+dont bouton → webhook fumée, est inscrite en phase 13. La prochaine tâche
+candidate est `SKULL-08.6` après traitement ou décision écrite sur ces blocages.
+Le lien final
+`/opt/skull/current` et l’unité indépendante de la version restent dans la
+phase 10. `SKULL-08.6` reste toutefois partielle ; la phase
+9 ne doit donc pas être lancée avant leur clôture ou une décision écrite dans
+`MEMOIRE.md`. Pour Luna, ne confier qu’un identifiant à la fois, conformément à
+[LUNA.md](LUNA.md).

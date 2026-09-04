@@ -6,34 +6,39 @@ Date d’exécution : 3 septembre 2026, Europe/Paris
 
 ## Périmètre
 
-- Exécution locale dans le worktree isolé de production.
-- Aucun accès distant ni action matérielle.
-- Aucun commit ni push effectué.
+- Travail effectué uniquement dans le worktree local de production.
+- Aucun accès au Raspberry, aucun redémarrage et aucune action matérielle.
+- Les changements existants des tâches précédentes ont été conservés.
 
-## Résultat
+## Réalisation
 
-Le package pur `domain/` a été créé avec les types immuables de session,
-d’événement timeline, d’élément de playlist et d’état de lecture. Les erreurs
-métier distinctes couvrent l’absence, l’invalidité, le conflit, la dépendance
-indisponible et l’opération interdite.
+- Création du package pur `domain/`, sans import Flask, requests, subprocess,
+  audio ou bibliothèque Raspberry.
+- Ajout des types immuables `Session`, `TimelineEvent`, `PlaylistItem`,
+  `PlaybackState` et `PlaybackSnapshot`.
+- Ajout des erreurs métier `NotFoundError`, `InvalidInputError`,
+  `ConflictError`, `DependencyUnavailableError` et
+  `OperationNotAllowedError`.
+- Adaptation des validations session, du parseur timeline et du chargement
+  de session pour utiliser les erreurs métier.
+- Les erreurs de compatibilité héritent des exceptions Python legacy
+  correspondantes ; les routes HTTP conservent donc leurs statuts et messages.
 
-Les validations existantes de session, timeline et chargement utilisent ces
-erreurs. Les classes conservent la compatibilité avec `ValueError`,
-`FileNotFoundError`, `ConnectionError` et `PermissionError`, ce qui préserve
-la traduction de la façade legacy.
+## Vérifications
 
-## Preuves
+- `python -m pytest -q tests/unit/test_domain_types.py` : 4 tests passés.
+- `python -m pytest -q` : 94 tests passés, 1 avertissement externe connu.
+- `python -m compileall -q domain timeline.py sync_player.py web_app.py tests/unit/test_domain_types.py` : OK.
+- `git diff --check` : OK ; avertissements de fins de ligne Git existants,
+  aucune normalisation appliquée.
+- Le test d’import en sous-processus confirme l’absence de dépendance runtime
+  interdite pour `domain`.
+- Aucun secret, webhook, adresse réseau, MAC ou contenu de production n’est
+  présent dans cette preuve.
 
-- Tests ciblés : 4 passés.
-- Suite complète : 94 tests passés, 1 avertissement externe connu.
-- Compilation Python : OK.
-- `git diff --check` : OK ; seuls les avertissements de fins de ligne Git
-  existants sont signalés.
-- Le domaine s’importe sous Windows sans Flask, réseau, subprocess ni
-  bibliothèque Raspberry.
+## Limites et suite
 
-## Limites
-
-Les dictionnaires internes de la façade legacy et l’extraction complète des
-services restent volontairement en place. Aucun comportement HTTP, matériel ou
-réseau n’a été modifié.
+- Les dictionnaires legacy restent aux frontières de l’application ; leur
+  remplacement complet est réservé aux tâches suivantes.
+- Aucune validation physique n’est incluse.
+- Prochaine tâche autorisée : `SKULL-06.2`.
