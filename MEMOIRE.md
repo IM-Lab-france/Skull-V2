@@ -1,6 +1,6 @@
 # Mémoire du projet Skull-V2
 
-Dernière mise à jour : 3 septembre 2026.
+Dernière mise à jour : 4 septembre 2026.
 
 ## Situation observée
 
@@ -342,6 +342,12 @@ session.
   les données legacy sont conservées. Le lien `/opt/skull/current` et l’unité
   indépendante de la version restent volontairement réservés à la phase 10.
   Preuve dans `evidence/SKULL-08.7/RESULT.md`.
+- `SKULL-08.1` est validée le 4 septembre 2026 : les sources de configuration,
+  clés, défauts non sensibles, paramètres mécaniques, propriétaires et
+  destinations cibles sont inventoriés dans `docs/configuration-inventory.md`.
+  Les variables legacy et les dépendances réseau restantes sont distinguées,
+  sans secret ni valeur de webhook dans le dépôt. Preuve dans
+  `evidence/SKULL-08.1/RESULT.md`.
 - Décision du 4 septembre 2026 : `SKULL-08.5` ne reconfigure pas
   l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
   `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →
