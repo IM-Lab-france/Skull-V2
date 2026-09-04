@@ -2,7 +2,7 @@
 
 ## État de référence
 
-La sortie active observée est un JBL Quantum 360. Un périphérique découvert ne
+La sortie active observée est une Bose SoundLink Mini II. Un périphérique découvert ne
 doit jamais être considéré comme enceinte tant que le profil A2DP Audio Sink
 (`0000110b-0000-1000-8000-00805f9b34fb`) n’est pas disponible.
 
@@ -119,7 +119,7 @@ reconnexion et arrêt pendant attente.
 - horloge simulée, donc aucun délai réel ;
 - couverture de toutes les transitions d’état.
 
-## SKULL-07.7 — validation physique du JBL
+## SKULL-07.7 — validation physique de la Bose SoundLink Mini II
 
 ### Confirmation requise
 
@@ -128,7 +128,8 @@ Tout changement Bluetooth ou émission sonore sur le Skull.
 ### Séquence
 
 1. Noter état BlueZ et sink avant action.
-2. Allumer le JBL sans mode appairage : vérifier la reconnexion.
+2. Allumer la Bose SoundLink Mini II sans mode appairage : vérifier la
+   reconnexion.
 3. Vérifier A2DP et sink par défaut.
 4. Jouer un fichier de test court au volume minimal convenu.
 5. Éteindre, attendre l’état dégradé, rallumer et vérifier la reprise.

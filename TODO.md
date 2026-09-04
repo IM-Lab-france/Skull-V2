@@ -23,7 +23,8 @@ Détails et preuves attendues : [tasks/00-REPRISE.md](tasks/00-REPRISE.md).
 - [x] Cartographier Skull, boutons, sonnette et fumée.
 - [x] Rédiger `OPERATIONS.md`.
 - [x] Rédiger `OBJECTIF.md`, `TODO.md` et `MEMOIRE.md`.
-- [x] Appairer et configurer le JBL Quantum 360 comme sortie audio actuelle.
+- [x] Appairer et configurer la Bose SoundLink Mini II comme sortie audio
+  actuelle.
 
 ## 1. Geler et sauvegarder la production — priorité immédiate
 
@@ -205,13 +206,24 @@ Exécution atomique :
 - [x] Distinguer clairement scan, appairage, confiance, connexion et A2DP —
   `SKULL-07.1` validée localement : modèle d’état explicite, UUID A2DP
   séparés des propriétés BlueZ et `pulse_sink` non déduit de `connected`.
-- [ ] Refuser les périphériques BLE sans profil `Audio Sink`.
-- [ ] Sélectionner explicitement le sink PulseAudio.
-- [ ] Ajouter une sortie audio locale de secours configurable.
-- [ ] Tester extinction/rallumage du JBL Quantum 360.
-- [ ] Tester reconnexion après redémarrage du Raspberry.
-- [ ] Tester une lecture à faible volume.
-- [ ] `VALIDATION` Démontrer une reconnexion autonome reproductible.
+- [x] Refuser les périphériques BLE sans profil `Audio Sink` — validé dans
+  `SKULL-07.1` et les scénarios logiciels de `SKULL-07.6`.
+- [x] Sélectionner explicitement le sink PulseAudio — `SKULL-07.4` validée.
+- [x] Ajouter une sortie audio locale de secours configurable — `SKULL-07.4`
+  validée.
+- [x] Tester extinction/rallumage de la Bose SoundLink Mini II — `SKULL-07.7`
+  validée physiquement.
+- [x] Tester reconnexion après redémarrage du Raspberry — `SKULL-07.7`
+  validée physiquement.
+- [x] Tester une lecture à faible volume — `SKULL-07.7` validée avec son
+  effectivement entendu.
+- [x] `VALIDATION` Démontrer une reconnexion autonome reproductible — phase 7
+  validée par `SKULL-07.7`, renforcée par les corrections `SKULL-07.8` et
+  `SKULL-07.9`.
+
+La phase 7 est terminée : le fonctionnement Bluetooth audio de la Bose
+SoundLink Mini II est validé sur le Skull, avec séparation IHM/reconnexion et
+supervision ESP32 découplée.
 
 ## 8. Centraliser configuration et secrets
 

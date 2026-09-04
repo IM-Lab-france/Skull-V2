@@ -335,6 +335,14 @@ session.
   `pulse_sink` sans preuve PulseAudio. Aucun scan, appairage, connexion,
   changement de sink ou accès matériel n’a été effectué. Preuve dans
   `evidence/SKULL-07.1/RESULT.md`.
+- La phase 7 Bluetooth/audio est terminée et validée le 4 septembre 2026 : les
+  tâches `SKULL-07.1` à `SKULL-07.7` sont validées, avec corrections et
+  durcissements complémentaires documentés dans `SKULL-07.8` et `SKULL-07.9`.
+  La Bose SoundLink Mini II est le périphérique de référence final ; scan,
+  appairage, connexion, A2DP, sink PulseAudio, lecture sonore, extinction/
+  rallumage et reconnexion après redémarrage ont été vérifiés. La supervision
+  ESP32 est découplée des rafraîchissements de l’IHM. Preuves dans
+  `evidence/SKULL-07.1/RESULT.md` à `evidence/SKULL-07.9/RESULT.md`.
 - `SKULL-08.7` est validée : la configuration TOML et ses permissions sont
   installées sur la candidate du Skull (`5000`), les healthchecks `live` et
   `ready` répondent 200, et `servo-sync.service` reste inactif. Les tentatives
