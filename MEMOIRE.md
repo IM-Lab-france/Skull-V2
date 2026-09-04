@@ -348,6 +348,11 @@ session.
   Les variables legacy et les dépendances réseau restantes sont distinguées,
   sans secret ni valeur de webhook dans le dépôt. Preuve dans
   `evidence/SKULL-08.1/RESULT.md`.
+- `SKULL-08.2` est validée le 4 septembre 2026 : `web_app.initialize_runtime()`
+  charge et valide le schéma typé avant tout import ou construction de matériel.
+  Les erreurs sont bornées, les diagnostics redigés et la configuration est
+  immuable après chargement. 271 tests passent ; aucun accès distant ou
+  matériel n’a été effectué. Preuve dans `evidence/SKULL-08.2/RESULT.md`.
 - Décision du 4 septembre 2026 : `SKULL-08.5` ne reconfigure pas
   l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
   `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →

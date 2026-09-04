@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from runtime_lock import RuntimeLockError, RuntimeProcessLock
+from config.schema import ConfigurationError
 
 
 def fresh_web_app(monkeypatch: pytest.MonkeyPatch):
@@ -54,6 +55,37 @@ def test_main_forces_debug_off_and_reloader_off(monkeypatch: pytest.MonkeyPatch)
     assert run_options["acquire_process_lock"] is True
     assert run_options["debug"] is False
     assert run_options["use_reloader"] is False
+
+
+def test_invalid_typed_configuration_blocks_hardware_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    web_app = fresh_web_app(monkeypatch)
+    constructed: list[str] = []
+
+    def reject_configuration():
+        raise ConfigurationError(
+            "Configuration invalide: hardware.frequency_hz: hors plage"
+        )
+
+    monkeypatch.setattr(web_app, "load_config", reject_configuration)
+
+    class FakePlayer:
+        def __init__(self) -> None:
+            constructed.append("player")
+
+    class FakeLoopPlayer:
+        def __init__(self, _storage_dir) -> None:
+            constructed.append("loop")
+
+    with pytest.raises(ConfigurationError, match="hardware.frequency_hz"):
+        web_app.initialize_runtime(
+            sync_player_cls=FakePlayer,
+            loop_player_cls=FakeLoopPlayer,
+        )
+
+    assert constructed == []
+    assert web_app._runtime_initialized is False
 
 
 def test_simulated_concurrent_initialization_constructs_once(

@@ -47,6 +47,7 @@ from pydub import AudioSegment
 from logger import servo_logger
 from runtime_factory import resolve_runtime_mode
 from runtime_lock import RuntimeProcessLock
+from config.loader import load_config
 from api.legacy import create_legacy_blueprint
 from api.bluetooth import BluetoothUiContext, create_bluetooth_blueprint
 from api.v1 import V1Context, create_v1_blueprint
@@ -124,6 +125,7 @@ _runtime_state_lock = threading.RLock()
 _runtime_player = None
 _runtime_loop_player = None
 _runtime_process_lock: Optional[RuntimeProcessLock] = None
+_runtime_config = None
 _runtime_initialized = False
 _runtime_cleaned = False
 
@@ -158,7 +160,7 @@ def initialize_runtime(
     process_lock=None,
 ):
     """Validate configuration and initialize both runtime components once."""
-    global _runtime_player, _runtime_loop_player
+    global _runtime_player, _runtime_loop_player, _runtime_config
     global _runtime_process_lock, _runtime_initialized, _runtime_cleaned
 
     with _runtime_state_lock:
@@ -167,8 +169,12 @@ def initialize_runtime(
         if _runtime_cleaned:
             raise RuntimeError("Skull runtime was already cleaned up")
 
-        # Validate the mode before importing or constructing hardware modules.
-        selected_mode = resolve_runtime_mode()
+        # Validate the complete typed configuration before importing or
+        # constructing any hardware module.  The runtime mode check remains a
+        # separate guard because simulated mode also requires explicit env
+        # opt-in during coexistence.
+        loaded_config, _provenance = load_config()
+        selected_mode = resolve_runtime_mode(mode=loaded_config.runtime.mode)
         if sync_player_cls is None or loop_player_cls is None:
             from sync_player import SyncPlayer
             from loop_player import LoopPlayer
@@ -192,6 +198,7 @@ def initialize_runtime(
             _runtime_player = created_player
             _runtime_loop_player = created_loop_player
             _runtime_process_lock = acquired_lock
+            _runtime_config = loaded_config
             _runtime_initialized = True
             if BT_DEVICE_ADDR and selected_mode == "production":
                 # The first BlueZ read also belongs to the worker so the
@@ -201,6 +208,7 @@ def initialize_runtime(
                 _start_esp32_supervisor()
             return _runtime_player, _runtime_loop_player
         except Exception:
+            _runtime_config = None
             _cleanup_component(created_loop_player, prefer_cleanup=False)
             _cleanup_component(created_player, prefer_cleanup=True)
             if acquired_lock is not None:

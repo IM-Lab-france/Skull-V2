@@ -221,7 +221,10 @@ Exécution atomique :
 - [x] Inventorier les sources, clés, paramètres matériels, propriétaires et
   destinations cibles — `SKULL-08.1` validée ; preuve dans
   `evidence/SKULL-08.1/RESULT.md`.
-- [ ] Créer une configuration typée et validée au démarrage.
+- [x] Créer une configuration typée et validée au démarrage — `SKULL-08.2`
+  validée : le chargement précède toute initialisation matérielle, les erreurs
+  sont bornées et la configuration reste immuable ; preuve dans
+  `evidence/SKULL-08.2/RESULT.md`.
 - [ ] Importer automatiquement les anciens JSON et `.env`.
 - [ ] Sortir le webhook fumée du code source.
 - [~] Remplacer le secret du webhook actuel — `SKULL-08.5` annulée : aucune
@@ -305,9 +308,10 @@ Exécution atomique :
 
 ## Prochaine action
 
-`SKULL-08.1` est validée : l’inventaire clé-par-clé et la vérification de la
-suite sont consignés dans `evidence/SKULL-08.1/RESULT.md`. La prochaine tâche
-autorisée est `SKULL-08.2`. `SKULL-08.5` est `ANNULÉE` : aucune
+`SKULL-08.1` et `SKULL-08.2` sont validées : l’inventaire clé-par-clé et la
+validation typée avant initialisation matérielle sont consignés dans
+`evidence/SKULL-08.1/RESULT.md` et `evidence/SKULL-08.2/RESULT.md`. La
+prochaine tâche autorisée est `SKULL-08.3`. `SKULL-08.5` est `ANNULÉE` : aucune
 reconfiguration de la sonnette ni rotation de son webhook. La gestion
 configurable événement → action, dont bouton → webhook fumée, est inscrite en
 phase 13.
