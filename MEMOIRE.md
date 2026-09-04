@@ -150,6 +150,16 @@ session.
   `git diff --check` et la comparaison SHA-256 des neuf fichiers applicatifs
   passent. Les différences sont classées ; aucune normalisation de fins de
   ligne, aucun commit, push ou accès matériel n’a été effectué.
+- Audit de rattrapage du 4 septembre 2026 : les exclusions Git couvrent
+  désormais venv, logs, cache, sauvegardes et données ; les contenus audio
+  restent hors Git dans `data/`. Un clone neuf a passé 271 tests principaux et
+  36 tests de configuration. La phase 2 reste partielle uniquement pour la
+  normalisation volontairement reportée des fins de ligne. Les scénarios
+  fonctionnels encore non cochés de la phase 3 sont couverts par ses preuves ;
+  seule la validation Linux reste à tracer. La phase 4 est terminée, y compris
+  la sentinelle empêchant tout accès servo réel en simulation. La phase 5 reste
+  partielle pour la recette physique boutons/sonnette. Aucun accès distant ni
+  matériel n’a été effectué pendant cet audit.
 - `SKULL-03.1` est validée : `pytest` est déclaré dans
   `requirements-dev.in`, la collecte est configurée dans `pytest.ini`, et les
   répertoires de tests sont présents. Deux sentinelles passent sans importer

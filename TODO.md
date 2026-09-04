@@ -55,7 +55,7 @@ La phase 1 est terminée. La restauration de l’image SD reste une opération
 non testée, mais l’image et son checksum sont disponibles pour une restauration
 ultérieure avec une confirmation séparée.
 
-## 2. Reconstruire la source de vérité
+## 2. Reconstruire la source de vérité — partiel
 
 Exécution atomique :
 [tasks/02-SOURCE-DE-VERITE.md](tasks/02-SOURCE-DE-VERITE.md).
@@ -82,11 +82,17 @@ Exécution atomique :
 - [x] Créer les exemples de configuration et le contrôle anti-secret —
   `SKULL-02.4` validée : schémas JSON, environnement Bluetooth neutre,
   exclusions Git et tests automatiques ajoutés.
-- [ ] Sortir définitivement venv, logs, cache et données du suivi Git.
-- [ ] Définir où seront sauvegardés les contenus audio hors Git.
-- [ ] `VALIDATION` Recréer les environnements depuis un clone neuf.
+- [x] Sortir définitivement venv, logs, cache, sauvegardes et données du suivi
+  Git — exclusions vérifiées dans `.gitignore`.
+- [x] Définir où seront sauvegardés les contenus audio hors Git — les contenus
+  restent dans `data/`, exclu du suivi Git.
+- [x] `VALIDATION` Recréer les environnements depuis un clone neuf — clone
+  local validé ; 271 tests principaux et 36 tests de configuration passent.
 
-## 3. Construire les tests de caractérisation
+La phase 2 reste partielle uniquement pour la normalisation des fins de ligne,
+volontairement reportée afin de ne pas modifier le comportement fonctionnel.
+
+## 3. Construire les tests de caractérisation — partiel
 
 Exécution atomique :
 [tasks/03-CARACTERISATION.md](tasks/03-CARACTERISATION.md).
@@ -100,8 +106,8 @@ Exécution atomique :
 - [x] Tester la détection des sessions — `SKULL-03.3` validée : présence des
   MP3/JSON, caches WAV, multi-fichiers, noms Unicode et traversée de chemin
   caractérisés sans données de production.
-- [ ] Tester l’interpolation à 60 Hz.
-- [ ] Tester les limites et offsets sans matériel.
+- [x] Tester l’interpolation à 60 Hz — couvert par `SKULL-03.2`.
+- [x] Tester les limites et offsets sans matériel — couvert par `SKULL-03.2`.
 - [x] Tester la détection MP3/JSON des sessions — couvert par `SKULL-03.3` ;
   les placeholders restent synthétiques et hors Git de production.
 - [x] Figer les réponses JSON des routes legacy — `SKULL-03.4` validée :
@@ -110,17 +116,21 @@ Exécution atomique :
 - [x] Tester playlist, état de lecture et erreurs de démarrage — `SKULL-03.5`
   validée : transitions, concurrence, skip/stop, suppression, aléatoire et
   erreurs audio/Bluetooth caractérisés ; tableau dans `evidence/SKULL-03.5/`.
-- [ ] Tester play, pause, resume, stop et fin de piste.
-- [ ] Tester ajout, déplacement, suppression et skip de playlist.
-- [ ] Tester catégories, mode aléatoire et exclusion de `Accueil`.
-- [ ] Figer les réponses JSON des routes legacy.
+- [x] Tester play, pause, resume, stop et fin de piste — couvert par
+  `SKULL-03.5`.
+- [x] Tester ajout, déplacement, suppression et skip de playlist — couvert par
+  `SKULL-03.5`.
+- [x] Tester catégories, mode aléatoire et exclusion de `Accueil` — couvert par
+  `SKULL-03.4` et `SKULL-03.5`.
+- [x] Figer les réponses JSON des routes legacy — couvert par `SKULL-03.4`.
 - [x] Tester le webhook fumée uniquement pour `Accueil` — `SKULL-03.6`
   validée : POST local, casse, timeout et statuts d’erreur caractérisés.
 - [x] Tester les indisponibilités Bluetooth, ESP32 et domotique — couvert par
   `SKULL-03.5` et `SKULL-03.6` avec adaptateurs factices.
-- [ ] `VALIDATION` Exécuter les tests sur Windows et Linux.
+- [ ] `VALIDATION` Exécuter les tests sur Windows et Linux — Windows validé ;
+  exécution Linux à tracer séparément.
 
-## 4. Ajouter le mode matériel simulé
+## 4. Ajouter le mode matériel simulé — terminé
 
 Exécution atomique : [tasks/04-SIMULATION.md](tasks/04-SIMULATION.md).
 
@@ -133,18 +143,20 @@ Exécution atomique : [tasks/04-SIMULATION.md](tasks/04-SIMULATION.md).
 - [x] Exposer le mode validé via `/health/ready`.
 - [x] Interdire tout accès I²C/GPIO dans le profil de test.
 - [x] Comparer les commandes simulées aux traces de référence.
-- [ ] `VALIDATION` Démontrer qu’aucun test ne peut déplacer un servo.
+- [x] `VALIDATION` Démontrer qu’aucun test ne peut déplacer un servo — tests
+  simulés et sentinelles d’absence I²C/GPIO validés dans `SKULL-04.1` à
+  `SKULL-04.5`.
 
-## 5. Stabiliser le runtime sans changement fonctionnel
+## 5. Stabiliser le runtime sans changement fonctionnel — partiel
 
 Exécution atomique : [tasks/05-RUNTIME.md](tasks/05-RUNTIME.md).
 
 `SKULL-05.1` est validée : collecte live `systemctl`, processus, sockets, I²C
 et audio terminée sur le Raspberry ; preuve dans
-`evidence/SKULL-05.1/RESULT.md`. Le reloader Flask crée actuellement deux
-processus par application et deux propriétaires de `/dev/i2c-1`. Les étapes
-locales `SKULL-05.2` à `SKULL-05.6` sont maintenant validées ; `SKULL-05.7`
-a été tentée puis annulée par rollback.
+`evidence/SKULL-05.1/RESULT.md`. Le reloader Flask créait deux processus par
+application et deux propriétaires de `/dev/i2c-1`. Les étapes `SKULL-05.2` à
+`SKULL-05.7` sont validées ; une première tentative de bascule a été annulée
+par rollback contrôlé avant la validation finale.
 
 - [x] Désactiver Flask `debug=True` et son reloader — `SKULL-05.2` validée
   localement ; production non déployée.
@@ -172,9 +184,10 @@ a été tentée puis annulée par rollback.
   activation automatique.
 - [x] Comparer les réponses ancienne/nouvelle version — `SKULL-05.6` validée
   localement contre les snapshots de contrats legacy ; champs volatils listés.
-- [ ] `VALIDATION` Boutons et sonnette fonctionnent sans modification.
+- [ ] `VALIDATION` Boutons et sonnette fonctionnent sans modification — recette
+  physique non exécutée dans `SKULL-05.7`.
 
-## 6. Découper l’application
+## 6. Découper l’application — terminé
 
 Exécution atomique : [tasks/06-REFACTORING.md](tasks/06-REFACTORING.md).
 
