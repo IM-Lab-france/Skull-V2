@@ -4,6 +4,7 @@
 
 - `[x]` terminé et observé ;
 - `[ ]` à faire ;
+- `[~]` annulé ou retiré du périmètre ;
 - `VALIDATION` signifie qu’une preuve est obligatoire avant de continuer ;
 - `CONFIRMATION` signifie qu’une action peut toucher la production ou le
   matériel.
@@ -220,7 +221,9 @@ Exécution atomique :
 - [ ] Créer une configuration typée et validée au démarrage.
 - [ ] Importer automatiquement les anciens JSON et `.env`.
 - [ ] Sortir le webhook fumée du code source.
-- [ ] Remplacer le secret du webhook actuel.
+- [~] Remplacer le secret du webhook actuel — `SKULL-08.5` annulée : aucune
+  reconfiguration de la sonnette ; la liaison événement → action fumée est
+  reportée à la phase 13.
 - [ ] Remplacer progressivement les IP codées en dur par du DNS interne.
 - [ ] Séparer code, configuration, données et logs.
 - [x] `VALIDATION` Démarrer avec ancienne puis nouvelle configuration —
@@ -299,10 +302,10 @@ Exécution atomique :
 
 ## Prochaine action
 
-`SKULL-08.7` est validée sur la candidate `5000`. `SKULL-08.5` reste
-`BLOQUÉE` par l’absence d’un consommateur fumée distinct ; la sonnette
-existante ne sera pas reconfigurée. La gestion configurable événement → action
-est inscrite en phase 13.
+`SKULL-08.7` est validée sur la candidate `5000`. `SKULL-08.5` est
+`ANNULÉE` : aucune reconfiguration de la sonnette ni rotation de son webhook.
+La gestion configurable événement → action, dont bouton → webhook fumée, est
+inscrite en phase 13.
 Le lien final
 `/opt/skull/current` et l’unité indépendante de la version restent dans la
 phase 10. `SKULL-08.6` reste toutefois partielle ; la phase

@@ -346,6 +346,9 @@ session.
   l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
   `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →
   action, dont bouton → webhook fumée, sera traité en phase 13.
+- `SKULL-08.5` est annulée le 4 septembre 2026 : aucune rotation de secret et
+  aucune modification de la sonnette ne seront faites dans cette fiche. La
+  gestion configurable événement → action est suivie en phase 13.
 
 ## Reprise lors d’une prochaine session
 

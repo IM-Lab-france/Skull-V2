@@ -1,9 +1,9 @@
 # SKULL-08.5 — rotation du secret fumée
 
-- Date : 3 septembre 2026, Europe/Paris
-- Statut : `BLOQUÉ`
-- Portée : inventaire des producteurs/consommateurs et préparation locale
-  d’une rotation sans valeur sensible ; aucune rotation réelle exécutée.
+- Date : 4 septembre 2026, Europe/Paris
+- Statut : `ANNULÉE`
+- Portée : la rotation du secret fumée est retirée du périmètre ; aucune
+  reconfiguration de la sonnette ni rotation réelle exécutée.
 
 ## Inventaire
 
@@ -24,17 +24,16 @@
 - Le runbook [smoke-secret-rotation-runbook.md](../../docs/smoke-secret-rotation-runbook.md)
   fixe la garde d’approbation, la fenêtre de test et le rollback sans exposer
   de valeur sensible.
-- Le plan reste bloqué tant que la double acceptation n’est pas confirmée par
-  le système distant.
+- Le plan logiciel a été préparé sans valeur sensible ; aucune activation
+  distante n’est prévue dans cette fiche annulée.
 - Les anciens JSON et `.env` sont lus en copie locale ; une valeur webhook est
   seulement convertie en référence et signalée `redacted`.
 
-## Blocage volontaire
+## Décision d’annulation
 
-La génération, la rotation, le test ancien/nouveau, le basculement du
-producteur et le retrait de l’ancien secret nécessitent une confirmation
-explicite, un mécanisme approuvé de gestion des secrets et l’accès au
-consommateur domotique. Aucun de ces changements réels n’a été effectué.
+La décision du 4 septembre 2026 annule `SKULL-08.5`. L’automatisation Home
+Assistant `Sonnette` reste inchangée ; aucun secret, webhook ou service n’est
+modifié par cette tâche.
 
 La confirmation de l’utilisateur a été reçue le 3 septembre 2026. Home
 Assistant est maintenant accessible via `ha.home.arpa` et une session
@@ -47,26 +46,23 @@ le proxy web.
 
 L’interface Home Assistant expose une automatisation `Sonnette` avec un
 déclencheur webhook local-only et une action `Lampe Bureau`. Cette
-automatisation est explicitement hors périmètre de `SKULL-08.5` et ne doit pas
-être reconfigurée. L’ancien endpoint du Skull ne peut donc pas être utilisé
-comme preuve d’un consommateur fumée ; la gestion configurable événement →
-action, dont bouton → webhook fumée, est reportée à la phase 13.
+automatisation est explicitement hors périmètre et ne doit pas être
+reconfigurée. La gestion configurable événement → action, dont bouton →
+webhook fumée, est reportée à la phase 13.
 
-Le relevé distant en lecture seule du 3 septembre 2026 confirme que
+Le relevé distant en lecture seule du 3 septembre 2026 confirmait que
 `/etc/skull/secrets.env` existe mais est vide (`0600`) et que le fichier legacy
 inspecté ne contient que les paramètres Bluetooth. La référence fonctionnelle
-du consommateur domotique, sa capacité de double acceptation, le nouveau
-secret généré hors chat et la fenêtre de test ne sont donc pas établis.
+du consommateur fumée n’a pas été poursuivie, puisque cette rotation est
+annulée.
 
-Pour débloquer cette fiche, il faut confirmer séparément :
+Les éléments non exécutés sont volontairement reportés à la phase 13 ou à une
+future décision distincte :
 
-1. identifier un consommateur fumée distinct, sans modifier `Sonnette` ;
-2. préparer l’acceptation temporaire de l’ancien et du nouveau secret pour ce
-   consommateur ;
-3. générer et stocker le nouveau secret hors chat, dépôt Git et historique
-   shell, puis confirmer la fenêtre de test et le rollback ;
-4. déployer, tester ancien/nouveau, retirer l’ancien identifiant et vérifier
-   le rollback.
+1. définir le consommateur et l’action fumée dans le modèle événement → action ;
+2. décider séparément si un secret dédié doit être créé ;
+3. appliquer alors une procédure de rotation approuvée, sans toucher à
+   `Sonnette`.
 
 ## Vérifications
 

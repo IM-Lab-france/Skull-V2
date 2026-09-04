@@ -1,9 +1,16 @@
-# Runbook — rotation du secret fumée (`SKULL-08.5`)
+# Runbook — rotation du secret fumée (`SKULL-08.5`, annulée)
 
 Ce document décrit une exécution future. Il ne contient aucune valeur de
 secret, URL complète, adresse réseau ou commande d’envoi vers la domotique.
 
-## Garde d’approbation
+## Statut
+
+`SKULL-08.5` est annulée le 4 septembre 2026. Ce runbook est conservé comme
+référence uniquement ; il n’autorise aucune modification de la sonnette.
+La gestion configurable événement → action, dont bouton → webhook fumée, est
+reportée à la phase 13.
+
+## Garde d’approbation — future réouverture uniquement
 
 Ne pas poursuivre la bascule tant que les trois conditions suivantes ne sont
 pas confirmées séparément :
@@ -14,7 +21,8 @@ pas confirmées séparément :
    dépôt Git, ligne de commande et historique shell ;
 3. le propriétaire confirme la fenêtre de test et le rollback.
 
-Sans ces confirmations, l’état reste `BLOQUÉ` et aucune écriture n’est faite.
+Ces conditions ne s’appliquent que si une future tâche réouvre la rotation.
+Dans l’état actuel `ANNULÉE`, aucune écriture n’est faite.
 
 ## Cibles
 
@@ -59,6 +67,6 @@ appairages Bluetooth ni les données de lecture comme rollback du webhook.
 
 ## État actuel
 
-La préparation de référence et le plan logiciel sont validés localement. La
-génération, le déploiement, le test réel et le retrait de l’ancien secret sont
-encore en attente d’autorisation et d’accès aux deux systèmes.
+La préparation de référence et le plan logiciel restent conservés localement,
+mais l’exécution est annulée. Aucun secret réel, test réel ou changement
+domotique n’a été effectué.
