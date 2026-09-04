@@ -40,3 +40,6 @@ Le sélecteur runtime accepte désormais `SKULL_RUNTIME_MODE` en priorité, avec
 `SKULL_HARDWARE_MODE` conservé comme alias de coexistence. La sélection du mode
 ne construit aucun adaptateur et le mode simulé reste soumis à une valeur
 d’environnement explicite.
+
+La règle complète de précédence et la liste des surcharges autorisées sont
+décrites dans `docs/configuration-precedence.md`.

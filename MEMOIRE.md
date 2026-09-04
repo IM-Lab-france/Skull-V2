@@ -353,6 +353,12 @@ session.
   Les erreurs sont bornées, les diagnostics redigés et la configuration est
   immuable après chargement. 271 tests passent ; aucun accès distant ou
   matériel n’a été effectué. Preuve dans `evidence/SKULL-08.2/RESULT.md`.
+- `SKULL-08.3` est validée le 4 septembre 2026 : la précédence du chargeur est
+  explicitement fixée à arguments de maintenance, environnement autorisé,
+  TOML puis défauts sûrs. Les collisions, l’alias de mode, la provenance non
+  sensible et l’indépendance au répertoire courant sont testés. 271 tests
+  passent ; aucun accès distant ou matériel n’a été effectué. Preuve dans
+  `evidence/SKULL-08.3/RESULT.md`.
 - Décision du 4 septembre 2026 : `SKULL-08.5` ne reconfigure pas
   l’automatisation Home Assistant `Sonnette`. Le webhook observé déclenche
   `Lampe Bureau`, pas une action fumée ; un modèle configurable événement →

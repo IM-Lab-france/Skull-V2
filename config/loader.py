@@ -12,6 +12,14 @@ from .schema import ConfigurationError, SkullConfig, deep_copy_defaults, validat
 
 
 DEFAULT_CONFIG_PATH = Path("/etc/skull/config.toml")
+# Highest priority first.  This is the only precedence rule for the typed
+# configuration; legacy modules remain compatibility consumers until migration.
+CONFIG_PRECEDENCE = (
+    "maintenance_args",
+    "environment",
+    "toml_file",
+    "safe_defaults",
+)
 ENV_FIELDS: dict[str, tuple[str, str]] = {
     # Legacy alias is accepted during coexistence; the new name below wins
     # deterministically when both are present in the same environment.
@@ -135,4 +143,4 @@ def load_config(
     return validate_raw(raw), provenance
 
 
-__all__ = ["DEFAULT_CONFIG_PATH", "ENV_FIELDS", "load_config"]
+__all__ = ["CONFIG_PRECEDENCE", "DEFAULT_CONFIG_PATH", "ENV_FIELDS", "load_config"]
