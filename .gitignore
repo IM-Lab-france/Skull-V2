@@ -3,3 +3,7 @@
 /__pycache__
 data/*
 config/*
+!config/*.example
+/backups/
+/evidence/**/raw/
+*.bak

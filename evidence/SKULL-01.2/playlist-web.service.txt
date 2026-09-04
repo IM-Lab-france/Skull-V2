@@ -1,0 +1,19 @@
+# /etc/systemd/system/playlist-web.service
+[Unit]
+Description=Skull Playlist Web Interface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=skull
+Group=skull
+WorkingDirectory=/opt/skull
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/opt/skull/launch_playlist_web.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

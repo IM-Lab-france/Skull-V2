@@ -2,6 +2,29 @@
 
 Plateforme de pilotage d’un crâne animatronique : synchronisation de quatre servos avec un MP3, interface web moderne pour charger des sessions, ajuster les offsets, suivre les logs en direct et exposer une interface publique facultative.
 
+Fichiers de pilotage du projet :
+
+- [OBJECTIF.md](OBJECTIF.md) : cible et contraintes non négociables ;
+- [TODO.md](TODO.md) : ordre des travaux et validations ;
+- [MEMOIRE.md](MEMOIRE.md) : état observé et décisions prises ;
+- [OPERATIONS.md](OPERATIONS.md) : exploitation, architecture et procédures ;
+- [LUNA.md](LUNA.md) : protocole obligatoire pour confier une tâche à Luna ;
+- [tasks/README.md](tasks/README.md) : fiches d’exécution détaillées par phase.
+
+## Tableau de mission local
+
+`TODO.md` reste la source de vérité. Pour afficher son état dans une IHM web
+locale, lancer depuis PowerShell :
+
+```powershell
+& "C:\Skull-V2\Start-SkullTaskDashboard.ps1"
+```
+
+Le tableau de bord s'ouvre sur `http://127.0.0.1:5055`, relit `TODO.md` toutes
+les cinq secondes et n'écrit rien dans le dépôt. Les tâches validées comptent
+pour 100 % et les tâches partielles pour 50 % dans l'indicateur global.
+
+
 ## Installation automatisee
 
 ### Prerequis
@@ -44,7 +67,7 @@ Astuce : pour passer l'etape d'appairage Bluetooth (par exemple en installation 
   - accès aux logs et statistiques.
 - **Journalisation avancée** : `logger.py` produit des logs quotidiens + fichiers JSON de stats (durées, dérive, cadence de commandes…)
 - **Gaze tracking (optionnel)** : `gaze_receiver.py` écoute un flux UDP (`127.0.0.1:5005`) et `SyncPlayer` peut se laisser piloter (cou/yeux) par ces commandes.
-- **Interface publique** (`public_interface.py`) : file d’attente visiteurs, WebSocket vers le serveur principal, cooldown par utilisateur ; se lance indépendamment.
+- **Interface playlist publique** (`playlist_web.py`) : file d’attente visiteurs, cooldown par utilisateur et appels HTTP vers le serveur principal ; se lance indépendamment.
 
 ## Structure du dépôt
 
@@ -56,11 +79,11 @@ Astuce : pour passer l'etape d'appairage Bluetooth (par exemple en installation 
 ├── timeline.py           # Chargement / interpolation des timelines
 ├── logger.py             # Collecte des logs + stats de session
 ├── gaze_receiver.py      # Réception UDP des données de regard
-├── public_interface.py   # UI publique (file d'attente websocket)
+├── playlist_web.py       # UI publique (file d'attente HTTP)
 ├── static/               # Frontend (JS, CSS, viewer logs)
 ├── templates/            # Templates HTML (interface principale)
 ├── launch_servo_sync.sh  # Script de lancement (web_app)
-├── launch_public.sh      # Script de lancement UI publique
+├── launch_playlist_web.sh # Script de lancement UI publique
 └── config/ & data/       # Créés au runtime pour persistance & sessions
 ```
 
@@ -155,16 +178,16 @@ Les angles en pourcentage (`jawOpening` 0-100) sont convertis en degrés automat
 
 ## Interface publique (optionnelle)
 
-`public_interface.py` fournit une UI queue/cooldown (port 5001 par défaut) qui communique avec le serveur principal via WebSocket (`MAIN_WS_URL`). Lancer avec :
+`playlist_web.py` fournit une UI queue/cooldown (port 5050 par défaut) qui communique avec le serveur principal par HTTP. Lancer avec :
 
 ```bash
-./launch_public.sh
+./launch_playlist_web.sh
 ```
 
 Points clés :
 - File d’attente persistée (`data/playlist_state.json`).
 - Cooldown par utilisateur (UUID navigateur) configurable (`COOLDOWN_MINUTES`).
-- Dépend de `websocket-client`; ajuster `MAIN_WS_URL` pour pointer vers `ws://<host>:5000/ws` (implémentation côté serveur à fournir).
+- L’URL du backend est définie par `PLAYLIST_BACKEND_BASE`.
 
 ## Gaze tracking (optionnel)
 
@@ -195,7 +218,7 @@ Les scripts front-end (`static/app.js`) affichent un toast & badge OFFLINE si `/
 
 ## TODO / pistes
 
-- Finaliser la terminaison WebSocket côté serveur principal pour l’UI publique.
+- Ajouter une procédure de sauvegarde/restauration et des tests de validation des sessions.
 - Ajouter des tests unitaires sur la normalisation `timeline.py`.
 - Prévoir une API REST pour activer `track_enable` et surveiller l’état gaze.
 - Éventuellement proposer un `requirements.txt` consolidé pour éviter la duplication des installations dans les scripts de lancement.
