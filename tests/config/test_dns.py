@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from config.dns import DnsResolutionError, resolve_endpoint
@@ -39,3 +41,11 @@ def test_explicit_fallback_is_reported() -> None:
 def test_primary_endpoint_must_be_a_dns_name(name: str) -> None:
     with pytest.raises(DnsResolutionError, match="DNS"):
         resolve_endpoint(name, port=80, resolver=lambda *_: [])
+
+
+def test_playlist_launcher_uses_internal_dns_instead_of_legacy_skull_ip() -> None:
+    launcher = (Path(__file__).resolve().parents[2] / "launch_playlist_web.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "192.168.1.116" not in launcher
+    assert "skull.home.arpa:5000" in launcher

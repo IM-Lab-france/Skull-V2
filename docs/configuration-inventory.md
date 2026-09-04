@@ -175,3 +175,17 @@ et la rotation restent à démontrer sur la cible, hors de cette phase locale.
 La création d’enregistrements DNS reste réservée à une phase réseau approuvée ;
 `SKULL-08.6` ne modifie donc aucun DNS et ne prétend pas valider une résolution
 réelle. Les fichiers actifs et les secrets de production restent hors Git.
+
+## Dépendances DNS internes — SKULL-08.6
+
+| Dépendance | Propriétaire attendu | Usage | État observé depuis le poste de travail |
+|---|---|---|---|
+| `skull.home.arpa` | DNS interne du réseau IoT | backend Skull et cible d’administration applicative | résout vers l’adresse actuelle du Skull |
+| `ha.home.arpa` | DNS interne / administration domotique | cible Home Assistant, lorsque le flux sera approuvé | résout ; l’adresse retournée ne constitue pas une preuve depuis le Skull |
+| ESP32 boutons | DNS interne / administration IoT | supervision et passerelle HTTP | aucun nom DNS de production approuvé ; l’ancien hôte reste désactivé |
+
+Le lanceur `launch_playlist_web.sh` utilise désormais `skull.home.arpa:5000`
+par défaut. Une valeur `PLAYLIST_BACKEND_BASE` ne remplace ce nom que si elle
+est fournie explicitement ; aucune IP legacy n’est utilisée en silence. Les
+ACL, routes et enregistrements restent inchangés et doivent être traités dans
+la phase réseau approuvée.

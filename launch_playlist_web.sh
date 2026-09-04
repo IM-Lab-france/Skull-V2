@@ -31,10 +31,12 @@ fi
 
 echo "==> Environment ready"
 echo "    - Playlist interface: http://localhost:5050"
-echo "    - Backend cible: http://192.168.1.116:5000"
+BACKEND_BASE="${PLAYLIST_BACKEND_BASE:-http://skull.home.arpa:5000}"
+echo "    - Backend cible: ${BACKEND_BASE}"
 
-# Fixe l'URL du backend
-export PLAYLIST_BACKEND_BASE="http://192.168.1.116:5000"
+# Le nom DNS interne est la valeur par défaut ; une surcharge explicite reste
+# possible pour une coexistence contrôlée ou un environnement de test.
+export PLAYLIST_BACKEND_BASE="${BACKEND_BASE}"
 
 echo "==> Starting playlist_web.py"
 exec python playlist_web.py
