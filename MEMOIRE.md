@@ -115,6 +115,11 @@ session.
   monté en `L:`. L’image fait 8 963 227 648 octets et son SHA-256 est
   `3FEFF0E7EA02D6933338E4E792BBA7082B5B00B71A3B63A552870244216923B8`.
   `E:` n’a pas été modifiée. La restauration n’est pas encore testée.
+- La phase 1 est terminée et validée le 4 septembre 2026 : `SKULL-01.1` à
+  `SKULL-01.5` couvrent le préflight, l’export du code et des unités, l’archive
+  de production, la copie et restauration temporaire hors Raspberry, puis
+  l’image complète de la carte SD avec checksum. La restauration de l’image SD
+  reste volontairement non testée et nécessitera une confirmation séparée.
 - `SKULL-02.1` est validée : le worktree
   `C:\Users\cedri\Documents\Codex\Skull-V2-production-2026` et la branche
   `codex/production-skull-2026` sont basés sur le commit de production

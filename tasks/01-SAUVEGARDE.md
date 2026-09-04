@@ -1,5 +1,9 @@
 # Phase 01 — gel et sauvegarde de production
 
+Statut de la phase : `VALIDÉE` — les tâches `SKULL-01.1` à `SKULL-01.5` sont
+documentées dans leurs preuves respectives. La restauration de l’image SD n’a
+pas encore été testée.
+
 Cette phase précède toute modification applicative distante.
 
 ## SKULL-01.1 — préflight de sauvegarde
@@ -167,4 +171,3 @@ Plan uniquement tant que le support cible et la méthode ne sont pas choisis.
 - source et destination exactes identifiées ;
 - aucune commande `dd` n’est exécutée sans confirmation ;
 - procédure de restauration définie et relue.
-

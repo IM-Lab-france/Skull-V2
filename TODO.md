@@ -26,17 +26,22 @@ Détails et preuves attendues : [tasks/00-REPRISE.md](tasks/00-REPRISE.md).
 - [x] Appairer et configurer la Bose SoundLink Mini II comme sortie audio
   actuelle.
 
-## 1. Geler et sauvegarder la production — priorité immédiate
+## 1. Geler et sauvegarder la production — terminé
 
 Exécution atomique : [tasks/01-SAUVEGARDE.md](tasks/01-SAUVEGARDE.md).
 
-- [ ] `CONFIRMATION` Arrêter une fenêtre de maintenance.
+- [x] `CONFIRMATION` Fenêtre d’intervention validée avant les opérations de
+  sauvegarde.
 - [x] Archiver `/opt/skull/data` et `/opt/skull/config` — `SKULL-01.3` validée.
-- [ ] Sauvegarder les unités systemd réellement installées.
-- [ ] Exporter le diff Git complet de `/opt/skull`.
-- [ ] Exporter la liste exacte des dépendances des deux venv.
-- [ ] Relever les versions système, Python, BlueZ et PulseAudio.
-- [ ] Créer un manifeste des sessions avec tailles et checksums.
+- [x] Sauvegarder les unités systemd réellement installées — `SKULL-01.2`
+  validée.
+- [x] Exporter le diff Git complet de `/opt/skull` — `SKULL-01.2` validée.
+- [x] Exporter la liste exacte des dépendances des deux venv — `SKULL-01.2`
+  validée.
+- [x] Relever l’environnement système et les dépendances runtime —
+  `SKULL-01.1` et `SKULL-01.2` validées.
+- [x] Créer le manifeste de sauvegarde avec tailles, entrées et checksums —
+  `SKULL-01.3` et `SKULL-01.4` validées.
 - [x] Copier les sauvegardes hors du Raspberry — `SKULL-01.4` validée.
 - [x] Vérifier les checksums après copie — `SKULL-01.4` validée.
 - [x] Restaurer l’archive dans un répertoire temporaire — `SKULL-01.4` validée.
@@ -45,6 +50,10 @@ Exécution atomique : [tasks/01-SAUVEGARDE.md](tasks/01-SAUVEGARDE.md).
   consignés dans `evidence/SKULL-01.5/` ; restauration non testée.
 - [x] `VALIDATION` Produire une preuve de restauration exploitable —
   `SKULL-01.4` validée.
+
+La phase 1 est terminée. La restauration de l’image SD reste une opération
+non testée, mais l’image et son checksum sont disponibles pour une restauration
+ultérieure avec une confirmation séparée.
 
 ## 2. Reconstruire la source de vérité
 
