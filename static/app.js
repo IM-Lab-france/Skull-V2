@@ -50,6 +50,13 @@ const elResume = $("#resumeBtn");
 
 const elStop = $("#stopBtn");
 
+const elModeButtons = document.querySelectorAll("[data-skull-mode]");
+const elModeStatus = document.getElementById("modeStatus");
+const elStreamUrl = document.getElementById("streamUrl");
+const elStreamStart = document.getElementById("streamStartBtn");
+const elStreamStop = document.getElementById("streamStopBtn");
+const elStreamStatus = document.getElementById("streamStatus");
+
 const elStatus = $("#statusBox");
 
 const elBadge = $("#badgeState");
@@ -67,6 +74,16 @@ const elPlaylistCurrent = $("#playlistCurrent");
 const elPlaylistSkip = $("#playlistSkipBtn");
 
 const elPlaylistRefresh = $("#playlistRefreshBtn");
+
+const elAvailableTracksList = document.getElementById("availableTracksList");
+
+const elAvailableTracksCount = document.getElementById("availableTracksCount");
+
+const elAvailableTracksStatus = document.getElementById("availableTracksStatus");
+
+const elPlaylistCatalogList = document.getElementById("playlistCatalogList");
+
+const elPlaylistCatalogCount = document.getElementById("playlistCatalogCount");
 
 const elCategoryManager = document.getElementById("categoryManager");
 
@@ -95,6 +112,7 @@ const elDeleteModalClose = $("#deleteSessionClose");
 const elVolumeButtons = document.querySelectorAll("[data-volume-action]");
 const elVolumeSlider = document.getElementById("volumeSlider");
 const elVolumeSliderValue = document.getElementById("volumeSliderValue");
+const BLUETOOTH_NATIVE_VOLUME_MAX = 127;
 
 const elBtStatus = document.getElementById("bluetoothStatus");
 
@@ -185,6 +203,8 @@ const elEsp32AutoRelayState = document.getElementById("esp32AutoRelayState");
 const elEsp32CurrentSession = document.getElementById("esp32CurrentSession");
 
 const elEsp32WifiInfo = document.getElementById("esp32WifiInfo");
+
+const elEsp32LastButton = document.getElementById("esp32LastButton");
 
 const elEsp32StatusRaw = document.getElementById("esp32StatusRaw");
 
@@ -462,6 +482,9 @@ let esp32Busy = {
 };
 
 let statusFetchInFlight = false;
+let statusWebSocket = null;
+let statusWebSocketRetryTimer = null;
+let statusWebSocketRetryDelay = 1000;
 function renderRandomModeState() {
   if (elRandomToggle) {
     elRandomToggle.classList.toggle("toggle-active", randomModeState.enabled);
@@ -1306,6 +1329,79 @@ function formatSessionLabel(sessionName, fallbackCategory = null) {
   return displayName;
 }
 
+function renderAvailableTracks(sessionNames, message = "") {
+  const names = Array.isArray(sessionNames) ? sessionNames : [];
+  const lists = [elAvailableTracksList, elPlaylistCatalogList].filter(Boolean);
+
+  if (elAvailableTracksCount) {
+    elAvailableTracksCount.textContent = String(names.length).padStart(2, "0");
+  }
+  if (elPlaylistCatalogCount) {
+    elPlaylistCatalogCount.textContent = String(names.length).padStart(2, "0");
+  }
+  if (elAvailableTracksStatus) {
+    elAvailableTracksStatus.textContent = message || `${names.length} morceau${names.length === 1 ? "" : "x"} disponible${names.length === 1 ? "" : "s"}`;
+  }
+
+  lists.forEach((list) => {
+    list.innerHTML = "";
+    if (!names.length) {
+      const empty = document.createElement("li");
+      empty.className = "available-track-empty";
+      empty.textContent = message || "Aucun morceau disponible";
+      list.appendChild(empty);
+      return;
+    }
+
+    names.forEach((session, index) => {
+      const item = document.createElement("li");
+      item.className = "available-track-item";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "available-track";
+      button.dataset.availableTrack = session;
+      button.setAttribute("aria-label", `Sélectionner ${formatSessionLabel(session)}`);
+      if (elSelect && elSelect.value === session) {
+        button.classList.add("is-selected");
+      }
+
+      const number = document.createElement("span");
+      number.className = "available-track-index";
+      number.textContent = String(index + 1).padStart(2, "0");
+
+      const name = document.createElement("span");
+      name.className = "available-track-name";
+      name.textContent = prettifySessionName(session) || session;
+
+      const category = document.createElement("span");
+      category.className = "available-track-category";
+      category.textContent = getCategoryForSession(session) || "READY";
+
+      button.append(number, name, category);
+      item.appendChild(button);
+      list.appendChild(item);
+    });
+  });
+}
+
+function refreshAvailableTrackSelection() {
+  const selected = elSelect ? elSelect.value : "";
+  document.querySelectorAll("[data-available-track]").forEach((button) => {
+    button.classList.toggle("is-selected", button.dataset.availableTrack === selected);
+  });
+}
+
+function selectAvailableTrack(session) {
+  if (!session || !elSelect) return;
+  const option = Array.from(elSelect.options).find((item) => item.value === session);
+  if (!option) return;
+  elSelect.value = session;
+  refreshAvailableTrackSelection();
+  syncDeleteSessionState();
+  toast(`Session sélectionnée : ${formatSessionLabel(session)}`);
+}
+
 function rebuildSessionSelect(sessionNames, preferredValue, previousValue) {
   if (!elSelect) {
     return;
@@ -1756,6 +1852,8 @@ async function fetchSessions(options = {}) {
     sessionCategories = categoriesMap;
     availableCategories = sanitizeCategoryList(data.categories);
 
+    renderAvailableTracks(sessionNames);
+
     rebuildSessionSelect(
       sessionNames,
       preferred ?? previousValue,
@@ -1779,6 +1877,8 @@ async function fetchSessions(options = {}) {
     sessionCategories = new Map();
     availableCategories = [];
     cachedSessionNames = [];
+
+    renderAvailableTracks([], "Catalogue indisponible");
 
     populateEsp32ButtonOptions();
 
@@ -1927,6 +2027,12 @@ document.addEventListener("keydown", (event) => {
 
     closeDeleteModal();
   }
+});
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-available-track]");
+  if (!button) return;
+  selectAvailableTrack(button.dataset.availableTrack || "");
 });
 
 // ===================== Playlist =====================
@@ -2227,6 +2333,24 @@ elPlaylistRefresh?.addEventListener("click", () => {
 
 // Controls
 
+// Reflect the user's action immediately. The authoritative state still comes
+// from the WebSocket/HTTP status update when the backend has completed it.
+function showPlaybackIntent(state) {
+  if (!elBadge) return;
+  const labels = { playing: "PLAYING", paused: "PAUSED", idle: "IDLE" };
+  const classes = { playing: "is-playing", paused: "is-paused", idle: "is-idle" };
+  elBadge.textContent = labels[state] || "BUSY";
+  elBadge.className = `badge ${classes[state] || "is-playing"}`;
+}
+
+function refreshAfterCommand({ playlist = false, random = false } = {}) {
+  const jobs = [];
+  if (playlist) jobs.push(refreshPlaylist(true));
+  if (random) jobs.push(fetchRandomModeState());
+  jobs.push(updateStatus());
+  return Promise.allSettled(jobs);
+}
+
 elPlay?.addEventListener("click", async () => {
   const sid = elSelect.value;
 
@@ -2235,6 +2359,9 @@ elPlay?.addEventListener("click", async () => {
 
     return;
   }
+
+  showPlaybackIntent("playing");
+  toast("Commande PLAY envoyee");
 
   try {
     const res = await fetch("/play", {
@@ -2312,51 +2439,282 @@ elPlay?.addEventListener("click", async () => {
       toast(message);
     }
 
-    await refreshPlaylist(true);
-
-    fetchRandomModeState();
-
-    updateStatus();
+    void refreshAfterCommand({ playlist: true, random: true });
   } catch (e) {
+    showPlaybackIntent("idle");
     toast("Erreur reseau lors de la lecture", true);
   }
 });
 
 elPause?.addEventListener("click", async () => {
+  showPlaybackIntent("paused");
   try {
-    await fetch("/pause", { method: "POST" });
-
-    updateStatus();
+    const res = await fetch("/pause", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    void refreshAfterCommand();
   } catch (e) {
     toast("Erreur pause", true);
   }
 });
 
 elResume?.addEventListener("click", async () => {
+  showPlaybackIntent("playing");
   try {
-    await fetch("/resume", { method: "POST" });
-
-    updateStatus();
+    const res = await fetch("/resume", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    void refreshAfterCommand();
   } catch (e) {
     toast("Erreur resume", true);
   }
 });
 
 elStop?.addEventListener("click", async () => {
+  showPlaybackIntent("idle");
   try {
-    await fetch("/stop", { method: "POST" });
-
-    await refreshPlaylist(true);
-
-    fetchRandomModeState();
-
-    updateStatus();
+    const res = await fetch("/stop", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    void refreshAfterCommand({ playlist: true, random: true });
   } catch (e) {
     toast("Erreur stop", true);
   }
 });
 
 // Status
+
+function applySkullMode(modeState) {
+  if (!modeState || typeof modeState !== "object") return;
+  const active = modeState.mode || "normal";
+  elModeButtons.forEach((button) => {
+    const selected = button.dataset.skullMode === active;
+    button.classList.toggle("toggle-active", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  if (elModeStatus) {
+    elModeStatus.textContent = `Mode actif : ${String(active).toUpperCase()}`;
+  }
+}
+
+async function selectSkullMode(mode) {
+  elModeButtons.forEach((button) => { button.disabled = true; });
+  try {
+    const res = await fetch("/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+    applySkullMode(payload);
+    toast(`Mode ${mode} active`);
+  } catch (error) {
+    if (elModeStatus) elModeStatus.textContent = "Erreur de changement de mode";
+    toast("Impossible de changer le mode Skull", true);
+  } finally {
+    elModeButtons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+function applyStreamStatus(status) {
+  if (!elStreamStatus || !status) return;
+  const state = String(status.state || "idle").toUpperCase();
+  const title = status.title ? ` · ${status.title}` : "";
+  elStreamStatus.textContent = `STREAM ${state}${title} · buffer ${Number(status.buffered_frames || 0)} trames`;
+}
+
+async function refreshStreamStatus() {
+  try {
+    const response = await fetch("/stream", { cache: "no-store" });
+    if (response.ok) applyStreamStatus(await response.json());
+  } catch (_) {
+    if (elStreamStatus) elStreamStatus.textContent = "Flux musical indisponible";
+  }
+}
+
+elStreamStart?.addEventListener("click", async () => {
+  const url = elStreamUrl?.value.trim();
+  if (!url) {
+    if (elStreamStatus) elStreamStatus.textContent = "URL du PC source requise";
+    return;
+  }
+  try {
+    const response = await fetch("/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start", url }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    applyStreamStatus(payload);
+    applySkullMode({ mode: "stream" });
+  } catch (error) {
+    if (elStreamStatus) elStreamStatus.textContent = `Erreur stream : ${error.message}`;
+  }
+});
+
+elStreamStop?.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    applyStreamStatus(payload);
+    applySkullMode({ mode: "normal" });
+  } catch (error) {
+    if (elStreamStatus) elStreamStatus.textContent = `Erreur arrêt stream : ${error.message}`;
+  }
+});
+
+refreshStreamStatus();
+setInterval(refreshStreamStatus, 2000);
+
+elModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const mode = button.dataset.skullMode;
+    if (mode) void selectSkullMode(mode);
+  });
+});
+
+function applyStatusSnapshot(st) {
+  if (!st || typeof st !== "object") {
+    return;
+  }
+
+  elStatus.textContent = JSON.stringify(st, null, 2);
+  window.__skullStatus = st;
+
+  applySkullMode(st.mode);
+
+  if (st.esp32) {
+    const esp = st.esp32;
+    const payload = esp.status || null;
+    if (esp.reachable && payload) {
+      esp32StatusSnapshot = payload;
+      setEsp32Reachability(true, "En ligne");
+      setEsp32Badge(elEsp32RelayState, payload.relay);
+      setEsp32Badge(elEsp32AutoRelayState, payload.autoRelay);
+      updateEsp32AutoRelayButton(payload.autoRelay);
+      if (elEsp32CurrentSession) elEsp32CurrentSession.textContent = payload.currentSession || "-";
+      if (elEsp32WifiInfo) elEsp32WifiInfo.textContent = formatEsp32WifiInfo(payload.wifi);
+      updateEsp32ButtonStates(payload.buttons);
+    }
+    const event = esp.last_button_event;
+    if (elEsp32LastButton) {
+      elEsp32LastButton.textContent = event && event.button
+        ? `#${event.button} · ${event.category || "—"}`
+        : "—";
+    }
+  }
+
+  if (st.loop) {
+    applyLoopStatus(st.loop);
+  }
+
+  if (st.random_mode) {
+    applyRandomModeSnapshot(st.random_mode);
+  }
+
+  applyBluetoothStatus(st.bluetooth || null);
+
+  const txt = st.running ? (st.paused ? "PAUSED" : "PLAYING") : "IDLE";
+  elBadge.textContent = txt;
+  elBadge.className =
+    "badge " +
+    (txt === "PLAYING"
+      ? "is-playing"
+      : txt === "PAUSED"
+      ? "is-paused"
+      : "is-idle");
+
+  if (elConnection) {
+    elConnection.classList.remove("offline");
+    elConnection.classList.add("online");
+  }
+
+  if (elConnectionText) {
+    elConnectionText.textContent = "Skull : connecte";
+  }
+
+  if (elConnectionDot) {
+    elConnectionDot.setAttribute("aria-label", "connecte");
+  }
+
+  if (!serverReachable) {
+    toast("Skull en ligne");
+  }
+
+  serverReachable = true;
+  nextStatusAttempt = Date.now() + 1500;
+  refreshPlaylist();
+}
+
+function scheduleStatusWebSocketReconnect() {
+  if (statusWebSocketRetryTimer !== null) {
+    return;
+  }
+
+  const delay = statusWebSocketRetryDelay;
+  statusWebSocketRetryDelay = Math.min(15000, statusWebSocketRetryDelay * 2);
+  statusWebSocketRetryTimer = window.setTimeout(() => {
+    statusWebSocketRetryTimer = null;
+    connectStatusWebSocket();
+  }, delay);
+}
+
+function connectStatusWebSocket() {
+  if (typeof WebSocket !== "function") {
+    return;
+  }
+
+  if (
+    statusWebSocket &&
+    (statusWebSocket.readyState === WebSocket.OPEN ||
+      statusWebSocket.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws/status`);
+  statusWebSocket = socket;
+
+  socket.onopen = () => {
+    if (statusWebSocket !== socket) return;
+    statusWebSocketRetryDelay = 1000;
+    nextStatusAttempt = Date.now() + 1500;
+  };
+
+  socket.onmessage = (event) => {
+    if (statusWebSocket !== socket) return;
+    try {
+      const message = JSON.parse(event.data);
+      if (
+        message &&
+        message.type === "status" &&
+        message.version === 1 &&
+        message.payload &&
+        typeof message.payload === "object"
+      ) {
+        applyStatusSnapshot(message.payload);
+      }
+    } catch (error) {
+      console.warn("Skull WebSocket message invalide:", error);
+    }
+  };
+
+  socket.onerror = () => {
+    socket.close();
+  };
+
+  socket.onclose = () => {
+    if (statusWebSocket !== socket) return;
+    statusWebSocket = null;
+    nextStatusAttempt = 0;
+    scheduleStatusWebSocketReconnect();
+  };
+}
 
 async function updateStatus() {
   const now = Date.now();
@@ -2378,55 +2736,7 @@ async function updateStatus() {
       throw new Error(`status_http_${res.status}`);
     }
 
-    const st = await res.json();
-
-    elStatus.textContent = JSON.stringify(st, null, 2);
-
-    if (st && typeof st === "object" && st.loop) {
-      applyLoopStatus(st.loop);
-    }
-
-    if (st && typeof st === "object" && st.random_mode) {
-      applyRandomModeSnapshot(st.random_mode);
-    }
-
-    applyBluetoothStatus(st && st.bluetooth ? st.bluetooth : null);
-
-    const txt = st.running ? (st.paused ? "PAUSED" : "PLAYING") : "IDLE";
-
-    elBadge.textContent = txt;
-
-    elBadge.className =
-      "badge " +
-      (txt === "PLAYING"
-        ? "is-playing"
-        : txt === "PAUSED"
-        ? "is-paused"
-        : "is-idle");
-
-    if (elConnection) {
-      elConnection.classList.remove("offline");
-
-      elConnection.classList.add("online");
-    }
-
-    if (elConnectionText) {
-      elConnectionText.textContent = "Skull : connecte";
-    }
-
-    if (elConnectionDot) {
-      elConnectionDot.setAttribute("aria-label", "connecte");
-    }
-
-    if (!serverReachable) {
-      toast("Skull en ligne");
-    }
-
-    serverReachable = true;
-
-    nextStatusAttempt = Date.now() + 1500;
-
-    refreshPlaylist();
+    applyStatusSnapshot(await res.json());
   } catch (e) {
     if (serverReachable) {
       toast("Skull non disponible", true);
@@ -2505,10 +2815,22 @@ function clampVolumeSliderValue(value) {
   const minRaw = Number(elVolumeSlider.min);
   const maxRaw = Number(elVolumeSlider.max);
   const min = Number.isFinite(minRaw) ? minRaw : 0;
-  const max = Number.isFinite(maxRaw) ? maxRaw : 127;
+  const max = Number.isFinite(maxRaw) ? maxRaw : 100;
   const raw = Number(value);
   if (!Number.isFinite(raw)) return min;
   return Math.min(max, Math.max(min, Math.round(raw)));
+}
+
+function bluetoothNativeToPercent(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return 0;
+  const clamped = Math.min(BLUETOOTH_NATIVE_VOLUME_MAX, Math.max(0, raw));
+  return Math.round((clamped * 100) / BLUETOOTH_NATIVE_VOLUME_MAX);
+}
+
+function bluetoothPercentToNative(value) {
+  const percent = clampVolumeSliderValue(value);
+  return Math.round((percent * BLUETOOTH_NATIVE_VOLUME_MAX) / 100);
 }
 
 // ------- Helpers Volume BOUCLE (0–100%) -------
@@ -2582,7 +2904,7 @@ function setVolumeSliderValue(value, force = false) {
   const clamped = clampVolumeSliderValue(value);
   elVolumeSlider.value = String(clamped);
   if (elVolumeSliderValue) {
-    elVolumeSliderValue.textContent = String(clamped);
+    elVolumeSliderValue.textContent = `${clamped}%`;
   }
 }
 
@@ -2623,46 +2945,49 @@ function applyBluetoothStatus(info) {
 
   let topState = "unknown";
 
+  let topText = "BT · UNKNOWN";
+
   let sliderTarget = null;
 
   if (info && typeof info === "object") {
     const connectionState = info.connection_state || "unknown";
-    if (connectionState === "reconnecting") {
+    if (connectionState === "reconnecting" && info.connected !== true) {
       statusClass += " is-connecting";
       text = "Bluetooth : reconnexion en cours";
       topState = "connecting";
+      topText = "BT · RECONNECTING";
     } else if (connectionState === "degraded") {
       statusClass += " is-degraded";
       text = "Bluetooth : état dégradé";
       topState = "degraded";
+      topText = "BT · DEGRADED";
       if (info.connected !== true) sliderTarget = 0;
     } else if (info.connected === true) {
       statusClass += " is-connected";
 
-      let volumeSuffix = "";
       if (
         info &&
         Object.prototype.hasOwnProperty.call(info, "volume_percent") &&
         typeof info.volume_percent === "number" &&
         Number.isFinite(info.volume_percent)
       ) {
-        const pct = Math.max(0, Math.min(100, Math.round(info.volume_percent)));
-        volumeSuffix = ` (${pct}%)`;
-        sliderTarget = info.volume_percent;
+        sliderTarget = bluetoothNativeToPercent(info.volume_percent);
       }
 
       text =
         connectionState === "audio_ready"
-          ? "Bluetooth : audio pret" + volumeSuffix
-          : "Bluetooth : connecte" + volumeSuffix;
+          ? "Bluetooth : audio pret"
+          : "Bluetooth : connecte";
 
       topState = "online";
+      topText = connectionState === "audio_ready" ? "BT · AUDIO READY" : "BT · CONNECTED";
     } else if (info.connected === false) {
       statusClass += " is-disconnected";
 
       text = "Bluetooth : deconnecte";
 
       topState = "offline";
+      topText = "BT · OFFLINE";
       sliderTarget = 0;
     } else {
       statusClass += " is-unknown";
@@ -2688,7 +3013,7 @@ function applyBluetoothStatus(info) {
   }
 
   if (elBtTopStatus) {
-    const base = "connection-chip connection-chip--secondary";
+    const base = "status-chip status-chip--hardware";
 
     const stateClass =
       topState === "online"
@@ -2705,13 +3030,13 @@ function applyBluetoothStatus(info) {
   }
 
   if (elBtTopStatusDot) {
-    elBtTopStatusDot.className = "connection-dot";
+    elBtTopStatusDot.className = "status-dot";
 
     elBtTopStatusDot.setAttribute("aria-label", text);
   }
 
   if (elBtTopStatusText) {
-    elBtTopStatusText.textContent = text;
+    elBtTopStatusText.textContent = topText;
   }
 
   if (sliderTarget !== null) {
@@ -2858,7 +3183,7 @@ async function sendVolumeAction(action, value) {
   try {
     const body = { action };
     if (action === "set") {
-      body.value = targetValue;
+      body.value = bluetoothPercentToNative(targetValue);
     }
 
     const response = await fetch("/volume", {
@@ -2886,10 +3211,13 @@ async function sendVolumeAction(action, value) {
       if (action === "mute") {
         setVolumeSliderValue(0, true);
       } else if (action === "set") {
-        const applied = reportedVolume !== null ? reportedVolume : targetValue;
+        const applied =
+          reportedVolume !== null
+            ? bluetoothNativeToPercent(reportedVolume)
+            : targetValue;
         setVolumeSliderValue(applied, true);
       } else if (reportedVolume !== null) {
-        setVolumeSliderValue(reportedVolume, true);
+        setVolumeSliderValue(bluetoothNativeToPercent(reportedVolume), true);
       }
 
       if (action !== "set") {
@@ -3035,12 +3363,15 @@ async function fetchPitch() {
   }
 }
 
-async function postPitch() {
+async function postPitch(requestedServo = null) {
   const offsets = {};
 
   Object.entries(pitchSliders).forEach(([servo, slider]) => {
-    if (slider) offsets[servo] = parseFloat(slider.value);
+    if (slider && (!requestedServo || requestedServo === servo)) {
+      offsets[servo] = parseFloat(slider.value);
+    }
   });
+  offsets.preview = true;
 
   try {
     const res = await fetch("/pitch", {
@@ -3055,6 +3386,7 @@ async function postPitch() {
       const txt = await res.text();
 
       toast("Erreur pitch: " + txt, true);
+      await fetchPitch();
     }
   } catch (e) {
     toast("Erreur rÃ©seau /pitch", true);
@@ -3067,7 +3399,7 @@ Object.values(pitchSliders).forEach((slider) => {
   if (slider) {
     slider.addEventListener("input", updatePitchDisplay);
 
-    slider.addEventListener("change", postPitch);
+    slider.addEventListener("change", () => postPitch(slider.dataset.servo));
   }
 });
 
@@ -3140,7 +3472,12 @@ function setEsp32Reachability(state, message = "") {
       : "Inactif (desactive)";
 
   const resolvedMessage = message || resolvedDefault;
-  const topLabel = `ESP32 : ${resolvedMessage}`;
+  const topLabel =
+    state === true
+      ? "ESP32 · ONLINE"
+      : state === false
+      ? "ESP32 · OFFLINE"
+      : "ESP32 · DISABLED";
   const stateClass =
     state === true ? "online" : state === false ? "offline" : "disabled";
 
@@ -3155,12 +3492,12 @@ function setEsp32Reachability(state, message = "") {
   }
 
   if (elEsp32TopStatus) {
-    const base = "connection-chip connection-chip--secondary";
+    const base = "status-chip status-chip--hardware";
     elEsp32TopStatus.className = `${base} ${stateClass}`;
   }
 
   if (elEsp32TopStatusDot) {
-    elEsp32TopStatusDot.className = "connection-dot";
+    elEsp32TopStatusDot.className = "status-dot";
     elEsp32TopStatusDot.setAttribute("aria-label", topLabel);
   }
 
@@ -4061,6 +4398,8 @@ function initEsp32Section() {
 window.addEventListener("load", () => {
   initEsp32Section();
 
+  connectStatusWebSocket();
+
   fetchSessions();
 
   fetchRandomModeState();
@@ -4199,3 +4538,181 @@ window.addEventListener("load", () => {
 
   updatePills();
 });
+/* SKULL // NEURAL CORE presentation bridge. */
+/*
+ * Neural Core is deliberately a presentation layer.  It observes the legacy
+ * DOM surface and never calls a hardware endpoint; app.js remains the owner
+ * of all playback, ESP32, Bluetooth and servo actions.
+ */
+(function neuralCore() {
+  "use strict";
+
+  const modules = ["playback", "playlist", "sessions", "audio", "esp32", "bluetooth", "calibration", "system"];
+  const moduleLabels = { playback: "PLAYBACK", playlist: "PLAYLIST", sessions: "SESSIONS", audio: "AUDIO", esp32: "ESP32", bluetooth: "BLUETOOTH", calibration: "CALIBRATION", system: "SYSTEM" };
+  const jointLabels = { leftEye: "LEFT EYE", rightEye: "RIGHT EYE", jaw: "JAW", neck: "NECK" };
+  let activeModule = "playback";
+  let selectedJoint = null;
+  let animationFrame = null;
+  let lastFrame = 0;
+
+  const byId = (id) => document.getElementById(id);
+  const all = (selector) => Array.from(document.querySelectorAll(selector));
+
+  function setModule(name) {
+    if (!modules.includes(name)) return;
+    activeModule = name;
+    document.body.dataset.activeModule = name;
+    all("[data-neural-module]").forEach((button) => {
+      const active = button.dataset.neuralModule === name;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    all("[data-module-view]").forEach((panel) => {
+      const active = panel.dataset.moduleView === name;
+      panel.hidden = !active;
+      panel.classList.toggle("is-active", active);
+    });
+    const title = byId("activeModuleTitle");
+    if (title) title.textContent = moduleLabels[name];
+    const index = byId("activeModuleIndex");
+    if (index) index.textContent = `${String(modules.indexOf(name) + 1).padStart(2, "0")} / 08`;
+  }
+
+  function selectJoint(name) {
+    if (!jointLabels[name]) return;
+    selectedJoint = name;
+    all("[data-joint]").forEach((node) => node.classList.toggle("is-selected", node.dataset.joint === name));
+    const label = jointLabels[name];
+    const target = byId("selectedJointLabel");
+    const hint = byId("selectedJointHint");
+    const dock = byId("dockJointLabel");
+    const calibration = byId("calibrationJointTitle");
+    if (target) target.textContent = label;
+    if (hint) hint.textContent = "Sélection locale · angle réel non exposé";
+    if (dock) dock.textContent = label;
+    if (calibration) calibration.textContent = label;
+  }
+
+  function basename(value) {
+    if (typeof value !== "string" || !value.trim()) return "—";
+    const parts = value.replaceAll("\\", "/").split("/");
+    return parts[parts.length - 1] || "—";
+  }
+
+  function readStatus() {
+    const box = byId("statusBox");
+    if (!box || !box.textContent.trim().startsWith("{")) return null;
+    try { return JSON.parse(box.textContent); } catch { return null; }
+  }
+
+  function syncObservedState() {
+    const state = readStatus();
+    const select = byId("sessionSelect");
+    const selected = select && select.value ? select.value : null;
+    const session = state && typeof state.session === "string" ? basename(state.session) : selected;
+    const sessionTarget = byId("dockCurrentSession");
+    const deckTarget = byId("deckSessionName");
+    if (sessionTarget) sessionTarget.textContent = session || "NO SESSION SELECTED";
+    if (deckTarget) deckTarget.textContent = session || "NO SESSION SELECTED";
+
+    const running = state && state.running === true;
+    const paused = state && state.paused === true;
+    const playerText = running ? (paused ? "PAUSED · LIVE LINK" : "RUNNING · LIVE LINK") : "READY FOR INPUT";
+    const dockState = byId("dockPlayerState");
+    const motion = byId("coreMotionState");
+    const system = byId("systemStateLabel");
+    const track = byId("deckTrackName");
+    if (dockState) dockState.textContent = playerText;
+    if (motion) motion.textContent = running ? (paused ? "PAUSED" : "LIVE") : "STANDBY";
+    if (system) system.textContent = running ? (paused ? "PAUSED" : "RUNNING") : "READY";
+    if (track) track.textContent = state && state.elapsed_ms != null ? `${Math.floor(state.elapsed_ms / 1000)}s · PREVIEW ONLY` : "READY · PREVIEW ONLY";
+    const overviewSession = byId("overviewSession");
+    const overviewPlayback = byId("overviewPlayback");
+    const overviewSystem = byId("overviewSystem");
+    if (overviewSession) overviewSession.textContent = session || "—";
+    if (overviewPlayback) overviewPlayback.textContent = playerText;
+    if (overviewSystem) overviewSystem.textContent = running ? (paused ? "PAUSED" : "RUNNING") : "READY";
+    const overviewAudio = byId("overviewAudio");
+    const btText = byId("bluetoothTopStatusText");
+    if (overviewAudio && btText) overviewAudio.textContent = btText.textContent;
+
+    if (state && state.channels && typeof state.channels === "object") {
+      const mapping = { leftEye: "eye_left", rightEye: "eye_right", jaw: "jaw", neck: "neck" };
+      all("[data-joint]").forEach((node) => {
+        const enabled = state.channels[mapping[node.dataset.joint]];
+        node.classList.toggle("is-disabled", enabled === false);
+      });
+    }
+  }
+
+  function updateClock() {
+    const clock = byId("neuralClock");
+    if (clock) clock.textContent = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+  }
+
+  function drawAmbient(timestamp) {
+    const canvas = byId("neuralCanvas");
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+    const width = Math.max(1, Math.floor(rect.width * ratio));
+    const height = Math.max(1, Math.floor(rect.height * ratio));
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const cx = rect.width / 2; const cy = rect.height / 2; const radius = Math.min(rect.width, rect.height) * .35;
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const phase = reduced ? 0 : timestamp * .000025;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.strokeStyle = i === 1 ? "rgba(48,242,232,.16)" : "rgba(48,242,232,.07)";
+      ctx.ellipse(cx, cy, radius + i * 34, (radius + i * 34) * .26, phase * (i % 2 ? -1 : 1), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(255,122,50,.15)";
+    ctx.beginPath(); ctx.arc(cx, cy, radius + 9, phase, phase + .7); ctx.stroke();
+    if (!reduced) animationFrame = requestAnimationFrame(drawAmbient);
+  }
+
+  function detectFallback() {
+    const fallback = byId("webglFallback");
+    const canvas = document.createElement("canvas");
+    const supported = Boolean(canvas.getContext("webgl") || canvas.getContext("experimental-webgl"));
+    if (fallback && !supported) fallback.hidden = false;
+    document.body.dataset.webgl = supported ? "available" : "fallback-2d";
+  }
+
+  function bind() {
+    const globalVolumeSlot = byId("globalVolumeSlot");
+    const volumeDock = document.querySelector(".volume-dock");
+    if (globalVolumeSlot && volumeDock) {
+      volumeDock.classList.add("volume-dock--global");
+      globalVolumeSlot.appendChild(volumeDock);
+    }
+    all("[data-neural-module]").forEach((button) => button.addEventListener("click", () => setModule(button.dataset.neuralModule)));
+    all("[data-joint]").forEach((button) => button.addEventListener("click", () => { selectJoint(button.dataset.joint); setModule("calibration"); }));
+    all("[data-proxy-click]").forEach((button) => button.addEventListener("click", () => byId(button.dataset.proxyClick)?.click()));
+
+    const nav = byId("orbitalNav");
+    if (nav) nav.addEventListener("wheel", (event) => { if (Math.abs(event.deltaY) < 4) return; event.preventDefault(); const current = modules.indexOf(activeModule); setModule(modules[(current + (event.deltaY > 0 ? 1 : -1) + modules.length) % modules.length]); }, { passive: false });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { setModule("playback"); return; }
+      if (event.target.matches("input, select, textarea, button")) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault(); const current = modules.indexOf(activeModule); setModule(modules[(current + (event.key === "ArrowRight" ? 1 : -1) + modules.length) % modules.length]);
+    });
+    const observer = new MutationObserver(syncObservedState);
+    ["statusBox", "badgeState", "sessionSelect", "connectionStatus"].forEach((id) => { const node = byId(id); if (node) observer.observe(node, { childList: true, characterData: true, subtree: true, attributes: true }); });
+    const sessionSelect = byId("sessionSelect"); if (sessionSelect) sessionSelect.addEventListener("change", () => { syncObservedState(); refreshAvailableTrackSelection(); });
+    window.addEventListener("resize", syncObservedState, { passive: true });
+    window.setInterval(updateClock, 1000); updateClock(); syncObservedState(); detectFallback();
+    // Le preview du crâne et son décor restent statiques : aucun rendu par frame.
+    if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
+  }
+
+  window.addEventListener("load", bind, { once: true });
+  window.SkullNeural = { setModule, selectJoint, getState: () => ({ activeModule, selectedJoint }) };
+})();

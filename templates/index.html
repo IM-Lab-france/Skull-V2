@@ -4,563 +4,158 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Skull Player</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <meta name="theme-color" content="#05080d" />
+    <title>SKULL // NEURAL CORE</title>
+    <link rel="stylesheet" href="/static/style.css?v=skull-neural-core-7" />
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='SkullPlayer.png') }}" />
 </head>
 
-<body class="theme-halloween">
-    <header class="site-header">
-        <div class="site-header-main">
-            <div class="site-title">
-                <h1>Skull Player</h1>
-                <p class="subtitle">Donnez vie à votre Skull
-                </p>
+<body class="theme-neural-core" data-interface="skull-neural-core">
+    <div class="neural-noise" aria-hidden="true"></div>
+
+    <header class="neural-header" aria-label="État du système">
+        <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div>
+                <p class="eyebrow">ANIMATRONIC CONTROL SYSTEM</p>
+                <h1>SKULL <span>//</span> NEURAL CORE</h1>
             </div>
-            <div class="connection-banner" aria-live="polite">
-                <div class="header-volume connection-chip connection-chip--secondary" role="group"
-                    aria-label="Volume Bluetooth">
-                    <button class="header-mute-btn" type="button" data-volume-action="mute" aria-label="Couper le son">
-                        <span class="header-mute-icon" aria-hidden="true">&#128263;</span>
-                        <span class="header-mute-label">Mute</span>
-                    </button>
-                    <div class="header-volume-slider">
-                        <label class="sr-only" for="volumeSlider">Niveau Bluetooth</label>
-                        <input id="volumeSlider" class="volume-slider-input" type="range" min="0" max="127" value="0"
-                            step="1" />
-                        <span id="volumeSliderValue" class="volume-slider-value header-volume-value"
-                            aria-live="polite">0</span>
-                    </div>
-                </div>
-                <div id="connectionStatus" class="connection-chip offline" role="status">
-                    <span id="connectionStatusDot" class="connection-dot" aria-hidden="true"></span>
-                    <span id="connectionStatusText" class="connection-label">Skull : inconnu</span>
-                </div>
-                <div id="bluetoothTopStatus" class="connection-chip connection-chip--secondary unknown" role="status">
-                    <span id="bluetoothTopStatusDot" class="connection-dot" aria-hidden="true"></span>
-                    <span id="bluetoothTopStatusText" class="connection-label">Bluetooth : inconnu</span>
-                </div>
-                <div id="esp32TopStatus" class="connection-chip connection-chip--secondary disabled" role="status">
-                    <span id="esp32TopStatusDot" class="connection-dot" aria-hidden="true"></span>
-                    <span id="esp32TopStatusText" class="connection-label">ESP32 : inactif</span>
-                </div>
-            </div>
+        </div>
+        <div class="header-status" aria-live="polite">
+            <div id="connectionStatus" class="status-chip status-chip--hardware offline" role="status"><span id="connectionStatusDot" class="status-dot" aria-hidden="true"></span><span id="connectionStatusText">SKULL · UNKNOWN</span></div>
+            <div id="bluetoothTopStatus" class="status-chip status-chip--hardware unknown" role="status"><span id="bluetoothTopStatusDot" class="status-dot" aria-hidden="true"></span><span id="bluetoothTopStatusText">BT · UNKNOWN</span></div>
+            <div id="esp32TopStatus" class="status-chip status-chip--hardware disabled" role="status"><span id="esp32TopStatusDot" class="status-dot" aria-hidden="true"></span><span id="esp32TopStatusText">ESP32 · OFF</span></div>
+            <div class="header-clock" id="neuralClock" aria-label="Heure locale">--:--:--</div>
+            <div class="global-volume-slot" id="globalVolumeSlot" aria-label="Volume global"></div>
         </div>
     </header>
 
-    <main class="container">
-        <div class="layout">
-            <section class="card playback-card" id="sessions">
-                <header class="card-header">
-                    <h2>Contrôles de lecture</h2>
-                </header>
+    <main class="neural-main">
+        <aside class="module-rail" aria-label="Modules du système">
+            <div class="rail-heading"><span class="rail-index">01</span><span>MODULES</span></div>
+            <nav class="orbital-nav" id="orbitalNav">
+                <button class="module-orb is-active" type="button" data-neural-module="playback" aria-pressed="true"><span class="orb-glyph">▶</span><span class="orb-label">PLAYBACK</span></button>
+                <button class="module-orb" type="button" data-neural-module="playlist" aria-pressed="false"><span class="orb-glyph">≋</span><span class="orb-label">PLAYLIST</span></button>
+                <button class="module-orb" type="button" data-neural-module="sessions" aria-pressed="false"><span class="orb-glyph">◫</span><span class="orb-label">SESSIONS</span></button>
+                <button class="module-orb" type="button" data-neural-module="audio" aria-pressed="false"><span class="orb-glyph">◒</span><span class="orb-label">AUDIO</span></button>
+                <button class="module-orb" type="button" data-neural-module="esp32" aria-pressed="false"><span class="orb-glyph">⌁</span><span class="orb-label">ESP32</span></button>
+                <button class="module-orb" type="button" data-neural-module="bluetooth" aria-pressed="false"><span class="orb-glyph">)))</span><span class="orb-label">BLUETOOTH</span></button>
+                <button class="module-orb" type="button" data-neural-module="calibration" aria-pressed="false"><span class="orb-glyph">⌖</span><span class="orb-label">CALIBRATION</span></button>
+                <button class="module-orb" type="button" data-neural-module="system" aria-pressed="false"><span class="orb-glyph">▦</span><span class="orb-label">SYSTEM</span></button>
+            </nav>
+            <div class="rail-footer"><span class="rail-index">02</span><span>CORE LINK</span><span class="pulse-line"></span></div>
+        </aside>
 
-                <div class="playback-select">
-                    <label class="label" for="sessionSelect">Sessions disponibles</label>
-                    <div class="session-select-row">
-                        <select id="sessionSelect" class="select"></select>
-                        <button id="refreshBtn" class="btn secondary icon-only" type="button"
-                            title="Actualiser les sessions" aria-label="Actualiser les sessions">&#8635;</button>
-                    </div>
+        <section class="core-stage" aria-labelledby="coreTitle">
+            <div class="stage-grid" aria-hidden="true"></div>
+            <div class="stage-topline"><span id="coreTitle">SKULL CONTROL / OVERVIEW</span><span class="stage-model">LIVE CONTROL SURFACE</span></div>
+            <div class="control-overview" aria-label="Vue d'ensemble du système">
+                <div class="overview-kicker">CONTROL SURFACE</div>
+                <h2>Tout le système au même endroit.</h2>
+                <p>Lecture, matériel et connectivité restent accessibles depuis les modules. Le volume global est toujours disponible dans l'en-tête.</p>
+                <div class="overview-grid">
+                    <div class="overview-card"><span>SESSION ACTIVE</span><strong id="overviewSession">—</strong><small id="overviewPlayback">READY FOR INPUT</small></div>
+                    <div class="overview-card"><span>SYSTÈME</span><strong id="overviewSystem">READY</strong><small>État temps réel</small></div>
+                    <div class="overview-card"><span>CONNEXION AUDIO</span><strong id="overviewAudio">BT · UNKNOWN</strong><small>Sortie Bluetooth</small></div>
                 </div>
-
-                <div class="controls-inline" role="group" aria-label="Contrôles de lecture">
-                    <button id="playBtn" class="btn success" type="button">▶ Play</button>
-                    <button id="pauseBtn" class="btn warning" type="button">⏸ Pause</button>
-                    <button id="resumeBtn" class="btn info" type="button">▶ Resume</button>
-                    <button id="stopBtn" class="btn danger" type="button">⏹ Stop</button>
-                </div>
-
-                <div class="random-mode">
-                    <div class="random-mode-actions">
-                        <button id="randomModeToggle" class="btn secondary" type="button" aria-pressed="false">
-                            Mode aléatoire : OFF
-                        </button>
-                        <button id="shuffleAllBtn" class="btn info" type="button">
-                            Lecture aléatoire continue
-                        </button>
-                    </div>
-                    <p id="randomModeHint" class="hint" aria-live="polite">
-                        Ignorer la sélection et choisir un morceau aléatoire (hors Accueil).
-                    </p>
-                </div>
-
-                <section class="loop-panel" aria-labelledby="loopTitle">
-                    <div class="loop-header">
-                        <h3 id="loopTitle">Boucle audio</h3>
-                        <p id="loopStatusText" class="loop-status-text">Aucune boucle importee</p>
-                    </div>
-                    <p class="loop-meta">
-                        <span class="label">Fichier actuel :</span>
-                        <span id="loopFilename">Aucun MP3</span>
-                    </p>
-                    <p class="loop-meta" id="loopSelectedRow" hidden>
-                        <span class="label">Selection :</span>
-                        <span id="loopSelectedName"></span>
-                    </p>
-
-                    <!-- AJOUT: slider de volume de la boucle -->
-                    <div class="loop-volume-row" role="group" aria-label="Volume boucle">
-                        <label for="loopVolumeSlider" class="label">Volume boucle</label>
-                        <div class="header-volume-slider">
-                            <input id="loopVolumeSlider" class="volume-slider-input" type="range" min="0" max="100"
-                                value="0" step="1" />
-                            <span id="loopVolumeValue" class="volume-slider-value header-volume-value"
-                                aria-live="polite">0%</span>
-                        </div>
-                        <p class="hint">Règle le niveau de la boucle interne (0–100%).</p>
-                    </div>
-                    <!-- FIN AJOUT -->
-
-                    <p id="loopResumeHint" class="hint" hidden>La boucle reprendra automatiquement apres la lecture.</p>
-                    <div class="loop-actions">
-                        <label class="btn secondary">
-                            <input id="loopFile" type="file" accept="audio/mpeg,.mp3" hidden />
-                            Choisir un MP3
-                        </label>
-                        <button id="loopUploadBtn" class="btn primary" type="button" disabled
-                            data-loading-label="Import...">
-                            Importer
-                        </button>
-                        <button id="loopToggleBtn" class="btn success" type="button" disabled
-                            data-label-on="Activer la boucle" data-label-off="Desactiver la boucle">
-                            Activer la boucle
-                        </button>
-                    </div>
-                </section>
-                <div class="session-danger-zone playback-danger-zone" role="group"
-                    aria-label="Suppression de la session sélectionnée">
-                    <button id="deleteSessionBtn" class="btn danger" type="button">
-                        Supprimer la session sélectionnée
-                    </button>
-                    <p class="hint">Supprime définitivement le dossier de la session sur le RPi.</p>
-                </div>
-
-                <div class="playback-status" role="status" aria-live="polite">
-                    <span class="label">Statut lecture</span>
-                    <span id="badgeState" class="badge is-idle">IDLE</span>
-                </div>
-            </section>
-
-            <section class="card playlist-card">
-                <header class="card-header">
-                    <h2>Playlist</h2>
-                </header>
-                <div id="playlistCurrent" class="playlist-current" aria-live="polite">
-                    Playlist vide
-                </div>
-                <ul id="playlistList" class="playlist-list" aria-label="Morceaux dans la playlist"></ul>
-                <div class="playlist-actions">
-                    <button id="playlistRefreshBtn" class="btn secondary" type="button">Actualiser</button>
-                    <button id="playlistSkipBtn" class="btn danger" type="button" disabled>Passer</button>
-                </div>
-            </section>
-
-            <section class="card upload-card">
-                <header class="card-header">
-                    <h2>Uploader une session</h2>
-                </header>
-                <details class="accordion-item" open>
-                    <summary>Formulaire d&apos;upload</summary>
-                    <div class="accordion-content">
-                        <form id="uploadForm" class="upload-form" autocomplete="off">
-                            <label class="label" for="sceneName">Nom de la sc&egrave;ne</label>
-                            <input id="sceneName" class="input" type="text" maxlength="50"
-                                placeholder="Nom de la sc&egrave;ne" autocomplete="off" />
-
-                            <div class="picker-row">
-                                <button id="btnPickJson" class="btn secondary" type="button">Choisir JSON</button>
-                                <button id="btnPickMp3" class="btn secondary" type="button">Choisir MP3</button>
-                            </div>
-
-                            <div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de d&eacute;p&ocirc;t">
-                                <div class="dropzone-inner">
-                                    <div class="dz-icon">&uarr;</div>
-                                    <div class="dz-text">
-                                        D&eacute;posez ici votre <strong>JSON</strong> et votre
-                                        <strong>MP3</strong><br />
-                                        <span class="dz-sub">ou cliquez pour parcourir...</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <input id="fileJson" type="file" name="json" accept=".json" hidden />
-                            <input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden />
-
-                            <div class="file-list" id="fileList">
-                                <div class="file-pill" id="pillJson">
-                                    JSON : <span class="file-name" data-empty>aucun</span>
-                                </div>
-                                <div class="file-pill" id="pillMp3">
-                                    MP3 : <span class="file-name" data-empty>aucun</span>
-                                </div>
-                            </div>
-
-                            <button id="btnUpload" class="btn primary" type="submit">Charger l&apos;animation</button>
-
-                            <div id="uploadProgress" class="progress" hidden>
-                                <div id="uploadBar" class="bar"></div>
-                            </div>
-                        </form>
-                    </div>
-                </details>
-            </section>
-
-            <section class="card esp32-card" id="esp32Card">
-                <header class="card-header">
-                    <h2>Pilotage ESP32</h2>
-                </header>
-                <div class="esp32-connection">
-                    <div class="esp32-status-chip">
-                        <span id="esp32StatusDot" class="connection-dot" aria-hidden="true"></span>
-                        <span id="esp32StatusText" class="connection-label">Inactif (désactivé)</span>
-                    </div>
-                    <button id="esp32StatusRefreshBtn" class="btn secondary" type="button">
-                        Tester la connexion
-                    </button>
-                </div>
-
-                <form id="esp32ConfigForm" class="esp32-form" autocomplete="off">
-                    <div class="esp32-form-grid">
-                        <label>
-                            <span>Hôte</span>
-                            <input id="esp32Host" class="input" type="text" placeholder="SkullHard.local" />
-                        </label>
-                        <label>
-                            <span>Port</span>
-                            <input id="esp32Port" class="input" type="number" min="1" step="1" value="80" />
-                        </label>
-                        <label class="esp32-toggle">
-                            <input id="esp32Enabled" type="checkbox" />
-                            <span>Activer le pilotage</span>
-                        </label>
-                    </div>
-                    <button id="esp32ConfigSaveBtn" class="btn primary" type="submit">Enregistrer</button>
-                </form>
-
-                <div class="esp32-buttons-group" role="group" aria-label="Commandes ESP32">
-                    <button id="esp32RelayOnBtn" class="btn success" type="button">Relais ON</button>
-                    <button id="esp32RelayOffBtn" class="btn secondary" type="button">Relais OFF</button>
-                    <button id="esp32AutoRelayToggle" class="btn info" type="button" aria-pressed="false">
-                        Auto-relay
-                    </button>
-                </div>
-
-                <div class="esp32-status-panel">
-                    <h3 class="esp32-subtitle">État courant</h3>
-                    <div class="esp32-status-grid">
-                        <div>
-                            <span class="label">Relais</span>
-                            <span id="esp32RelayState" class="badge">-</span>
-                        </div>
-                        <div>
-                            <span class="label">Mode auto</span>
-                            <span id="esp32AutoRelayState" class="badge">-</span>
-                        </div>
-                        <div>
-                            <span class="label">Session</span>
-                            <span id="esp32CurrentSession">-</span>
-                        </div>
-                        <div>
-                            <span class="label">Wi-Fi</span>
-                            <span id="esp32WifiInfo">-</span>
-                        </div>
-                    </div>
-                    <pre id="esp32StatusRaw" class="status-box esp32-status-raw" aria-live="polite"></pre>
-                </div>
-            </section>
-
-            <section class="card session-management-card">
-                <header class="card-header">
-                    <h2>Gestion des boutons</h2>
-                </header>
-                <details class="accordion-item">
-                    <summary>Boutons physiques ESP32</summary>
-                    <div class="accordion-content">
-                        <div class="esp32-buttons-header">
-                            <span class="esp32-subtitle">Associer les catégories</span>
-                            <button id="esp32ButtonsRefreshBtn" class="btn secondary" type="button">
-                                Actualiser
-                            </button>
-                        </div>
-                        <div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group"
-                            aria-label="Association boutons ESP32"></div>
-                        <p class="hint">
-                            Choisissez une catégorie pour chaque bouton (1 à 3). Sélectionnez
-                            &laquo;&nbsp;-- Aucun --&nbsp;&raquo; pour vider l'association.
-                        </p>
-                    </div>
-                </details>
-
-                <details class="accordion-item" open>
-                    <summary>Catégories des morceaux</summary>
-                    <div class="accordion-content">
-                        <div id="categoryManager" class="category-manager">
-                            <p class="hint">
-                                Assignez une catégorie à chaque session ou ajoutez-en une nouvelle.
-                            </p>
-                            <div class="category-actions" role="group" aria-label="Gestion des catégories">
-                                <label class="label category-label" for="categoryAddInput">Nouvelle catégorie</label>
-                                <div class="category-actions-controls">
-                                    <input id="categoryAddInput" class="input" type="text" maxlength="64"
-                                        placeholder="Ex&nbsp;: Enfant" autocomplete="off" />
-                                    <button id="categoryAddBtn" class="btn info" type="button">Ajouter</button>
-                                </div>
-                                <p id="categoryManagerStatus" class="hint category-status" role="status"
-                                    aria-live="polite"></p>
-                            </div>
-                            <div id="categoryManagerList" class="category-list" role="list"></div>
-                        </div>
-                    </div>
-                </details>
-            </section>
-
-            <section class="card bt-pairing-card">
-                <header class="card-header">
-                    <h2>Bluetooth</h2>
-                    <button id="btScanBtn" class="btn secondary" type="button">Scanner</button>
-                </header>
-                <div class="row">
-                    <label class="label" for="btDeviceSelect">Périphériques détectés</label>
-                    <select id="btDeviceSelect" class="select" aria-label="Périphériques détectés"></select>
-                </div>
-                <div class="bt-state-grid" aria-label="États Bluetooth">
-                    <span>Découvert</span><strong id="btStateDiscovered">inconnu</strong>
-                    <span>Appairé</span><strong id="btStatePaired">inconnu</strong>
-                    <span>De confiance</span><strong id="btStateTrusted">inconnu</strong>
-                    <span>Connecté</span><strong id="btStateConnected">inconnu</strong>
-                    <span>Profil Audio Sink</span><strong id="btStateAudio">inconnu</strong>
-                    <span>Sink PulseAudio</span><strong id="btStatePulse">inconnu</strong>
-                </div>
-                <div class="controls-inline bt-operation-controls" role="group" aria-label="Opérations Bluetooth">
-                    <button id="btPairBtn" class="btn primary" type="button" disabled>Appairer</button>
-                    <button id="btTrustBtn" class="btn secondary" type="button" disabled>Faire confiance</button>
-                    <button id="btConnectBtn" class="btn secondary" type="button" disabled>Connecter</button>
-                    <button id="btSelectOutputBtn" class="btn secondary" type="button" disabled>Sélectionner la sortie</button>
-                    <button id="btTestAudioBtn" class="btn secondary" type="button" disabled>Tester le son</button>
-                </div>
-                <p id="btOperationStatus" class="hint" role="status" aria-live="polite">Lancez un scan puis sélectionnez un périphérique.
-                </p>
-            </section>
-
-
-        </div>
-
-        <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true"
-            aria-labelledby="deleteSessionTitle">
-            <div class="modal-box">
-                <button id="deleteSessionClose" class="modal-close" type="button" aria-label="Fermer">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-                <div class="modal-graphic" aria-hidden="true">🎃</div>
-                <h3 id="deleteSessionTitle">Confirmer la suppression</h3>
-                <p class="modal-lead">
-                    Veux-tu vraiment bannir <strong id="deleteSessionName"></strong>&nbsp;?
-                </p>
-                <p class="modal-subtext">
-                    Le dossier de la session sera définitivement supprimé du RPi.
-                </p>
-                <p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p>
-                <div class="modal-actions">
-                    <button id="deleteSessionCancel" class="btn secondary" type="button">Annuler</button>
-                    <button id="deleteSessionConfirm" class="btn danger" type="button">Oui, supprimer</button>
-                </div>
+                <button class="overview-link" type="button" data-neural-module="playback">OUVRIR LE CONTRÔLE DE LECTURE <span>↗</span></button>
             </div>
-        </div>
+            <div class="core-viewport" id="neuralCore" data-model-path="/static/models/skull.glb">
+                <canvas id="neuralCanvas" class="neural-canvas" aria-hidden="true"></canvas>
+                <div class="core-rings" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div class="skull-assembly" role="img" aria-label="Représentation interactive du crâne animatronique">
+                    <svg class="skull-svg" viewBox="0 0 420 460" focusable="false" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="skullFill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dce9e9" stop-opacity=".28" /><stop offset=".5" stop-color="#82a4a9" stop-opacity=".13" /><stop offset="1" stop-color="#213942" stop-opacity=".4" /></linearGradient>
+                            <filter id="skullGlow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                            <filter id="skullEyeGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.5" result="eyeBlur" /><feMerge><feMergeNode in="eyeBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                        </defs>
+                        <path class="skull-outline" d="M210 34C115 34 63 98 69 188c3 42 20 62 23 91 2 20-6 58 15 91l28 16 2 27h146l2-27 28-16c21-33 13-71 15-91 3-29 20-49 23-91 6-90-46-154-141-154Z" />
+                        <path class="skull-plate" d="M210 51c-73 0-119 51-115 125 2 38 18 58 25 92 7 31-1 66 18 88l22 10 3 24h94l3-24 22-10c19-22 11-57 18-88 7-34 23-54 25-92 4-74-42-125-115-125Z" />
+                        <path class="skull-temple" d="M100 170c18-53 54-87 110-87s92 34 110 87" /><path class="skull-cheek" d="M92 239c22 12 40 32 49 62m187-62c-22 12-40 32-49 62" />
+                        <path class="skull-eye-socket skull-eye-socket--left" d="M111 205c17-22 49-25 69-6l-7 31c-18 13-43 13-61-2Z" />
+                        <path class="skull-eye-socket skull-eye-socket--right" d="M309 205c-17-22-49-25-69-6l7 31c18 13 43 13 61-2Z" />
+                        <circle class="skull-eye-orb skull-eye-orb--left" cx="147" cy="216" r="18" /><circle class="skull-eye-orb skull-eye-orb--right" cx="273" cy="216" r="18" />
+                        <circle class="skull-eye-iris skull-eye-iris--left" cx="147" cy="216" r="10" /><circle class="skull-eye-iris skull-eye-iris--right" cx="273" cy="216" r="10" />
+                        <circle class="skull-eye-pupil skull-eye-pupil--left" cx="147" cy="216" r="4" /><circle class="skull-eye-pupil skull-eye-pupil--right" cx="273" cy="216" r="4" />
+                        <circle class="skull-eye-glint skull-eye-glint--left" cx="144" cy="212" r="2" /><circle class="skull-eye-glint skull-eye-glint--right" cx="270" cy="212" r="2" />
+                        <path class="skull-nose" d="M210 190l-20 84 20 21 20-21-20-84Z" /><path class="skull-teeth" d="M145 328c35 18 95 18 130 0l-9 45c-34 13-78 13-112 0l-9-45Z" /><path class="skull-teeth-lines" d="M166 335v34m24-29v32m24-32v32m24-37v34m24-42v34" />
+                        <path class="skull-jaw-line" d="M137 326c4 52 34 82 73 82s69-30 73-82" /><path class="skull-spine" d="M210 410v30m-28-20 28 20 28-20" /><path class="skull-scanline" d="M82 146h256M76 214h268M95 294h230" />
+                    </svg>
+                    <button class="joint-node joint-node--left-eye" type="button" data-joint="leftEye" aria-label="Sélectionner œil gauche"><span></span><b>LEFT EYE</b></button>
+                    <button class="joint-node joint-node--right-eye" type="button" data-joint="rightEye" aria-label="Sélectionner œil droit"><span></span><b>RIGHT EYE</b></button>
+                    <button class="joint-node joint-node--jaw" type="button" data-joint="jaw" aria-label="Sélectionner mâchoire"><span></span><b>JAW</b></button>
+                    <button class="joint-node joint-node--neck" type="button" data-joint="neck" aria-label="Sélectionner cou"><span></span><b>NECK</b></button>
+                </div>
+                <div class="core-readout core-readout--top"><span class="readout-label">SELECTED JOINT</span><strong id="selectedJointLabel">CORE / ALL</strong><span id="selectedJointHint">Cliquez une articulation pour inspecter</span></div>
+                <div class="core-readout core-readout--left"><span class="readout-label">MOTION BUS</span><strong id="coreMotionState">STANDBY</strong><span>4 CHANNELS · PCA9685</span></div>
+                <div class="core-readout core-readout--right"><span class="readout-label">PREVIEW MODE</span><strong>SAFE / LOCAL</strong><span>NO HARDWARE SCRUB</span></div>
+                <div class="core-fallback" id="webglFallback" role="status" hidden>WEBGL INDISPONIBLE · MODE 2D ACTIF</div>
+            </div>
+            <div class="core-legend"><span><i class="legend-dot legend-dot--live"></i>LIVE DATA</span><span><i class="legend-dot legend-dot--preview"></i>PREVIEW ONLY</span><span><i class="legend-dot legend-dot--muted"></i>UNKNOWN</span></div>
+        </section>
+
+        <aside class="context-dock" aria-label="Module actif">
+            <div class="dock-header"><div><span class="eyebrow">CONTEXTUAL CONTROL</span><h2 id="activeModuleTitle">PLAYBACK</h2></div><span class="dock-index" id="activeModuleIndex">01 / 08</span></div>
+
+            <section class="module-view is-active" data-module-view="playback" aria-labelledby="activeModuleTitle">
+                <div class="module-summary"><span class="summary-label">CURRENT SESSION</span><strong id="dockCurrentSession">—</strong><span class="summary-sub" id="dockPlayerState">READY FOR INPUT</span></div>
+                <div class="mode-panel" aria-label="Mode de fonctionnement">
+                    <span class="panel-kicker">SKULL MODE</span>
+                    <div class="mode-buttons" role="group" aria-label="Choisir le mode Skull">
+                        <button class="btn secondary mode-button" type="button" data-skull-mode="normal">NORMAL</button>
+                        <button class="btn secondary mode-button" type="button" data-skull-mode="suivi">SUIVI</button>
+                        <button class="btn secondary mode-button" type="button" data-skull-mode="stream">STREAM</button>
+                    </div>
+                    <p id="modeStatus" class="hint" role="status" aria-live="polite">Mode initial : NORMAL</p>
+                    <div class="stream-controls" aria-label="Contrôle du stream musical">
+                        <label class="field-label" for="streamUrl">PC SOURCE URL</label>
+                        <input id="streamUrl" class="input" type="url" placeholder="http://192.168.100.10:8765/stream" autocomplete="off" />
+                        <div class="dock-actions">
+                            <button id="streamStartBtn" class="btn primary" type="button">START STREAM</button>
+                            <button id="streamStopBtn" class="btn danger" type="button">STOP STREAM</button>
+                        </div>
+                        <p id="streamStatus" class="hint" role="status" aria-live="polite">Flux musical inactif</p>
+                    </div>
+                </div>
+                <div class="quick-actions" role="group" aria-label="Commandes rapides"><button class="quick-action" type="button" data-proxy-click="playBtn"><span>▶</span>PLAY</button><button class="quick-action" type="button" data-proxy-click="pauseBtn"><span>Ⅱ</span>PAUSE</button><button class="quick-action" type="button" data-proxy-click="resumeBtn"><span>▷</span>RESUME</button></div>
+                <div class="available-track-panel"><div class="panel-kicker"><span>AVAILABLE TRACKS</span><b id="availableTracksCount">0</b></div><p id="availableTracksStatus" class="hint" role="status" aria-live="polite">Chargement du catalogue…</p><ol id="availableTracksList" class="available-track-list" aria-label="Morceaux disponibles"></ol></div>
+                <div class="module-note"><span class="note-key">SELECTED JOINT</span><span id="dockJointLabel">CORE / ALL</span></div><button class="text-action" type="button" data-neural-module="sessions">CHANGE SESSION <span>↗</span></button>
+            </section>
+
+            <section class="module-view" data-module-view="playlist" hidden>
+                <div class="module-summary"><span class="summary-label">QUEUE + CATALOG</span><strong>PLAYBACK BUS</strong><span class="summary-sub">ORDERED PLAYBACK · 23 TRACKS</span></div><div class="available-track-panel available-track-panel--playlist"><div class="panel-kicker"><span>AVAILABLE TRACKS</span><b id="playlistCatalogCount">0</b></div><ol id="playlistCatalogList" class="available-track-list" aria-label="Catalogue des morceaux disponibles"></ol></div><div class="dock-scroll dock-scroll--playlist"><div id="playlistCurrent" class="playlist-current" aria-live="polite">Playlist vide</div><ul id="playlistList" class="playlist-list" aria-label="Morceaux dans la playlist"></ul></div><div class="dock-actions"><button id="playlistRefreshBtn" class="btn secondary" type="button">REFRESH</button><button id="playlistSkipBtn" class="btn danger" type="button" disabled>SKIP NEXT</button></div>
+            </section>
+
+            <section class="module-view" data-module-view="sessions" hidden>
+                <div class="module-summary"><span class="summary-label">SESSION INPUT</span><strong>JSON + MP3</strong><span class="summary-sub">VALIDATE BEFORE UPLOAD</span></div>
+                <form id="uploadForm" class="upload-form" autocomplete="off"><label class="field-label" for="sceneName">SESSION NAME</label><input id="sceneName" class="input" type="text" maxlength="50" placeholder="Nom de la scène" autocomplete="off" /><div class="file-pickers"><button id="btnPickJson" class="btn secondary" type="button">CHOOSE JSON</button><button id="btnPickMp3" class="btn secondary" type="button">CHOOSE MP3</button></div><div id="dropzone" class="dropzone" tabindex="0" aria-label="Zone de dépôt JSON et MP3"><span class="drop-glyph">＋</span><span><b>DROP SESSION FILES</b><small>JSON timeline + MP3 audio</small></span></div><input id="fileJson" type="file" name="json" accept=".json" hidden /><input id="fileMp3" type="file" name="mp3" accept="audio/mpeg,.mp3" hidden /><div id="fileList" class="file-list"><div id="pillJson" class="file-pill">JSON <span class="file-name" data-empty>—</span></div><div id="pillMp3" class="file-pill">MP3 <span class="file-name" data-empty>—</span></div></div><button id="btnUpload" class="btn primary" type="submit">UPLOAD SESSION</button><div id="uploadProgress" class="progress" hidden><div id="uploadBar" class="bar"></div></div></form>
+                <div class="session-select-dock"><label class="field-label" for="sessionSelect">ACTIVE SESSION</label><div class="input-row"><select id="sessionSelect" class="select"></select><button id="refreshBtn" class="btn secondary icon-only" type="button" aria-label="Actualiser les sessions">↻</button></div></div><button id="deleteSessionBtn" class="text-action text-action--danger" type="button">DELETE SELECTED SESSION <span>⌫</span></button>
+                <details class="hud-details"><summary>SESSION CATEGORIES</summary><div id="categoryManager" class="category-manager"><p class="hint">Assign a category to each session.</p><div class="category-actions"><label class="field-label" for="categoryAddInput">NEW CATEGORY<input id="categoryAddInput" class="input" type="text" maxlength="64" placeholder="Ex: Enfant" autocomplete="off" /></label><button id="categoryAddBtn" class="btn info" type="button">ADD</button><p id="categoryManagerStatus" class="hint" role="status" aria-live="polite"></p></div><div id="categoryManagerList" class="category-list" role="list"></div></div></details>
+            </section>
+
+            <section class="module-view" data-module-view="audio" hidden>
+                <div class="module-summary"><span class="summary-label">AUDIO BUS</span><strong id="dockVolumeValue">0%</strong><span class="summary-sub">BLUETOOTH OUTPUT · REAL STATUS</span></div><div class="audio-meter"><span></span></div><div class="volume-dock"><button class="header-mute-btn" type="button" data-volume-action="mute" aria-label="Couper le son">MUTE</button><label class="sr-only" for="volumeSlider">Volume Bluetooth</label><input id="volumeSlider" class="volume-slider-input" type="range" min="0" max="100" value="0" step="1" /><span id="volumeSliderValue" class="volume-slider-value">0%</span></div>
+                <div class="loop-panel"><div class="panel-kicker">LOOP AUDIO</div><p id="loopStatusText" class="loop-status-text">No loop loaded</p><p class="loop-meta"><span id="loopFilename">No MP3</span></p><div class="loop-volume-row"><label class="field-label" for="loopVolumeSlider">LOOP LEVEL</label><input id="loopVolumeSlider" class="volume-slider-input" type="range" min="0" max="100" value="0" step="1" /><span id="loopVolumeValue">0%</span></div><input id="loopFile" type="file" accept="audio/mpeg,.mp3" hidden /><div class="dock-actions"><button id="loopUploadBtn" class="btn secondary" type="button" disabled data-loading-label="IMPORT...">IMPORT</button><button id="loopToggleBtn" class="btn success" type="button" disabled data-label-on="ENABLE LOOP" data-label-off="DISABLE LOOP">ENABLE LOOP</button></div><p id="loopResumeHint" class="hint" hidden>Loop resumes after playback.</p><p id="loopSelectedRow" class="hint" hidden>Selection: <span id="loopSelectedName"></span></p></div>
+            </section>
+
+            <section class="module-view" data-module-view="esp32" hidden><div id="esp32Card" class="module-card esp32-card"><div class="module-summary"><span class="summary-label">HARDWARE LINK</span><strong><span id="esp32StatusDot" class="status-dot disabled"></span><span id="esp32StatusText">DISABLED</span></strong><span class="summary-sub">PCA9685 / ESP32 RELAY BRIDGE</span></div><div class="hardware-actions"><button id="esp32StatusRefreshBtn" class="btn secondary" type="button">TEST LINK</button><button id="esp32RelayOnBtn" class="btn success" type="button">RELAY ON</button><button id="esp32RelayOffBtn" class="btn secondary" type="button">RELAY OFF</button><button id="esp32AutoRelayToggle" class="btn info" type="button" aria-pressed="false">AUTO-RELAY OFF</button><button id="esp32RestartBtn" class="btn warning" type="button">RESTART</button></div><div class="telemetry-grid"><div><span>RELAY</span><strong id="esp32RelayState" class="badge">—</strong></div><div><span>AUTO</span><strong id="esp32AutoRelayState" class="badge">—</strong></div><div><span>SESSION</span><strong id="esp32CurrentSession">—</strong></div><div><span>WIFI</span><strong id="esp32WifiInfo">—</strong></div><div><span>LAST BUTTON</span><strong id="esp32LastButton">—</strong></div></div><details class="hud-details"><summary>CONFIGURATION</summary><form id="esp32ConfigForm" class="esp32-form" autocomplete="off"><label class="field-label">HOST<input id="esp32Host" class="input" type="text" placeholder="SkullHard.local" /></label><label class="field-label">PORT<input id="esp32Port" class="input" type="number" min="1" step="1" value="80" /></label><label class="switch-line"><input id="esp32Enabled" type="checkbox" /><span>ENABLE CONTROL</span></label><button id="esp32ConfigSaveBtn" class="btn primary" type="submit">SAVE CONFIG</button></form></details><details class="hud-details"><summary>PHYSICAL INPUTS</summary><div class="physical-inputs"><div id="esp32ButtonsContainer" class="esp32-buttons-grid" role="group" aria-label="Association boutons ESP32"></div><button id="esp32ButtonsRefreshBtn" class="btn secondary" type="button">REFRESH INPUTS</button></div></details><details class="hud-details"><summary>RAW TELEMETRY</summary><pre id="esp32StatusRaw" class="status-box esp32-status-raw" aria-live="polite"></pre></details></div></section>
+
+            <section class="module-view" data-module-view="bluetooth" hidden><div class="module-summary"><span class="summary-label">WIRELESS AUDIO</span><strong id="bluetoothStatus" class="bt-status"><span id="bluetoothStatusDot" class="bt-dot"></span><span id="bluetoothStatusText">BT · UNKNOWN</span></strong><span class="summary-sub">BLUEZ / PULSEAUDIO SEQUENCE PRESERVED</span></div><div class="bt-device-row"><label class="field-label" for="btDeviceSelect">DISCOVERED DEVICES</label><div class="input-row"><select id="btDeviceSelect" class="select" aria-label="Périphériques Bluetooth détectés"></select><button id="btScanBtn" class="btn secondary" type="button">SCAN</button></div></div><div class="bt-state-grid"><span>DISCOVERED</span><strong id="btStateDiscovered">UNKNOWN</strong><span>PAIRED</span><strong id="btStatePaired">UNKNOWN</strong><span>TRUSTED</span><strong id="btStateTrusted">UNKNOWN</strong><span>CONNECTED</span><strong id="btStateConnected">UNKNOWN</strong><span>AUDIO SINK</span><strong id="btStateAudio">UNKNOWN</strong><span>PULSEAUDIO</span><strong id="btStatePulse">UNKNOWN</strong></div><div class="bt-operation-controls"><button id="btPairBtn" class="btn primary" type="button" disabled>PAIR</button><button id="btTrustBtn" class="btn secondary" type="button" disabled>TRUST</button><button id="btConnectBtn" class="btn secondary" type="button" disabled>CONNECT</button><button id="btSelectOutputBtn" class="btn secondary" type="button" disabled>SELECT OUTPUT</button><button id="btTestAudioBtn" class="btn secondary" type="button" disabled>TEST AUDIO</button></div><p id="btOperationStatus" class="hint" role="status" aria-live="polite">Launch a scan to inspect the Bluetooth link.</p></section>
+
+            <section class="module-view" data-module-view="calibration" hidden><div class="module-summary"><span class="summary-label">SERVO CALIBRATION</span><strong id="calibrationJointTitle">SELECT JOINT</strong><span class="summary-sub">OFFSETS ARE PERSISTENT · LIMITS ENFORCED</span></div><div class="calibration-selected"><span class="calibration-axis">−45°</span><div class="calibration-dial"><span></span><b id="calibrationValue">—</b><small>PREVIEW</small></div><span class="calibration-axis">+45°</span></div><div class="calibration-rows"><label class="calibration-row"><span>LEFT EYE<input id="cbEyeLeft" type="checkbox" checked /></span><input id="pitchEyeLeft" type="range" min="-45" max="45" value="0" /><output>0°</output></label><label class="calibration-row"><span>RIGHT EYE<input id="cbEyeRight" type="checkbox" checked /></span><input id="pitchEyeRight" type="range" min="-45" max="45" value="0" /><output>0°</output></label><label class="calibration-row"><span>JAW<input id="cbJaw" type="checkbox" checked /></span><input id="pitchJaw" type="range" min="-45" max="45" value="0" /><output>0°</output></label><label class="calibration-row"><span>NECK<input id="cbNeck" type="checkbox" checked /></span><input id="pitchNeck" type="range" min="-45" max="45" value="0" /><output>0°</output></label></div><p class="hint">Les positions affichées restent en mode aperçu. Les commandes matérielles utilisent les limites configurées côté backend.</p></section>
+
+            <section class="module-view" data-module-view="system" hidden><div class="module-summary"><span class="summary-label">SYSTEM DIAGNOSTICS</span><strong id="systemStateLabel">READY</strong><span class="summary-sub">READ-ONLY TELEMETRY / LIVE LOG STREAM</span></div><div class="system-actions"><button id="restartBluetoothBtn" class="btn warning" type="button">RESTART BT</button><button id="restartServiceBtn" class="btn warning" type="button">RESTART SERVO-SYNC</button></div><details class="hud-details" open><summary>RAW TELEMETRY <span id="badgeStatePanel" class="badge">IDLE</span></summary><pre id="statusBox" class="status-box"></pre></details><details class="hud-details"><summary>LIVE LOGS</summary><iframe src="/static/logs.html" title="Logs servo en direct" class="logs-frame panel-logs-frame"></iframe></details></section>
+        </aside>
     </main>
 
-    <footer class="site-footer">
-        <small>RPi4 &times; PCA9685 &times; Aucun mode simulation &times; UI par FozzY</small>
-    </footer>
+    <section id="sessions" class="playback-deck" aria-label="Playback controls"><div class="deck-session"><span class="eyebrow">SESSION / TIMELINE</span><strong id="deckSessionName">NO SESSION SELECTED</strong><span id="deckTrackName">READY · PREVIEW ONLY</span></div><div class="timeline-mini" aria-label="Timeline de session en aperçu"><div class="timeline-labels"><span>AUDIO</span><span>LEFT EYE</span><span>RIGHT EYE</span><span>JAW</span><span>NECK</span></div><div class="timeline-lines"><i></i><i></i><i></i><i></i><i></i><span class="timeline-cursor" id="timelineCursor"></span></div><div class="timeline-scale"><span>0:00</span><span>PREVIEW ONLY · NO HARDWARE COMMAND</span><span>—:—</span></div></div><div class="deck-controls"><div class="deck-state"><span class="status-dot" aria-hidden="true"></span><span id="badgeState" class="badge is-idle">IDLE</span></div><div class="controls-inline" role="group" aria-label="Contrôles de lecture"><button id="playBtn" class="btn success" type="button">▶ PLAY</button><button id="pauseBtn" class="btn warning" type="button">Ⅱ PAUSE</button><button id="resumeBtn" class="btn info" type="button">▷ RESUME</button><button id="stopBtn" class="btn danger" type="button">■ STOP</button></div><div class="deck-more"><button id="randomModeToggle" class="btn secondary" type="button" aria-pressed="false">RANDOM OFF</button><button id="shuffleAllBtn" class="btn secondary" type="button">SHUFFLE</button></div></div><div class="legacy-playback-state" aria-hidden="true"><span id="randomModeHint"></span></div></section>
 
-    <div id="leftPanel" class="left-panel" aria-hidden="true">
-        <div class="left-panel-content">
-            <h2>Redémarrages</h2>
-            <section class="panel-section">
-                <h3>Services</h3>
-                <div class="maintenance-actions">
-                    <button id="restartBluetoothBtn" class="btn warning" type="button">
-                        Redémarrer Bluetooth
-                    </button>
-                    <button id="restartServiceBtn" class="btn warning" type="button">
-                        Redémarrer service servo-sync
-                    </button>
-                    <button id="esp32RestartBtn" class="btn warning" type="button">
-                        Redémarrer ESP32
-                    </button>
-                </div>
-            </section>
+    <div id="deleteSessionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteSessionTitle"><div class="modal-box"><button id="deleteSessionClose" class="modal-close" type="button" aria-label="Fermer">×</button><div class="modal-graphic" aria-hidden="true">⌁</div><h3 id="deleteSessionTitle">CONFIRM DELETION</h3><p class="modal-lead">Delete <strong id="deleteSessionName"></strong>?</p><p class="modal-subtext">The session folder will be removed from the RPi.</p><p id="deleteSessionMessage" class="modal-status" role="status" aria-live="polite"></p><div class="modal-actions"><button id="deleteSessionCancel" class="btn secondary" type="button">CANCEL</button><button id="deleteSessionConfirm" class="btn danger" type="button">DELETE</button></div></div></div>
 
-            <section class="panel-section advanced-settings-panel">
-                <h3>Réglages avancés</h3>
-                <details class="accordion-item" open>
-                    <summary>Canaux actifs</summary>
-                    <div class="accordion-content">
-                        <div class="toggle-group">
-                            <label class="toggle">
-                                <input id="cbEyeLeft" type="checkbox" checked />
-                                <span>Œil gauche</span>
-                            </label>
-                            <label class="toggle">
-                                <input id="cbEyeRight" type="checkbox" checked />
-                                <span>Œil droit</span>
-                            </label>
-                            <label class="toggle">
-                                <input id="cbNeck" type="checkbox" checked />
-                                <span>Cou</span>
-                            </label>
-                            <label class="toggle">
-                                <input id="cbJaw" type="checkbox" checked />
-                                <span>Mâchoire</span>
-                            </label>
-                        </div>
-                        <p class="hint">
-                            Décochez pour geler un servo. Il conservera alors sa dernière position.
-                        </p>
-                    </div>
-                </details>
+    <footer class="neural-footer"><span>SKULL-V2 / RPI4 × PCA9685</span><span>QUALITY: <b id="qualityMode">AUTO</b></span><span>KEYS ← → MODULES · ESC CLOSE</span><span>?debug=1 DIAGNOSTICS</span></footer>
 
-                <details class="accordion-item" open>
-                    <summary>Ajustements pitch</summary>
-                    <div class="accordion-content">
-                        <div class="pitch-controls">
-                            <div class="pitch-item">
-                                <label for="pitchJaw">Mâchoire (°)</label>
-                                <input id="pitchJaw" type="range" min="-45" max="45" value="0" />
-                                <span class="pitch-value">0°</span>
-                            </div>
-                            <div class="pitch-item">
-                                <label for="pitchEyeLeft">Œil gauche (°)</label>
-                                <input id="pitchEyeLeft" type="range" min="-45" max="45" value="0" />
-                                <span class="pitch-value">0°</span>
-                            </div>
-                            <div class="pitch-item">
-                                <label for="pitchEyeRight">Œil droit (°)</label>
-                                <input id="pitchEyeRight" type="range" min="-45" max="45" value="0" />
-                                <span class="pitch-value">0°</span>
-                            </div>
-                            <div class="pitch-item">
-                                <label for="pitchNeck">Cou (°)</label>
-                                <input id="pitchNeck" type="range" min="-45" max="45" value="0" />
-                                <span class="pitch-value">0°</span>
-                            </div>
-                        </div>
-                    </div>
-                </details>
-            </section>
-        </div>
-    </div>
-    <button id="leftPanelToggle" class="panel-toggle left-panel-toggle" type="button"
-        aria-label="Ouvrir les commandes de redémarrage">
-        <span class="toggle-icon">☰</span>
-    </button>
-
-    <div id="sidePanel" class="side-panel" aria-hidden="true">
-        <div class="side-panel-content">
-            <h2>Logs &amp; Status</h2>
-
-            <section class="panel-section">
-                <h3>Statut technique</h3>
-                <details class="accordion-item slim" open>
-                    <summary>
-                        <span>État lecture</span>
-                        <span id="badgeStatePanel" class="badge">—</span>
-                    </summary>
-                    <div class="accordion-content">
-                        <pre id="statusBox" class="status-box"></pre>
-                    </div>
-                </details>
-            </section>
-
-            <section class="panel-section">
-                <h3>Logs en direct</h3>
-                <iframe src="/static/logs.html" title="Logs servo" class="logs-frame panel-logs-frame"></iframe>
-            </section>
-        </div>
-    </div>
-    <button id="sidePanelToggle" class="panel-toggle side-panel-toggle" type="button" aria-label="Ouvrir les logs">
-        <span class="toggle-icon">☰</span>
-    </button>
-
-    <script src="/static/app.js"></script>
-    <script>
-        (function () {
-            const sidePanel = document.getElementById("sidePanel");
-            const sideToggle = document.getElementById("sidePanelToggle");
-            const leftPanel = document.getElementById("leftPanel");
-            const leftToggle = document.getElementById("leftPanelToggle");
-
-            const setupPanel = (panelEl, toggleEl) => {
-                if (!panelEl || !toggleEl) {
-                    return () => { };
-                }
-
-                const iconEl = toggleEl.querySelector(".toggle-icon");
-                const setState = (isOpen) => {
-                    panelEl.classList.toggle("is-open", isOpen);
-                    panelEl.setAttribute("aria-hidden", isOpen ? "false" : "true");
-                    if (iconEl) {
-                        iconEl.textContent = isOpen ? "×" : "☰";
-                    }
-                };
-
-                setState(false);
-
-                toggleEl.addEventListener("click", () => {
-                    const nextState = !panelEl.classList.contains("is-open");
-                    setState(nextState);
-                });
-
-                return () => setState(false);
-            };
-
-            const closeSidePanel = setupPanel(sidePanel, sideToggle);
-            const closeLeftPanel = setupPanel(leftPanel, leftToggle);
-
-            document.addEventListener("keydown", (event) => {
-                if (event.key !== "Escape") {
-                    return;
-                }
-
-                let handled = false;
-
-                if (leftPanel && leftPanel.classList.contains("is-open")) {
-                    closeLeftPanel();
-                    handled = true;
-                }
-
-                if (sidePanel && sidePanel.classList.contains("is-open")) {
-                    closeSidePanel();
-                    handled = true;
-                }
-
-                if (handled) {
-                    event.preventDefault();
-                }
-            });
-
-            const primaryBadge = document.getElementById("badgeState");
-            const panelBadge = document.getElementById("badgeStatePanel");
-
-            if (primaryBadge && panelBadge) {
-                const syncBadge = () => {
-                    panelBadge.textContent = primaryBadge.textContent || "—";
-                    panelBadge.className = primaryBadge.className;
-                };
-
-                const observer = new MutationObserver(syncBadge);
-                observer.observe(primaryBadge, {
-                    characterData: true,
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ["class"]
-                });
-
-                syncBadge();
-            }
-        })();
-    </script>
+    <script src="/static/app.js?v=skull-neural-core-7"></script>
 </body>
 
 </html>
